@@ -1,12 +1,39 @@
 """Acquisition et mise à jour des données géospatiales à développer."""
+import logging
 import os
 import time
-
-from botocore.exceptions import ClientError
-import boto3
-import requests
-from dotenv import load_dotenv
+import warnings
 from pathlib import Path
+
+import boto3
+from botocore.exceptions import ClientError
+from dotenv import load_dotenv
+from pystac_client import Client
+
+
+STAC_API_URL = "https://stac.dataspace.copernicus.eu/v1"
+STAC_PAGE_SIZE = 100
+DEFAULT_STAC_MAX_ITEMS = 1000
+STAC_TIMEOUT_SECONDS = 30
+
+logger = logging.getLogger(__name__)
+
+
+class STACSearchError(RuntimeError):
+    """A STAC search failed or returned an incomplete response."""
+
+
+class STACSearchTruncatedWarning(UserWarning):
+    """The configured result cap stopped a STAC search before completion."""
+
+
+class STACSearchResults(list):
+    """List-compatible STAC items with explicit search completeness metadata."""
+
+    def __init__(self, items=(), *, truncated: bool, raw_count: int):
+        super().__init__(items)
+        self.truncated = bool(truncated)
+        self.raw_count = int(raw_count)
 
 
 def create_cdse_s3_client():
@@ -160,36 +187,115 @@ def search_sentinel2(
     start_date: str,
     end_date: str,
     max_cloud_cover: float | None = None,
+    *,
+    max_items: int = DEFAULT_STAC_MAX_ITEMS,
 ) -> list[dict]:
-    """Search Sentinel-2 L2A products from the CDSE STAC API."""
+    """Search Sentinel-2 L2A items, following STAC pages up to ``max_items``.
 
-    url = "https://stac.dataspace.copernicus.eu/v1/search"
+    ``limit`` is the service-side page size (100); ``max_items`` is the maximum
+    number of raw STAC features read, including duplicate IDs. One extra item
+    is read internally to distinguish a complete result set from a truncated
+    one. Duplicate IDs are removed while preserving first-seen order, so the
+    returned unique-item list can be shorter than ``max_items``. A
+    :class:`STACSearchTruncatedWarning` is emitted if more than ``max_items``
+    features exist. The return type remains a list of item dictionaries.
+    """
+    if (
+        isinstance(max_items, bool)
+        or not isinstance(max_items, int)
+        or max_items < 1
+    ):
+        raise ValueError("max_items doit être un entier strictement positif.")
 
-    payload = {
+    query = None
+    if max_cloud_cover is not None:
+        query = {"eo:cloud_cover": {"lte": max_cloud_cover}}
+
+    search_parameters = {
         "collections": ["sentinel-2-l2a"],
         "bbox": bbox,
         "datetime": f"{start_date}T00:00:00Z/{end_date}T23:59:59Z",
-        "limit": 100,
+        "limit": STAC_PAGE_SIZE,
+        "max_items": max_items + 1,
     }
+    if query is not None:
+        search_parameters["query"] = query
 
-    if max_cloud_cover is not None:
-        payload["query"] = {
-            "eo:cloud_cover": {
-                "lte": max_cloud_cover
-            }
-        }
-        
-    response = requests.post(
-    url,
-    json=payload,
-    timeout=30,
+    try:
+        search = Client.open(
+            STAC_API_URL,
+            timeout=STAC_TIMEOUT_SECONDS,
+        ).search(**search_parameters)
+
+        items = []
+        seen_ids = set()
+        duplicate_count = 0
+        raw_count = 0
+        truncated = False
+
+        for page in search.pages_as_dicts():
+            features = page.get("features") if isinstance(page, dict) else None
+            if not isinstance(features, list):
+                raise STACSearchError(
+                    "Réponse STAC incomplète : une page ne contient pas une liste d'items."
+                )
+
+            for feature in features:
+                raw_count += 1
+                if raw_count > max_items:
+                    truncated = True
+                    break
+                if not isinstance(feature, dict):
+                    raise STACSearchError(
+                        "Réponse STAC incomplète : un item n'est pas un objet valide."
+                    )
+
+                item_id = feature.get("id")
+                if not isinstance(item_id, str) or not item_id:
+                    raise STACSearchError(
+                        "Réponse STAC incomplète : un item ne possède pas d'identifiant valide."
+                    )
+                if item_id in seen_ids:
+                    duplicate_count += 1
+                    continue
+
+                seen_ids.add(item_id)
+                items.append(feature)
+
+            if truncated:
+                break
+
+    except STACSearchError:
+        raise
+    except Exception as error:
+        status_code = getattr(
+            getattr(error, "response", None),
+            "status_code",
+            None,
+        )
+        status = f", HTTP {status_code}" if status_code is not None else ""
+        raise STACSearchError(
+            "Recherche STAC interrompue "
+            f"({type(error).__name__}{status}); aucun résultat partiel n'est retourné."
+        ) from None
+
+    if duplicate_count:
+        logger.warning(
+            "La recherche STAC a ignoré %s item(s) dupliqué(s) par identifiant.",
+            duplicate_count,
+        )
+    if truncated:
+        warnings.warn(
+            f"Recherche STAC tronquée à la limite configurée de {max_items} items.",
+            STACSearchTruncatedWarning,
+            stacklevel=2,
+        )
+
+    return STACSearchResults(
+        items,
+        truncated=truncated,
+        raw_count=raw_count,
     )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    return data.get("features", [])
 
 def select_best_product(items: list[dict]) -> dict:
     """Select the Sentinel-2 product with the lowest cloud cover."""
@@ -215,6 +321,7 @@ def ingest_sentinel2_product(
     max_cloud_cover: float | None = None,
     asset_names: list[str] | None = None,
     product_id: str | None = None,
+    max_items: int = DEFAULT_STAC_MAX_ITEMS,
 ) -> dict:
     """Search, select and download a Sentinel-2 product."""
 
@@ -232,6 +339,7 @@ def ingest_sentinel2_product(
         start_date=start_date,
         end_date=end_date,
         max_cloud_cover=max_cloud_cover,
+        max_items=max_items,
     )
 
     if product_id is not None:
