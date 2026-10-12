@@ -1,9 +1,5 @@
 -r requirements.txt
 pytest>=8,<10
-requests>=2.32,<3
 ipykernel>=6.29,<7
-truststore>=0.10,<1
-rasterio>=1.4,<2
-python-dotenv>=1.0,<2
-boto3>=1.35,<2
-matplotlib>=3.8,<4
+osmnx>=1.9,<2
+contextily>=1.6,<2

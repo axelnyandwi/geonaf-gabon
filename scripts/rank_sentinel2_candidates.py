@@ -1,19 +1,12 @@
+"""Test du classement Sentinel-2 par qualité réelle sur une AOI."""
+
 from pathlib import Path
-
-import boto3
-
-from src.config import (
-    CDSE_S3_ACCESS_KEY,
-    CDSE_S3_SECRET_KEY,
-    CDSE_S3_ENDPOINT,
-)
+from src.geo.aoi import get_aoi_bbox
 from src.data.ingestion import (
+    create_cdse_s3_client,
     search_sentinel2,
-    get_asset,
-    download_asset,
 )
-from src.data.preparation import clip_raster_to_aoi
-from src.data.quality import calculate_scl_quality
+from src.data.quality import select_best_product_for_aoi
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -25,7 +18,7 @@ AOI_PATH = (
     / "libreville.geojson"
 )
 
-CACHE_DIR = (
+RAW_DIR = (
     PROJECT_ROOT
     / "data"
     / "raw"
@@ -39,19 +32,14 @@ INTERIM_DIR = (
     / "sentinel2_quality"
 )
 
+bbox = get_aoi_bbox(AOI_PATH)
 
-# Même bbox utilisée lors de notre recherche précédente
-BBOX = [
-    9.3674836,
-    0.3414472,
-    9.5273529,
-    0.5638127,
-]
+print(f"AOI : {AOI_PATH.stem}")
+print(f"BBOX : {bbox}")
 
-
-# 1. Recherche des candidats
+# 1. Recherche STAC
 items = search_sentinel2(
-    bbox=BBOX,
+    bbox=bbox,
     start_date="2025-01-01",
     end_date="2025-01-31",
 )
@@ -59,129 +47,43 @@ items = search_sentinel2(
 print(f"Produits trouvés : {len(items)}")
 
 
-# 2. Client S3
-if not CDSE_S3_ACCESS_KEY or not CDSE_S3_SECRET_KEY:
-    raise RuntimeError(
-        "Credentials CDSE S3 absents des variables d'environnement."
-    )
+# 2. Connexion CDSE
+s3_client = create_cdse_s3_client()
 
-s3_client = boto3.client(
-    "s3",
-    endpoint_url=CDSE_S3_ENDPOINT,
-    aws_access_key_id=CDSE_S3_ACCESS_KEY,
-    aws_secret_access_key=CDSE_S3_SECRET_KEY,
-    region_name="default",
+
+# 3. Sélection par qualité AOI
+selection = select_best_product_for_aoi(
+    items=items,
+    aoi_path=AOI_PATH,
+    s3_client=s3_client,
+    raw_dir=RAW_DIR,
+    interim_dir=INTERIM_DIR,
 )
 
 
-results = []
-
-
-for item in items:
-
-    product_id = item["id"]
-
-    cloud_cover = item.get(
-        "properties",
-        {},
-    ).get("eo:cloud_cover")
-
-    print(f"\nAnalyse : {product_id}")
-    print(f"Nuages STAC : {cloud_cover}")
-
-    try:
-        # 1. Récupération du SCL uniquement
-        asset = get_asset(
-            item,
-            "SCL_20m",
-        )
-
-        raw_dir = (
-            CACHE_DIR
-            / product_id
-        )
-
-        scl_path = download_asset(
-            s3_client=s3_client,
-            asset=asset,
-            destination_dir=raw_dir,
-        )
-
-        # 2. Découpage sur l'AOI
-        clipped_path = (
-            INTERIM_DIR
-            / product_id
-            / "libreville_SCL_20m.tif"
-        )
-
-        clip_raster_to_aoi(
-            input_path=scl_path,
-            output_path=clipped_path,
-            aoi_path=AOI_PATH,
-        )
-
-        # 3. Calcul de qualité
-        quality = calculate_scl_quality(
-            clipped_path
-        )
-
-        usable = quality[
-            "usable_land_percent"
-        ]
-
-        print(
-            f"Terrain exploitable : "
-            f"{usable:.2f} %"
-        )
-
-        results.append(
-            {
-                "product_id": product_id,
-                "cloud_cover": cloud_cover,
-                "usable_land_percent": usable,
-            }
-        )
-
-    except Exception as error:
-
-        print(
-            f"ÉCHEC : {product_id}"
-        )
-
-        print(
-            f"Raison : {error}"
-        )
-
-        continue
-
-
-# 6. Classement
-results.sort(
-    key=lambda x: x["usable_land_percent"],
-    reverse=True,
-)
-
-
+# 4. Affichage du classement
 print("\n==============================")
 print("CLASSEMENT GEONAF - LIBREVILLE")
 print("==============================")
 
 for rank, result in enumerate(
-    results,
+    selection["ranking"],
     start=1,
 ):
-
     print(
-        f"{rank}. "
-        f"{result['product_id']}"
+        f"{rank}. {result['product_id']}"
     )
 
     print(
-        f"   STAC cloud cover : "
+        "   STAC cloud cover : "
         f"{result['cloud_cover']}"
     )
 
     print(
-        f"   Terrain exploitable : "
+        "   Terrain exploitable : "
         f"{result['usable_land_percent']:.2f} %"
     )
+
+
+print("\nProduit sélectionné :")
+print(selection["best_product_id"])

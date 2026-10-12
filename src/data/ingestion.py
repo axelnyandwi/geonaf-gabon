@@ -205,6 +205,7 @@ def select_best_product(items: list[dict]) -> dict:
         ),
     )
 
+
 def ingest_sentinel2_product(
     s3_client,
     bbox: list[float],
@@ -213,6 +214,7 @@ def ingest_sentinel2_product(
     destination_dir: Path,
     max_cloud_cover: float | None = None,
     asset_names: list[str] | None = None,
+    product_id: str | None = None,
 ) -> dict:
     """Search, select and download a Sentinel-2 product."""
 
@@ -232,10 +234,21 @@ def ingest_sentinel2_product(
         max_cloud_cover=max_cloud_cover,
     )
 
-    product = select_best_product(items)
+    if product_id is not None:
+        product = next(
+            (item for item in items if item["id"] == product_id),
+            None,
+        )
 
-    product_id = product["id"]
-    product_dir = destination_dir / product_id
+        if product is None:
+            raise ValueError(
+                f"Produit introuvable dans les résultats STAC : {product_id}"
+            )
+    else:
+        product = select_best_product(items)
+
+    selected_product_id = product["id"]
+    product_dir = destination_dir / selected_product_id
 
     downloaded_assets = {}
 
@@ -252,7 +265,7 @@ def ingest_sentinel2_product(
 
     return {
         "product": product,
-        "product_id": product_id,
+        "product_id": selected_product_id,
         "directory": product_dir,
         "assets": downloaded_assets,
     }

@@ -81,7 +81,7 @@ def test_download_asset_uses_cache(tmp_path):
     }
 
     cached_file = tmp_path / "B04_10m.jp2"
-    cached_file.touch()
+    cached_file.write_bytes(b"simulated satellite data")
 
     result = download_asset(
         s3_client=s3_client,

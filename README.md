@@ -1,18 +1,17 @@
-# Gabon GeoAI Lab
+# GEONAF
 
 **Observer · Comprendre · Prédire · Simuler**
 
-Gabon GeoAI Lab est une plateforme expérimentale d’intelligence géospatiale consacrée au Gabon. Le projet est actuellement en phase de recherche et de conception.
+GEONAF est une plateforme Python d’intelligence géospatiale destinée à observer, comprendre, prédire et simuler les phénomènes territoriaux. Le MVP porte sur Libreville, Akanda et Owendo, avec l’ambition de pouvoir s’étendre à l’échelle africaine.
 
-Cette première version fournit uniquement une fondation technique et une page d’accueil Streamlit. Aucune fonctionnalité métier n’est encore implémentée.
+Le socle actuel traite des acquisitions Copernicus Sentinel-2 : découverte et ingestion, préparation et découpage raster, contrôle qualité SCL, calibration radiométrique et calcul d’indices comme le NDVI. Sentinel-1 est prévu pour une intégration future. L’application Streamlit est une interface de travail ; les traitements métier sont organisés dans `src/` afin de pouvoir être réutilisés par une interface ou un service ultérieur.
 
 ## Orientations du projet
 
-Les étapes futures pourront couvrir :
+Les évolutions visées couvrent notamment :
 
-- l’exploration territoriale ;
-- la visualisation de données géospatiales ;
-- l’analyse d’images satellite ;
+- l’exploration et la visualisation territoriales ;
+- l’analyse d’images satellite et le suivi des changements ;
 - la détection des changements ;
 - la recherche de similarités géospatiales ;
 - la prévision de transformations territoriales ;
@@ -42,15 +41,15 @@ La variable d’environnement optionnelle `GABON_GEOAI_DATA_DIR` permet de chois
 `.env.example` documente cette variable. L’application ne charge pas automatiquement les fichiers `.env`. Définir la variable dans le terminal avant de démarrer Streamlit, par exemple :
 
 ```bash
-export GABON_GEOAI_DATA_DIR=/chemin/vers/les/donnees
+export GABON_GEOAI_DATA_DIR=data
 python -m streamlit run app.py
 ```
 
-Sous PowerShell, utiliser `$env:GABON_GEOAI_DATA_DIR = "C:\chemin\vers\les\donnees"`.
+Sous PowerShell, utiliser `$env:GABON_GEOAI_DATA_DIR = "data"` depuis la racine du projet.
 
 Ne jamais versionner de secrets. Les fichiers `.env` et les secrets Streamlit sont ignorés par Git.
 
-## Structure du dépôt
+## Architecture du dépôt
 
 ```text
 .
@@ -63,12 +62,18 @@ Ne jamais versionner de secrets. Les fichiers `.env` et les secrets Streamlit so
 |-- src/
 |   |-- __init__.py
 |   |-- config.py
+|   |-- diagnostics.py
 |   |-- data/
 |   |   |-- __init__.py
 |   |   |-- ingestion.py
+|   |   |-- cloud_mask.py
 |   |   |-- preparation.py
-|   |   `-- quality.py
-|   |-- geo/__init__.py
+|   |   |-- quality.py
+|   |   |-- radiometric_calibration.py
+|   |   `-- raster_processing.py
+|   |-- geo/
+|   |   |-- aoi.py
+|   |   `-- vegetation_indices.py
 |   |-- features/__init__.py
 |   |-- models/
 |   |   |-- __init__.py
@@ -88,29 +93,44 @@ Ne jamais versionner de secrets. Les fichiers `.env` et les secrets Streamlit so
 |   |-- .gitkeep
 |   |-- test_config.py
 |   `-- fixtures/.gitkeep
+|-- scripts/                # outils manuels et diagnostics
 `-- docs/data_sources.md
 ```
 
-- `app.py` : point d’entrée et page d’accueil Streamlit.
+- `app.py` : point d’entrée de l’interface Streamlit.
 - `src/config.py` : configuration générale et chemins, sans création automatique de dossiers.
-- `src/data/` : future acquisition et préparation des données.
-- `src/geo/` : futurs traitements géospatiaux.
-- `src/features/` : création des variables destinées aux analyses et aux modèles.
-- `src/models/` : emplacements distincts pour l’entraînement, la prédiction et l’évaluation, sans logique ML.
-- `src/services/` : future orchestration applicative réutilisable par Streamlit ou une API.
-- `src/components/` : futurs composants d’interface Streamlit.
+- `src/data/` : découverte et ingestion, préparation raster, calibration et contrôle qualité.
+- `src/geo/` : validation des AOI et calculs géospatiaux, dont les indices spectraux.
+- `src/features/` et `src/models/` : espaces séparés pour les futures variables et analyses prédictives.
+- `src/services/` : orchestration applicative à développer, indépendante de l’interface.
+- `src/components/` : composants de l’interface Streamlit.
 - `data/raw/` : données sources conservées sans modification.
 - `data/interim/` : résultats intermédiaires des traitements.
 - `data/processed/` : données préparées pour les analyses.
 - `notebooks/` : expérimentations et exploration.
-- `tests/` : tests de configuration et futures données synthétiques de test.
+- `tests/` : tests automatisés, construits principalement avec des données géospatiales synthétiques.
 - `docs/data_sources.md` : provenance, licences et limites des futures sources.
 
-Les modules métier contiennent uniquement des descriptions de rôle. Seules la configuration et la page d’accueil minimale sont fonctionnelles. Aucun cadre supplémentaire, conteneur, base de données, service cloud ou chaîne d’intégration continue n’est ajouté.
+Les scripts de `scripts/` servent principalement à l’expérimentation et au diagnostic manuel ; ils ne sont pas tous des étapes requises du pipeline applicatif. L’ingestion Sentinel-2 s’appuie sur les interfaces Copernicus configurées dans le module de données. Les dossiers de données restent séparés du code afin de conserver les sources et les produits dérivés hors des commits ordinaires.
+
+## Indicateurs de qualité SCL
+
+Dans `calculate_scl_quality`, `total_pixels` désigne les pixels observés : pixels non masqués dont la classe SCL n’est pas 0. `invalid_percent` est calculé parmi ces observations, en comptant les classes nuage/ombre, défectueuses et neige/glace selon les ensembles de classes définis dans le code. Les pixels masqués et la classe 0 sont exclus du numérateur et du dénominateur ; l’eau reste une observation valide. Les métriques terrestres utilisent un dénominateur sans eau.
+
+Ces définitions diffèrent des anciens calculs qui incluaient les pixels NoData dans `total_pixels` et dans le dénominateur d’`invalid_percent`. Les valeurs historiques ne sont donc pas directement comparables : les séries doivent être recalculées avec la même version de la méthode avant d’interpréter leurs écarts. Cette clarification documente les indicateurs existants et ne change pas la règle de classement des produits.
 
 ## Dépendances
 
-Streamlit est la seule dépendance directe de l’application. `requirements-dev.txt` ajoute pytest pour les contrôles de développement. Les bibliothèques géospatiales, d’analyse et d’apprentissage automatique seront ajoutées lorsque les premiers usages les justifieront. La plage de versions dans `requirements.txt` limite les mises à jour à la version majeure 1 ; elle ne constitue pas un verrouillage complet des dépendances transitives.
+`requirements.txt` déclare les bibliothèques utilisées par l’application et le pipeline géospatial : NumPy, Rasterio, GeoPandas, Shapely, pyproj, Matplotlib et les clients requis par l’ingestion. Des plages de versions bornent les versions majeures sans verrouiller les dépendances transitives.
+
+Pour les tests et les scripts expérimentaux de géocodage/cartographie, installer aussi les dépendances de développement :
+
+```bash
+python -m pip install -r requirements-dev.txt
+python -m pytest -q -p no:cacheprovider
+```
+
+La configuration pytest à la racine limite la collecte automatique à `tests/`. Les scripts `scripts/test_*.py` restent des outils manuels et ne sont pas importés pendant la collecte.
 
 ## Données et expérimentations
 

@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-APP_TITLE = "Gabon GeoAI Lab"
+APP_TITLE = "GEONAF"
 TAGLINE = "Observer · Comprendre · Prédire · Simuler"
 PROJECT_STATUS = "Le projet est actuellement en phase de recherche et de conception."
 
