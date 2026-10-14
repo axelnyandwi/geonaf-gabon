@@ -10,10 +10,14 @@ import numpy as np
 from pyproj import Transformer
 from shapely import (
     area as geometry_area,
+    bounds as geometry_bounds,
+    covers,
     intersection,
     is_empty,
     is_valid,
     polygons,
+    prepare as prepare_geometry,
+    relate_pattern,
     transform as transform_geometry,
     union_all,
 )
@@ -123,7 +127,12 @@ def load_equal_area_aoi(aoi_path: str | Path) -> EqualAreaAOI:
 
 
 def _pixel_area_chunks(grid: RasterGrid, aoi_geometry=None):
-    """Yield exact equal-area pixel intersections in bounded row chunks."""
+    """Yield equal-area cell weights in bounded chunks.
+
+    Cells are classified as outside, fully covered, or partial. Fully covered
+    cells use their transformed cell area; exact intersections are reserved
+    for partial cells. Without an AOI, full cell areas are returned.
+    """
     transformer = Transformer.from_crs(
         grid.crs,
         EQUAL_AREA_CRS,
@@ -131,6 +140,10 @@ def _pixel_area_chunks(grid: RasterGrid, aoi_geometry=None):
     )
     width = grid.width
     rows_per_chunk = max(1, min(128, MAX_AREA_CELLS_PER_CHUNK // width))
+    if aoi_geometry is not None:
+        # Prepared GEOS state accelerates repeated predicates against this AOI
+        # across all cells and row chunks without changing geometry or areas.
+        prepare_geometry(aoi_geometry)
 
     for row_start in range(0, grid.height, rows_per_chunk):
         row_end = min(row_start + rows_per_chunk, grid.height)
@@ -149,12 +162,16 @@ def _pixel_area_chunks(grid: RasterGrid, aoi_geometry=None):
         ):
             pixel_cols = cols + col_offset
             pixel_rows = rows + row_offset
+            # Include all six affine terms; the legacy path omitted rotation
+            # and shear (b, d), which shifted cell footprints on such grids.
             x = (
                 grid.transform.a * pixel_cols
+                + grid.transform.b * pixel_rows
                 + grid.transform.c
             )
             y = (
-                grid.transform.e * pixel_rows
+                grid.transform.d * pixel_cols
+                + grid.transform.e * pixel_rows
                 + grid.transform.f
             )
             corner_coordinates.append(np.stack((x, y), axis=-1))
@@ -166,13 +183,51 @@ def _pixel_area_chunks(grid: RasterGrid, aoi_geometry=None):
             transformer.transform,
             interleaved=False,
         )
-        if aoi_geometry is not None:
-            equal_area_cells = intersection(equal_area_cells, aoi_geometry)
+        if aoi_geometry is None:
+            pixel_areas = geometry_area(equal_area_cells)
+        else:
+            flat_cells = equal_area_cells.reshape(-1)
+            flat_areas = np.zeros(flat_cells.shape, dtype=np.float64)
+            aoi_min_x, aoi_min_y, aoi_max_x, aoi_max_y = aoi_geometry.bounds
+            cell_bounds = geometry_bounds(flat_cells)
+            candidate_mask = (
+                (cell_bounds[:, 0] <= aoi_max_x)
+                & (cell_bounds[:, 2] >= aoi_min_x)
+                & (cell_bounds[:, 1] <= aoi_max_y)
+                & (cell_bounds[:, 3] >= aoi_min_y)
+            )
+            candidate_indexes = np.flatnonzero(candidate_mask)
+            if candidate_indexes.size:
+                candidate_cells = flat_cells[candidate_indexes]
+                fully_covered = np.asarray(
+                    covers(aoi_geometry, candidate_cells), dtype=bool
+                )
+                interior_indexes = candidate_indexes[fully_covered]
+                if interior_indexes.size:
+                    flat_areas[interior_indexes] = geometry_area(
+                        flat_cells[interior_indexes]
+                    )
 
-        pixel_areas = geometry_area(equal_area_cells).reshape(
-            row_end - row_start,
-            width,
-        )
+                edge_indexes = candidate_indexes[~fully_covered]
+                if edge_indexes.size:
+                    edge_cells = flat_cells[edge_indexes]
+                    positive_area_overlaps = np.asarray(
+                        relate_pattern(
+                            aoi_geometry, edge_cells, "T********"
+                        ),
+                        dtype=bool,
+                    )
+                    partial_indexes = edge_indexes[positive_area_overlaps]
+                    if partial_indexes.size:
+                        partial_intersections = intersection(
+                            flat_cells[partial_indexes], aoi_geometry
+                        )
+                        flat_areas[partial_indexes] = geometry_area(
+                            partial_intersections
+                        )
+            pixel_areas = flat_areas.reshape(row_end - row_start, width)
+
+        pixel_areas = pixel_areas.reshape(row_end - row_start, width)
         yield row_start, row_end, pixel_areas
 
 

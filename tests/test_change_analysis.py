@@ -5,7 +5,14 @@ import numpy as np
 import pytest
 import rasterio
 from affine import Affine
-from shapely.geometry import box
+from pyproj import Transformer
+from shapely import (
+    area as geometry_area,
+    intersection as geometry_intersection,
+    polygons,
+    transform as transform_geometry,
+)
+from shapely.geometry import MultiPolygon, Polygon, box
 from rasterio.transform import from_origin
 
 from src.geo.temporal import (
@@ -104,6 +111,197 @@ def _write_aoi(path, geometries, crs="EPSG:6933"):
     )
     frame.to_file(path, driver="GPKG")
     return path
+
+
+def _reference_pixel_area_weights(grid, aoi, *, full_affine=False):
+    """Brute-force oracle for legacy or complete-affine cell geometry."""
+    rows, cols = np.meshgrid(
+        np.arange(grid.height, dtype=np.float64),
+        np.arange(grid.width, dtype=np.float64),
+        indexing="ij",
+    )
+    corners = []
+    for col_offset, row_offset in (
+        (0, 0),
+        (1, 0),
+        (1, 1),
+        (0, 1),
+        (0, 0),
+    ):
+        pixel_cols = cols + col_offset
+        pixel_rows = rows + row_offset
+        x = grid.transform.a * pixel_cols + grid.transform.c
+        y = grid.transform.e * pixel_rows + grid.transform.f
+        if full_affine:
+            x += grid.transform.b * pixel_rows
+            y += grid.transform.d * pixel_cols
+        corners.append(np.stack((x, y), axis=-1))
+
+    cells = polygons(np.stack(corners, axis=2).reshape(-1, 5, 2))
+    transformer = Transformer.from_crs(grid.crs, "EPSG:6933", always_xy=True)
+    cells_equal_area = transform_geometry(
+        cells,
+        transformer.transform,
+        interleaved=False,
+    )
+    clipped = geometry_intersection(cells_equal_area, aoi.geometry)
+    return geometry_area(clipped).reshape(grid.height, grid.width)
+
+
+@pytest.mark.parametrize(
+    ("geometry", "transform"),
+    [
+        (
+            box(0.5, 0.25, 2.75, 2.5),
+            Affine(1, 0, 0, 0, -1, 3),
+        ),
+        (
+            Polygon(
+                [(0.25, 0.25), (3.75, 0.25), (3.75, 2.75), (0.25, 2.75)],
+                holes=[[(1.25, 1.0), (2.75, 1.0), (2.75, 2.0), (1.25, 2.0)]],
+            ),
+            Affine(1, 0, 0, 0, -1, 3),
+        ),
+        (
+            MultiPolygon(
+                [box(0.2, 0.2, 1.2, 1.2), box(2.8, 1.8, 3.8, 2.8)]
+            ),
+            Affine(1, 0, 0, 0, -1, 3),
+        ),
+    ],
+    ids=["partial-boundaries", "interior-hole", "multipart"],
+)
+def test_area_weights_match_former_exact_algorithm_for_complex_aois(
+    tmp_path, geometry, transform
+):
+    """Les poids, aires de masque et couvertures gardent les intersections exactes."""
+    aoi_path = _write_aoi(tmp_path / "complex-aoi.gpkg", [geometry])
+    aoi = load_equal_area_aoi(aoi_path)
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(6933),
+        resolution=(1.0, 1.0),
+        transform=transform,
+        width=4,
+        height=3,
+    )
+
+    reference = _reference_pixel_area_weights(grid, aoi)
+    optimized = prepare_pixel_area_weights(grid, aoi)
+
+    # 1e-8 m² is far below the reporting precision; rtol covers accumulated
+    # float64 summation differences while retaining cell-level equivalence.
+    np.testing.assert_allclose(optimized, reference, rtol=1e-12, atol=1e-8)
+    assert optimized.sum(dtype=np.float64) == pytest.approx(
+        reference.sum(dtype=np.float64), rel=1e-12, abs=1e-8
+    )
+
+    mask = np.array(
+        [[True, False, True, False], [False, True, False, True], [True, False, True, False]]
+    )
+    expected_area = float(reference[mask].sum(dtype=np.float64))
+    expected_percent = expected_area / aoi.area_m2 * 100.0
+    measured = measure_mask_coverage(
+        mask,
+        grid,
+        aoi,
+        pixel_area_weights=optimized,
+    )
+    assert measured.area_m2 == pytest.approx(expected_area, rel=1e-12, abs=1e-8)
+    assert measured.coverage_percent == pytest.approx(
+        expected_percent, abs=1e-8
+    )
+
+
+def test_rotated_grid_uses_complete_affine_geometry_and_documents_legacy_delta(
+    tmp_path,
+):
+    """La rotation/cisaillement suit l’affine complète, contrairement au legacy."""
+    geometry = MultiPolygon(
+        [
+            box(500200, 997200, 501200, 998200),
+            box(502800, 1001800, 503800, 1002800),
+        ]
+    )
+    aoi_path = _write_aoi(
+        tmp_path / "rotated-aoi.gpkg", [geometry], crs="EPSG:32632"
+    )
+    aoi = load_equal_area_aoi(aoi_path)
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(32632),
+        resolution=(1000.0, 1000.0),
+        transform=Affine(1000, 200, 500000, 100, -1000, 1003000),
+        width=4,
+        height=3,
+    )
+
+    full_affine_reference = _reference_pixel_area_weights(
+        grid, aoi, full_affine=True
+    )
+    legacy_reference = _reference_pixel_area_weights(grid, aoi)
+    optimized = prepare_pixel_area_weights(grid, aoi)
+
+    np.testing.assert_allclose(
+        optimized, full_affine_reference, rtol=1e-12, atol=1e-8
+    )
+    assert not np.allclose(
+        full_affine_reference, legacy_reference, rtol=1e-12, atol=1e-8
+    )
+
+
+def test_only_partial_cells_use_exact_intersection(tmp_path, monkeypatch):
+    """Les cellules hors AOI et intérieures évitent l’overlay général."""
+    from src.geo import change_analysis
+
+    aoi_path = _write_aoi(
+        tmp_path / "three-categories.gpkg", [box(0.5, 0.0, 2.5, 1.0)]
+    )
+    aoi = load_equal_area_aoi(aoi_path)
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(6933),
+        resolution=(1.0, 1.0),
+        transform=Affine(1, 0, 0, 0, -1, 1),
+        width=4,
+        height=1,
+    )
+    original_intersection = change_analysis.intersection
+    intersection_sizes = []
+
+    def record_intersection(left, right):
+        intersection_sizes.append(np.asarray(left, dtype=object).size)
+        return original_intersection(left, right)
+
+    monkeypatch.setattr(change_analysis, "intersection", record_intersection)
+    weights = prepare_pixel_area_weights(grid, aoi)
+
+    np.testing.assert_allclose(weights, [[0.5, 1.0, 0.5, 0.0]], atol=1e-8)
+    assert intersection_sizes == [2]
+
+
+def test_boundary_touching_exterior_cells_are_not_overlaid(tmp_path, monkeypatch):
+    """Un contact de bord sans surface commune reste une cellule extérieure."""
+    from src.geo import change_analysis
+
+    aoi_path = _write_aoi(tmp_path / "edge-touch.gpkg", [box(0, 0, 1, 1)])
+    aoi = load_equal_area_aoi(aoi_path)
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(6933),
+        resolution=(1.0, 1.0),
+        transform=Affine(1, 0, 0, 0, -1, 1),
+        width=3,
+        height=1,
+    )
+    original_intersection = change_analysis.intersection
+    intersection_sizes = []
+
+    def record_intersection(left, right):
+        intersection_sizes.append(np.asarray(left, dtype=object).size)
+        return original_intersection(left, right)
+
+    monkeypatch.setattr(change_analysis, "intersection", record_intersection)
+    weights = prepare_pixel_area_weights(grid, aoi)
+
+    np.testing.assert_allclose(weights, [[1.0, 0.0, 0.0]], atol=1e-8)
+    assert intersection_sizes == []
 
 
 def _write_raster(path, values, *, nodata=None):
