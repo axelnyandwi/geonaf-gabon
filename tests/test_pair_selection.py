@@ -4,9 +4,11 @@ import geopandas as gpd
 import numpy as np
 import pytest
 import rasterio
+from affine import Affine
 from rasterio.transform import from_origin
 from rasterio.transform import from_bounds
 from rasterio.warp import transform_bounds
+from shapely.affinity import affine_transform as apply_affine
 from shapely.geometry import box
 
 from src.data.ingestion import STACSearchResults
@@ -15,8 +17,10 @@ from src.geo.pair_selection import (
     PairSelectionConfig,
     PairSearchScope,
     PairSuitability,
+    _crop_grid_to_aoi_bounds,
     select_temporal_pairs,
 )
+from src.geo.temporal import RasterGrid
 
 
 @pytest.fixture
@@ -64,6 +68,117 @@ def _quality(usable=80, coverage=100, data_coverage=100):
         "aoi_coverage_percent": coverage,
         "aoi_data_coverage_percent": data_coverage,
     }
+
+
+def _aoi_frame(geometry, crs="EPSG:6933"):
+    return gpd.GeoDataFrame({"geometry": [geometry]}, crs=crs)
+
+
+def test_crop_north_up_grid_preserves_legacy_window_and_transform():
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(6933),
+        resolution=(1.0, 1.0),
+        transform=from_origin(0, 4, 1, 1),
+        width=4,
+        height=4,
+    )
+
+    cropped = _crop_grid_to_aoi_bounds(
+        grid, _aoi_frame(box(0.5, 0.5, 2.5, 2.5))
+    )
+
+    assert cropped is not None
+    assert (cropped.width, cropped.height) == (3, 3)
+    assert cropped.crs == grid.crs
+    assert cropped.resolution == grid.resolution
+    assert cropped.transform == grid.transform @ Affine.translation(0, 1)
+
+
+@pytest.mark.parametrize(
+    "transform",
+    [
+        Affine(2, -0.5, 100, 0.4, -3, 500),
+        Affine(2, 0.6, 100, 0.35, -3, 500),
+    ],
+    ids=["rotated", "sheared"],
+)
+def test_crop_rotated_and_sheared_grids_uses_inverse_affine(transform):
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(6933),
+        resolution=(abs(transform.a), abs(transform.e)),
+        transform=transform,
+        width=10,
+        height=8,
+    )
+    pixel_aoi = box(1.25, 2.25, 5.75, 6.2)
+    world_aoi = apply_affine(
+        pixel_aoi,
+        [
+            transform.a,
+            transform.b,
+            transform.d,
+            transform.e,
+            transform.c,
+            transform.f,
+        ],
+    )
+
+    cropped = _crop_grid_to_aoi_bounds(grid, _aoi_frame(world_aoi))
+
+    assert cropped is not None
+    assert cropped.crs == grid.crs
+    assert cropped.resolution == grid.resolution
+    assert cropped.width >= 5 and cropped.height >= 5
+    assert cropped.transform == grid.transform @ Affine.translation(1, 2)
+
+
+def test_crop_transforms_aoi_crs_before_inverse_affine():
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(3857),
+        resolution=(1.0, 1.0),
+        transform=from_origin(0, 5, 1, 1),
+        width=5,
+        height=5,
+    )
+    # Approximately 1–4 metres from the origin after reprojection to Web Mercator.
+    frame = _aoi_frame(box(0.000009, 0.000009, 0.000027, 0.000027), "EPSG:4326")
+
+    cropped = _crop_grid_to_aoi_bounds(grid, frame)
+
+    assert cropped is not None
+    assert (cropped.width, cropped.height) == (3, 3)
+    assert cropped.transform == grid.transform @ Affine.translation(1, 1)
+
+
+def test_crop_clips_partially_external_aoi_without_dropping_overlap():
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(6933),
+        resolution=(1.0, 1.0),
+        transform=from_origin(0, 4, 1, 1),
+        width=4,
+        height=4,
+    )
+
+    cropped = _crop_grid_to_aoi_bounds(
+        grid, _aoi_frame(box(-1.5, 2.25, 1.25, 5.5))
+    )
+
+    assert cropped is not None
+    assert (cropped.width, cropped.height) == (2, 2)
+    assert cropped.transform == grid.transform
+
+
+def test_crop_returns_none_when_aoi_is_disjoint_or_only_touches_grid():
+    grid = RasterGrid(
+        crs=rasterio.crs.CRS.from_epsg(6933),
+        resolution=(1.0, 1.0),
+        transform=from_origin(0, 4, 1, 1),
+        width=4,
+        height=4,
+    )
+
+    assert _crop_grid_to_aoi_bounds(grid, _aoi_frame(box(10, 10, 11, 11))) is None
+    assert _crop_grid_to_aoi_bounds(grid, _aoi_frame(box(4, 1, 5, 2))) is None
 
 
 def _search(items):

@@ -22,6 +22,8 @@ import numpy as np
 import rasterio
 from affine import Affine
 from rasterio.warp import transform_bounds
+from shapely import bounds as geometry_bounds
+from shapely import transform as transform_geometry
 
 from src.diagnostics import safe_call
 from src.data.cloud_mask import SCL_MASK_POLICIES
@@ -196,28 +198,74 @@ class _Acquisition:
 
 
 def _crop_grid_to_aoi_bounds(grid, aoi_frame):
-    """Reduce SCL alignment work to the AOI bounding window."""
+    """Return the conservative pixel window enclosing the transformed AOI.
+
+    AOI coordinates are first transformed to the grid CRS, then mapped to
+    pixel coordinates with the inverse full affine. A densified transformed
+    bounds envelope is also included when CRSs differ, preventing curved CRS
+    edges between AOI vertices from trimming a potentially intersecting cell.
+    """
     if aoi_frame.crs == grid.crs:
-        bounds = aoi_frame.total_bounds
+        aoi_in_grid_crs = aoi_frame
+        projected_bounds = None
     else:
-        bounds = transform_bounds(
+        aoi_in_grid_crs = aoi_frame.to_crs(grid.crs)
+        projected_bounds = transform_bounds(
             aoi_frame.crs,
             grid.crs,
             *aoi_frame.total_bounds,
             densify_pts=21,
         )
-    left = max(float(bounds[0]), grid.bounds[0])
-    bottom = max(float(bounds[1]), grid.bounds[1])
-    right = min(float(bounds[2]), grid.bounds[2])
-    top = min(float(bounds[3]), grid.bounds[3])
-    if left >= right or bottom >= top:
+
+    inverse = ~grid.transform
+
+    def world_to_pixel(x, y):
+        return (
+            inverse.a * x + inverse.b * y + inverse.c,
+            inverse.d * x + inverse.e * y + inverse.f,
+        )
+
+    pixel_geometries = transform_geometry(
+        aoi_in_grid_crs.geometry.array,
+        world_to_pixel,
+        interleaved=False,
+    )
+    pixel_bounds = geometry_bounds(pixel_geometries)
+    min_col = float(np.nanmin(pixel_bounds[:, 0]))
+    min_row = float(np.nanmin(pixel_bounds[:, 1]))
+    max_col = float(np.nanmax(pixel_bounds[:, 2]))
+    max_row = float(np.nanmax(pixel_bounds[:, 3]))
+
+    if projected_bounds is not None:
+        left, bottom, right, top = projected_bounds
+        bound_x = np.array([left, left, right, right], dtype=np.float64)
+        bound_y = np.array([bottom, top, bottom, top], dtype=np.float64)
+        bound_cols, bound_rows = world_to_pixel(bound_x, bound_y)
+        min_col = min(min_col, float(np.min(bound_cols)))
+        min_row = min(min_row, float(np.min(bound_rows)))
+        max_col = max(max_col, float(np.max(bound_cols)))
+        max_row = max(max_row, float(np.max(bound_rows)))
+
+    # The pixel-space rectangle is the raster footprint for any nonsingular
+    # affine, including rotated and sheared grids.
+    if (
+        max_col <= 0
+        or max_row <= 0
+        or min_col >= grid.width
+        or min_row >= grid.height
+    ):
         return None
 
-    x_res, y_res = grid.resolution
-    col_start = max(0, int(np.floor((left - grid.transform.c) / x_res)))
-    col_stop = min(grid.width, int(np.ceil((right - grid.transform.c) / x_res)))
-    row_start = max(0, int(np.floor((grid.transform.f - top) / y_res)))
-    row_stop = min(grid.height, int(np.ceil((grid.transform.f - bottom) / y_res)))
+    # Tiny outward padding protects rotated-grid bounds from floating-point
+    # roundoff at exact pixel edges. Keep the historical north-up window exact.
+    is_north_up = np.isclose(grid.transform.b, 0.0, atol=1e-12) and np.isclose(
+        grid.transform.d, 0.0, atol=1e-12
+    )
+    tolerance = 0.0 if is_north_up else 1e-9
+    col_start = max(0, int(np.floor(min_col - tolerance)))
+    col_stop = min(grid.width, int(np.ceil(max_col + tolerance)))
+    row_start = max(0, int(np.floor(min_row - tolerance)))
+    row_stop = min(grid.height, int(np.ceil(max_row + tolerance)))
     width = col_stop - col_start
     height = row_stop - row_start
     if width <= 0 or height <= 0:
