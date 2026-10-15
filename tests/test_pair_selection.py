@@ -505,6 +505,212 @@ def test_reuses_each_aligned_mask_and_equal_area_weights(tmp_path, aoi_path, mon
     assert weight_calls == 1
 
 
+def _assert_selection_results_scientifically_equal(actual, expected):
+    """Compare every result field, allowing only round-off in measured floats."""
+    assert actual.eligible_acquisitions == expected.eligible_acquisitions
+    assert actual.evaluated_pairs == expected.evaluated_pairs
+    assert dict(actual.rejected_counts) == dict(expected.rejected_counts)
+    assert actual.raster_failures == expected.raster_failures
+    assert actual.acquisition_limit_reached is expected.acquisition_limit_reached
+    assert actual.pair_limit_reached is expected.pair_limit_reached
+    assert actual.search_scope is expected.search_scope
+    assert len(actual.pairs) == len(expected.pairs)
+
+    exact_fields = (
+        "earlier_product_id",
+        "later_product_id",
+        "earlier_datetime",
+        "later_datetime",
+        "common_usable_pixels",
+        "suitability",
+    )
+    float_fields = (
+        "interval_days",
+        "common_area_m2",
+        "common_coverage_percent",
+        "min_usable_land_percent",
+        "min_aoi_coverage_percent",
+        "min_aoi_data_coverage_percent",
+        "cloud_cover_sum_percent",
+    )
+    for actual_pair, expected_pair in zip(actual.pairs, expected.pairs):
+        for field in exact_fields:
+            assert getattr(actual_pair, field) == getattr(expected_pair, field)
+        for field in float_fields:
+            actual_value = getattr(actual_pair, field)
+            expected_value = getattr(expected_pair, field)
+            if actual_value is None or expected_value is None:
+                assert actual_value is expected_value
+            elif field == "common_area_m2":
+                # Same cells and same equal-area algorithm; allow 1e-8 m²
+                # for floating-point geometry/intersection summation.
+                assert actual_value == pytest.approx(
+                    expected_value, rel=1e-12, abs=1e-8
+                )
+            elif field == "common_coverage_percent":
+                # Coverage is area / AOI area * 100; tolerance is in
+                # percentage points and far below any SCL pixel's effect.
+                assert actual_value == pytest.approx(
+                    expected_value, rel=1e-12, abs=1e-10
+                )
+            else:
+                # Acquisition intervals and quality metadata are identical
+                # inputs, so any difference would be a logic defect.
+                assert actual_value == expected_value
+
+
+@pytest.mark.parametrize("policy", ["usable_land", "land_surface", "observation"])
+def test_pair_selection_cache_matches_uncached_for_partial_aoi_and_mixed_crs(
+    tmp_path, monkeypatch, policy
+):
+    """Cache reuse must preserve full ranking and measurements on synthetic data."""
+    aoi_path = tmp_path / "partial_aoi.gpkg"
+    gpd.GeoDataFrame(
+        {"geometry": [box(0.25, 0.25, 3.75, 3.75)]}, crs="EPSG:6933"
+    ).to_file(aoi_path, driver="GPKG")
+
+    # Include usable, uncertain, water, cloud, and nodata classes. Acquisition
+    # C is on a different CRS; its footprint is transformed onto A's grid.
+    scl_values = {
+        "A": np.array([[4, 5, 6, 4], [4, 7, 4, 5], [5, 4, 8, 4], [4, 5, 4, 0]]),
+        "B": np.array([[4, 4, 6, 5], [5, 4, 4, 5], [4, 4, 4, 4], [4, 5, 4, 4]]),
+        "C": np.array([[4, 5, 6, 4], [4, 7, 4, 5], [5, 4, 8, 4], [4, 5, 4, 4]]),
+    }
+    paths = {
+        "A": _write_scl(tmp_path / "A.tif", scl_values["A"]),
+        "B": _write_scl(tmp_path / "B.tif", scl_values["B"]),
+        "C": _write_scl(
+            tmp_path / "C.tif",
+            scl_values["C"],
+            transform=from_origin(0, 4, 1, 1),
+            crs="EPSG:3857",
+        ),
+    }
+    items = _search([_item("A", 1), _item("B", 11), _item("C", 21)])
+    quality = {key: _quality() for key in paths}
+    config = PairSelectionConfig(scl_policy=policy)
+
+    cached = select_temporal_pairs(
+        items,
+        scl_paths=paths,
+        quality_by_product=quality,
+        aoi_path=aoi_path,
+        config=config,
+    )
+    with monkeypatch.context() as uncached_patch:
+        # The production API is untouched. Prevent insertions only in this
+        # test call, so each lookup misses and both arrays are recomputed.
+        uncached_patch.setattr(
+            "src.geo.pair_selection._bounded_cache_put",
+            lambda cache, key, value: None,
+        )
+        uncached = select_temporal_pairs(
+            items,
+            scl_paths=paths,
+            quality_by_product=quality,
+            aoi_path=aoi_path,
+            config=config,
+        )
+
+    _assert_selection_results_scientifically_equal(cached, uncached)
+
+
+def test_pair_selection_cache_is_call_local_when_quality_parameters_change(
+    tmp_path, aoi_path, monkeypatch
+):
+    """A later call with stricter quality filters recomputes its candidates."""
+    values = np.full((4, 4), 4, dtype=np.uint8)
+    paths = {key: _write_scl(tmp_path / f"{key}.tif", values) for key in "ABC"}
+    items = _search([_item("A", 1), _item("B", 11), _item("C", 21)])
+    quality = {"A": _quality(90), "B": _quality(70), "C": _quality(60)}
+
+    initial = select_temporal_pairs(
+        items,
+        scl_paths=paths,
+        quality_by_product=quality,
+        aoi_path=aoi_path,
+    )
+    strict_config = PairSelectionConfig(min_usable_land_percent=80)
+    strict_cached = select_temporal_pairs(
+        items,
+        scl_paths=paths,
+        quality_by_product=quality,
+        aoi_path=aoi_path,
+        config=strict_config,
+    )
+    with monkeypatch.context() as uncached_patch:
+        uncached_patch.setattr(
+            "src.geo.pair_selection._bounded_cache_put",
+            lambda cache, key, value: None,
+        )
+        strict_uncached = select_temporal_pairs(
+            items,
+            scl_paths=paths,
+            quality_by_product=quality,
+            aoi_path=aoi_path,
+            config=strict_config,
+        )
+
+    assert len(initial.pairs) == 3
+    assert strict_cached.eligible_acquisitions == 1
+    assert strict_cached.rejected_counts["quality_filter"] == 2
+    assert strict_cached.pairs == ()
+    _assert_selection_results_scientifically_equal(strict_cached, strict_uncached)
+
+
+def test_input_acquisition_order_does_not_change_pair_ranking_or_metrics(
+    tmp_path, aoi_path
+):
+    """Reversing candidates preserves ranking, rejection and scientific metrics."""
+    values = {
+        "A": np.array([[4, 4, 5, 5], [4, 4, 5, 5], [6, 6, 4, 4], [6, 6, 4, 4]]),
+        "B": np.array([[4, 5, 5, 4], [4, 5, 5, 4], [6, 4, 4, 6], [6, 4, 4, 6]]),
+        "C": np.array([[5, 5, 4, 4], [5, 5, 4, 4], [4, 4, 6, 6], [4, 4, 6, 6]]),
+        "D": np.array([[4, 4, 4, 4], [5, 5, 5, 5], [4, 4, 4, 4], [5, 5, 5, 5]]),
+    }
+    paths = {
+        key: _write_scl(tmp_path / f"{key}.tif", array)
+        for key, array in values.items()
+    }
+    items = [
+        _item("A", 1, cloud=30),
+        _item("B", 11, cloud=10),
+        _item("C", 21, cloud=20),
+        _item("D", 31, cloud=15),
+    ]
+    quality = {
+        "A": _quality(80, 95, 90),
+        "B": _quality(70, 90, 85),
+        "C": _quality(60, 85, 80),
+        "D": _quality(90, 100, 95),
+    }
+    config = PairSelectionConfig(
+        min_interval_days=1,
+        max_interval_days=30,
+        min_common_coverage_percent=10,
+        exploratory_coverage_percent=20,
+        representative_coverage_percent=60,
+    )
+
+    forward = select_temporal_pairs(
+        _search(items),
+        scl_paths=paths,
+        quality_by_product=quality,
+        aoi_path=aoi_path,
+        config=config,
+    )
+    reversed_input = select_temporal_pairs(
+        _search(list(reversed(items))),
+        scl_paths=paths,
+        quality_by_product=quality,
+        aoi_path=aoi_path,
+        config=config,
+    )
+
+    assert forward.pairs
+    _assert_selection_results_scientifically_equal(forward, reversed_input)
+
+
 def test_equal_coverage_ties_use_quality_cloud_interval_then_product_ids(
     tmp_path, aoi_path
 ):
