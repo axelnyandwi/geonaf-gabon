@@ -109,6 +109,16 @@ def test_common_scl_policy_excludes_classes_outside_land_surface(tmp_path):
     assert np.isnan(result.delta_ndvi[0, 3:]).all()
 
 
+def test_default_policy_excludes_shadows_in_either_date(tmp_path):
+    values = np.full((1, 4), 0.4, dtype=np.float32)
+    paths = _make_pair(tmp_path, values, values,
+                       first_scl=np.array([[2, 4, 5, 4]], dtype=np.uint8),
+                       second_scl=np.array([[4, 4, 5, 2]], dtype=np.uint8))
+    result = _compare(paths)
+    assert result.comparison_mask.tolist() == [[False, True, True, False]]
+    assert np.isnan(result.delta_ndvi[0, [0, 3]]).all()
+
+
 def test_nodata_in_either_date_is_never_compared(tmp_path):
     """Un NoData source reste invalide même si l'autre date a une valeur valide."""
     nodata = -9999.0

@@ -107,6 +107,8 @@ def clip_raster_to_aoi(
     input_path: Path,
     output_path: Path,
     aoi_path: Path,
+    *,
+    all_touched: bool = False,
 ) -> Path:
     """Clip a raster using an AOI GeoJSON."""
 
@@ -138,6 +140,7 @@ def clip_raster_to_aoi(
             src,
             geometries,
             crop=True,
+            all_touched=all_touched,
         )
 
         # 5. Copie des métadonnées du raster
@@ -262,20 +265,29 @@ def calculate_ndvi(
     output_path: Path,
     *,
     calibration_xml: Path | None = None,
+    inputs_are_reflectance: bool = False,
 ) -> Path:
     """Write NDVI through the canonical implementation.
 
     Supplying ``calibration_xml`` applies the product's BOA offsets and
-    quantification value. Without it, zero offsets and unit scale preserve the
-    historical raw-ratio behavior and avoid applying offsets to reflectance
-    rasters that are already calibrated. Raw Sentinel-2 DN inputs should pass
-    their product metadata explicitly.
+    quantification value. Without it, callers must explicitly declare already
+    calibrated inputs with ``inputs_are_reflectance=True``. Ambiguous inputs
+    are rejected before any output is written.
     """
 
     import numpy as np
     from src.geo.vegetation_indices import calculate_ndvi as calculate_calibrated_ndvi
 
+    if not isinstance(inputs_are_reflectance, bool):
+        raise ValueError("inputs_are_reflectance doit être un booléen.")
+    if calibration_xml is not None and inputs_are_reflectance:
+        raise ValueError("calibration_xml et inputs_are_reflectance=True sont incompatibles.")
     if calibration_xml is None:
+        if not inputs_are_reflectance:
+            raise ValueError(
+                "Fournir calibration_xml pour les DN ou déclarer "
+                "inputs_are_reflectance=True pour des réflectances déjà calibrées."
+            )
         red_offset = 0.0
         nir_offset = 0.0
         quantification_value = 1.0

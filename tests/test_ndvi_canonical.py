@@ -1,5 +1,8 @@
 """Tests for calibrated NDVI and the historical file-writing adapter."""
 
+import json
+from pathlib import Path
+
 import numpy as np
 import pytest
 import rasterio
@@ -115,7 +118,7 @@ def test_historical_adapter_preserves_no_offset_ratio_for_calibrated_reflectance
     nir_path = _write_band(tmp_path / "nir.tif", np.array([[0.4]], dtype=np.float32))
     output_path = tmp_path / "ndvi.tif"
 
-    result = write_ndvi(red_path, nir_path, output_path)
+    result = write_ndvi(red_path, nir_path, output_path, inputs_are_reflectance=True)
 
     assert result == output_path
     with rasterio.open(result) as output:
@@ -142,3 +145,43 @@ def test_historical_adapter_loads_offsets_from_product_xml(tmp_path):
 
     with rasterio.open(output_path) as output:
         assert output.read(1)[0, 0] == pytest.approx(0.6)
+
+
+def test_adapter_rejects_ambiguous_inputs_without_writing(tmp_path):
+    red = _write_band(tmp_path / "red.tif", [[2000]])
+    nir = _write_band(tmp_path / "nir.tif", [[5000]])
+    output = tmp_path / "ndvi.tif"
+    with pytest.raises(ValueError, match="calibration_xml"):
+        write_ndvi(red, nir, output)
+    assert not output.exists()
+
+
+def test_adapter_rejects_conflicting_input_units(tmp_path):
+    with pytest.raises(ValueError, match="incompatibles"):
+        write_ndvi(tmp_path / "red", tmp_path / "nir", tmp_path / "out",
+                   calibration_xml=tmp_path / "xml", inputs_are_reflectance=True)
+
+
+def test_notebook_calibrates_dn_and_excludes_non_land_scl(tmp_path):
+    """Run the notebook's calculation cells offline, with every SCL class."""
+    xml = tmp_path / "MTD_MSIL2A.xml"
+    xml.write_text('''<Product>
+    <BOA_QUANTIFICATION_VALUE>10000</BOA_QUANTIFICATION_VALUE>
+    <BOA_ADD_OFFSET band_id="3">-1000</BOA_ADD_OFFSET>
+    <BOA_ADD_OFFSET band_id="7">-1000</BOA_ADD_OFFSET>
+    </Product>''', encoding="utf-8")
+    red = _write_band(tmp_path / "red.tif", np.full((1, 12), 2000, dtype=np.uint16))
+    nir = _write_band(tmp_path / "nir.tif", np.full((1, 12), 5000, dtype=np.uint16))
+    scl = _write_band(tmp_path / "scl.tif", np.arange(12, dtype=np.uint8)[None, :])
+    notebook = json.loads((Path(__file__).resolve().parents[1] /
+                           "notebooks/01_sentinel2_discovery.ipynb").read_text(encoding="utf-8"))
+    namespace = {"np": np, "b04_local_path": red, "b08_local_path": nir,
+                 "download_band": lambda role: scl}
+    for index in (47, 48, 58, 59, 63, 64, 65, 66):
+        exec("".join(notebook["cells"][index]["source"]), namespace)
+    result = namespace["ndvi_clean"]
+    assert np.flatnonzero(np.isfinite(result)).tolist() == [4, 5]
+    np.testing.assert_allclose(result[0, [4, 5]], 0.6)
+    xml.unlink()
+    with pytest.raises(FileNotFoundError):
+        exec("".join(notebook["cells"][47]["source"]), namespace)

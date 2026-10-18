@@ -8,6 +8,7 @@ from pathlib import Path
 
 import numpy as np
 from pyproj import Transformer
+from rasterio.features import rasterize
 from shapely import (
     area as geometry_area,
     bounds as geometry_bounds,
@@ -21,6 +22,7 @@ from shapely import (
     transform as transform_geometry,
     union_all,
 )
+from shapely.geometry import mapping
 
 from src.diagnostics import safe_call
 from src.geo.temporal import RasterGrid, TemporalComparison
@@ -46,7 +48,9 @@ class NDVIChangeAnalysis:
 
     ``coverage_denominator`` is ``"aoi"`` when a vector AOI was supplied;
     otherwise it is ``"comparison_grid"`` and the percentage describes the
-    common grid only, not geographic coverage of an AOI.
+    common grid only, not geographic coverage of an AOI. With an AOI,
+    descriptive statistics and class pixel counts use comparable cells selected
+    by ``all_touched``; surface indicators retain exact AOI/cell intersections.
     """
 
     change_class_map: np.ndarray
@@ -118,6 +122,26 @@ def _load_aoi_equal_area(aoi_path: str | Path):
     if not np.isfinite(area_m2) or area_m2 <= 0:
         raise ValueError("L'aire de l'AOI est nulle ou invalide.")
     return geometry, area_m2
+
+
+def _rasterize_aoi_pixel_mask(grid: RasterGrid, aoi_path: str | Path) -> np.ndarray:
+    """Rasterize AOI membership using the export's all-touched pixel rule."""
+    import geopandas as gpd
+
+    aoi = safe_call(gpd.read_file, aoi_path, paths=(aoi_path,))
+    if aoi.empty or aoi.crs is None:
+        raise ValueError("L'AOI doit être non vide et avoir un CRS.")
+    if any(geometry is None or is_empty(geometry) or not is_valid(geometry) for geometry in aoi.geometry):
+        raise ValueError("L'AOI contient une géométrie vide ou invalide.")
+    shapes = [(mapping(geometry), 1) for geometry in aoi.to_crs(grid.crs).geometry]
+    return rasterize(
+        shapes,
+        out_shape=(grid.height, grid.width),
+        transform=grid.transform,
+        fill=0,
+        all_touched=True,
+        dtype="uint8",
+    ).astype(bool)
 
 
 def load_equal_area_aoi(aoi_path: str | Path) -> EqualAreaAOI:
@@ -364,9 +388,12 @@ def analyze_ndvi_changes(
     ``[-1, 1]`` are non-comparable. NDVI range exclusions are counted.
 
     Areas use EPSG:6933, a global equal-area CRS compatible with GEONAF's AOIs.
-    AOI surfaces are weighted by each cell's exact polygon intersection with
-    the unioned AOI. Without an AOI, comparable coverage is relative to all
-    cells in the common grid and is labelled ``comparison_grid``.
+    With an AOI, descriptive statistics and class counts include comparable
+    cells touched by the AOI, matching the exported raster pixel rule. A
+    partial cell counts once in these pixel indicators; its surfaces are still
+    weighted by its exact polygon intersection with the unioned AOI. Without
+    an AOI, statistics/counts retain the full comparable grid and coverage is
+    relative to all cells in the common grid, labelled ``comparison_grid``.
     """
     if isinstance(threshold, (bool, np.bool_)) or not np.isscalar(threshold):
         raise ValueError("Le seuil de changement doit être fini et strictement positif.")
@@ -401,8 +428,13 @@ def analyze_ndvi_changes(
         & (date_2 >= -1.0)
         & (date_2 <= 1.0)
     )
+    excluded_mask = source_comparable.copy()
+    aoi_pixel_mask = None
+    if aoi_path is not None:
+        aoi_pixel_mask = _rasterize_aoi_pixel_mask(comparison.grid, aoi_path)
+        excluded_mask &= aoi_pixel_mask
     excluded_out_of_range = int(
-        np.count_nonzero(source_comparable & np.isfinite(date_1) & np.isfinite(date_2) & ~in_ndvi_range)
+        np.count_nonzero(excluded_mask & np.isfinite(date_1) & np.isfinite(date_2) & ~in_ndvi_range)
     )
     comparable_mask = source_comparable & in_ndvi_range & np.isfinite(delta)
     delta[~comparable_mask] = np.nan
@@ -418,6 +450,10 @@ def analyze_ndvi_changes(
     if aoi_path is not None:
         aoi_geometry, aoi_area_m2 = _load_aoi_equal_area(aoi_path)
         denominator = "aoi"
+
+    indicator_mask = comparable_mask
+    if aoi_pixel_mask is not None:
+        indicator_mask = comparable_mask & aoi_pixel_mask
 
     grid_area_m2, comparable_area_m2, class_areas = _cell_area_sums(
         comparison.grid,
@@ -436,7 +472,7 @@ def analyze_ndvi_changes(
     coverage_percent = float(np.clip(coverage_percent, 0.0, 100.0))
 
     class_pixel_counts = {
-        class_name: int(np.count_nonzero(change_map == class_value))
+        class_name: int(np.count_nonzero(indicator_mask & (change_map == class_value)))
         for class_name, class_value in (
             ("decrease", ChangeClass.DECREASE),
             ("stable", ChangeClass.STABLE),
@@ -450,7 +486,7 @@ def analyze_ndvi_changes(
         change_class_map=change_map,
         delta_ndvi=delta.astype(np.float32),
         comparable_mask=comparable_mask,
-        statistics=_summarize_delta(delta, comparable_mask),
+        statistics=_summarize_delta(delta, indicator_mask),
         areas_m2=areas_m2,
         areas_ha=areas_ha,
         class_pixel_counts=class_pixel_counts,

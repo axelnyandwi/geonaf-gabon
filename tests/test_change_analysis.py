@@ -392,6 +392,7 @@ def test_statistics_masks_and_surface_areas_conserve_comparable_area():
     assert result.statistics["min"] == pytest.approx(-0.3)
     assert result.statistics["median"] == pytest.approx(0.0, abs=1e-7)
     assert result.statistics["max"] == pytest.approx(0.3)
+    assert result.class_pixel_counts == {"decrease": 1, "stable": 1, "increase": 1}
     assert result.change_class_map[1, 1] == ChangeClass.NON_COMPARABLE
     assert np.isnan(result.delta_ndvi[1, 1])
     assert result.areas_m2["decrease"] == pytest.approx(1.0)
@@ -423,6 +424,33 @@ def test_aoi_coverage_and_partial_boundary_areas_use_intersections(tmp_path):
     assert result.areas_m2["increase"] == pytest.approx(0.25)
     assert result.areas_m2["stable"] == pytest.approx(0.5)
     assert sum(result.areas_m2.values()) == pytest.approx(1.0)
+
+
+def test_aoi_statistics_and_pixel_counts_exclude_exterior_and_include_partial_cells(
+    tmp_path,
+):
+    """Les indicateurs pixels suivent all_touched, les surfaces restent pondérées."""
+    aoi_path = _write_aoi(
+        tmp_path / "partial-indicators.gpkg", [box(0.25, 0.5, 1.75, 1.5)]
+    )
+    comparison = _comparison(
+        [[-0.2, -0.2, 0.5, 0.5], [-0.2, -0.2, 0.5, 0.5]],
+        valid=[[False, True, True, True], [True, True, True, True]],
+    )
+
+    result = analyze_ndvi_changes(comparison, aoi_path=aoi_path)
+
+    # Four AOI-touching cells are partial; one is NoData and is excluded.
+    assert result.statistics["count"] == 3
+    assert result.statistics["mean"] == pytest.approx(-0.2, abs=1e-7)
+    assert result.class_pixel_counts == {"decrease": 3, "stable": 0, "increase": 0}
+    assert result.areas_m2["decrease"] == pytest.approx(1.125)
+    assert result.comparable_area_m2 == pytest.approx(1.125)
+    assert result.denominator_area_m2 == pytest.approx(1.5)
+    assert result.comparable_coverage_percent == pytest.approx(75.0)
+    # The public raster products retain their full georeferenced grid.
+    assert result.change_class_map.shape == (2, 4)
+    assert result.comparable_mask.tolist() == comparison.comparison_mask.tolist()
 
 
 def test_aoi_overlaps_are_unioned_and_unobserved_area_lowers_coverage(tmp_path):

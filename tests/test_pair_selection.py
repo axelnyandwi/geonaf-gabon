@@ -523,6 +523,8 @@ def _assert_selection_results_scientifically_equal(actual, expected):
         "later_datetime",
         "common_usable_pixels",
         "suitability",
+        "scl_policy",
+        "scl_coverage_grid",
     )
     float_fields = (
         "interval_days",
@@ -804,6 +806,53 @@ def test_different_crs_scl_is_aligned_for_common_coverage(tmp_path):
 
     assert len(result.pairs) == 1
     assert result.pairs[0].common_coverage_percent > 80
+    assert result.pairs[0].scl_policy == "usable_land"
+    assert result.pairs[0].scl_coverage_grid is not None
+    assert result.pairs[0].scl_coverage_grid.crs == rasterio.crs.CRS.from_epsg(6933)
+    assert result.pairs[0].scl_coverage_grid.resolution == (100.0, 100.0)
+
+
+def test_pair_coverage_records_policy_and_class_two_is_policy_dependent(tmp_path):
+    aoi_path = tmp_path / "class-two-aoi.gpkg"
+    gpd.GeoDataFrame({"geometry": [box(0, 0, 4, 4)]}, crs="EPSG:6933").to_file(
+        aoi_path, driver="GPKG"
+    )
+    values = {
+        "A": np.array([[2, 4], [5, 0]], dtype=np.uint8),
+        "B": np.array([[2, 5], [4, 4]], dtype=np.uint8),
+    }
+    paths = {
+        product_id: _write_scl(
+            tmp_path / f"{product_id}.tif",
+            scl_values,
+            transform=from_origin(0, 4, 2, 2),
+        )
+        for product_id, scl_values in values.items()
+    }
+    items = _search([_item("A", 1), _item("B", 11)])
+    quality = {product_id: _quality() for product_id in paths}
+
+    usable = select_temporal_pairs(
+        items,
+        scl_paths=paths,
+        quality_by_product=quality,
+        aoi_path=aoi_path,
+        config=PairSelectionConfig(scl_policy="usable_land"),
+    ).pairs[0]
+    land_surface = select_temporal_pairs(
+        items,
+        scl_paths=paths,
+        quality_by_product=quality,
+        aoi_path=aoi_path,
+        config=PairSelectionConfig(scl_policy="land_surface"),
+    ).pairs[0]
+
+    assert usable.scl_policy == "usable_land"
+    assert land_surface.scl_policy == "land_surface"
+    assert usable.common_coverage_percent == pytest.approx(50.0)
+    assert land_surface.common_coverage_percent == pytest.approx(75.0)
+    assert usable.scl_coverage_grid.resolution == (2.0, 2.0)
+    assert land_surface.scl_coverage_grid == usable.scl_coverage_grid
 
 
 def test_pair_suitability_thresholds_are_configurable(tmp_path, aoi_path):

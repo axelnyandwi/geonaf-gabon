@@ -19,6 +19,8 @@ from src.data.acquisition import (
     Sentinel2Acquisition,
     create_sentinel2_acquisition,
 )
+from src.data.cloud_mask import SCL_MASK_POLICIES
+from src.data.preparation import clip_raster_to_aoi
 from src.geo.change_analysis import (
     DEFAULT_CHANGE_THRESHOLD,
     NDVIChangeAnalysis,
@@ -278,7 +280,7 @@ def analyze_temporal_vegetation_change(
     later: Sentinel2Acquisition,
     *,
     aoi_path: str | Path | None = None,
-    scl_policy: str = "land_surface",
+    scl_policy: str | None = None,
     threshold: float = DEFAULT_CHANGE_THRESHOLD,
     selected_pair: TemporalPair | None = None,
     seasonal_evaluator: SeasonalComparabilityEvaluator | None = None,
@@ -287,11 +289,30 @@ def analyze_temporal_vegetation_change(
 
     Temporary NDVI rasters bridge the existing path-based harmonizer. They
     are created outside the workspace and removed after the comparison; this
-    use case does not export deliverables or perform network operations.
+    use case does not export deliverables or perform network operations. When
+    a selected pair is supplied, its recorded SCL policy is inherited unless
+    an explicit matching policy is provided. Without a pair, ``usable_land``
+    keeps only SCL classes 4 and 5, excluding cast shadows (class 2).
     """
     earlier = _revalidate(earlier)
     later = _revalidate(later)
     _validate_selected_pair(earlier, later, selected_pair)
+    if scl_policy is None:
+        scl_policy = (
+            selected_pair.scl_policy
+            if selected_pair is not None and selected_pair.scl_policy is not None
+            else "usable_land"
+        )
+    if scl_policy not in SCL_MASK_POLICIES:
+        raise ValueError("Politique SCL inconnue.")
+    if (
+        selected_pair is not None
+        and selected_pair.scl_policy is not None
+        and scl_policy != selected_pair.scl_policy
+    ):
+        raise ValueError(
+            "La politique SCL ne correspond pas à celle de la paire sélectionnée."
+        )
     seasonal_assessment = _assess_seasonality(
         earlier.seasonal_context,
         later.seasonal_context,
@@ -299,22 +320,52 @@ def analyze_temporal_vegetation_change(
     )
 
     # Fail before reading band pixels when source footprints cannot form a
-    # supported comparison grid. The harmonizer receives this same grid.
+    # supported comparison grid. The harmonizer receives this same grid when
+    # no AOI is supplied.
     common_grid = build_common_grid(earlier.b04.path, later.b04.path)
 
     with TemporaryDirectory(prefix="geonaf-temporal-analysis-") as scratch:
         scratch_dir = Path(scratch)
+        earlier_paths = {
+            "b04": earlier.b04.path,
+            "b08": earlier.b08.path,
+            "scl": earlier.scl.path,
+        }
+        later_paths = {
+            "b04": later.b04.path,
+            "b08": later.b08.path,
+            "scl": later.scl.path,
+        }
+        if aoi_path is not None:
+            for label, acquisition, paths in (
+                ("earlier", earlier, earlier_paths),
+                ("later", later, later_paths),
+            ):
+                for role, asset in (
+                    ("b04", acquisition.b04),
+                    ("b08", acquisition.b08),
+                    ("scl", acquisition.scl),
+                ):
+                    clipped_path = scratch_dir / f"{label}-{role}-aoi.tif"
+                    clip_raster_to_aoi(
+                        asset.path,
+                        clipped_path,
+                        Path(aoi_path),
+                        all_touched=True,
+                    )
+                    paths[role] = clipped_path
+
         ndvi_earlier, profile_earlier = calculate_ndvi(
-            earlier.b04.path,
-            earlier.b08.path,
+            earlier_paths["b04"],
+            earlier_paths["b08"],
             None,
             earlier.calibration.red_offset,
             earlier.calibration.nir_offset,
             earlier.calibration.quantification_value,
         )
         ndvi_later, profile_later = calculate_ndvi(
-            later.b04.path,
-            later.b08.path,
+            later_paths["b04"],
+            later_paths["b08"],
             None,
             later.calibration.red_offset,
             later.calibration.nir_offset,
@@ -326,11 +377,13 @@ def analyze_temporal_vegetation_change(
         later_path = _write_temporary_ndvi(
             scratch_dir / "later-ndvi.tif", ndvi_later, profile_later
         )
+        if aoi_path is not None:
+            common_grid = build_common_grid(earlier_path, later_path)
         comparison = harmonize_ndvi_pair(
             earlier_path,
             later_path,
-            earlier.scl.path,
-            later.scl.path,
+            earlier_paths["scl"],
+            later_paths["scl"],
             grid=common_grid,
             scl_policy=scl_policy,
         )

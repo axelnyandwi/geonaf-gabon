@@ -142,7 +142,12 @@ class PairSelectionConfig:
 
 @dataclass(frozen=True)
 class TemporalPair:
-    """One measured pair, ordered from earlier to later acquisition."""
+    """One measured pair and the SCL grid/policy behind its coverage score.
+
+    ``common_coverage_percent`` is measured on ``scl_coverage_grid``. It is
+    not inherently equal to the final NDVI analysis coverage, which uses the
+    B04-derived comparison grid.
+    """
 
     earlier_product_id: str
     later_product_id: str
@@ -157,6 +162,8 @@ class TemporalPair:
     min_aoi_data_coverage_percent: float
     cloud_cover_sum_percent: float | None
     suitability: PairSuitability
+    scl_policy: str | None = None
+    scl_coverage_grid: RasterGrid | None = None
 
 
 @dataclass(frozen=True)
@@ -617,6 +624,8 @@ def select_temporal_pairs(
                     else None
                 ),
                 suitability=_suitability(coverage.coverage_percent, config),
+                scl_policy=config.scl_policy,
+                scl_coverage_grid=grid,
             )
         )
 

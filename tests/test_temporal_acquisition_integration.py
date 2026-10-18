@@ -12,7 +12,13 @@ from shapely.geometry import box
 
 from src.data.acquisition import SeasonalContext, create_sentinel2_acquisition
 from src.geo.change_analysis import ChangeClass
-from src.geo.pair_selection import PairSuitability, TemporalPair
+from src.geo.pair_selection import (
+    PairSelectionConfig,
+    PairSearchScope,
+    PairSuitability,
+    TemporalPair,
+    select_temporal_pairs,
+)
 from src.services.temporal_analysis import (
     SeasonalComparabilityAssessment,
     analyze_temporal_vegetation_change,
@@ -46,10 +52,12 @@ def _write_raster(path, values, *, product_id, nodata, transform=TRANSFORM):
 def _make_acquisition(tmp_path, product_id, acquired_at, *, red_dn, nir_dn,
                       red_offset, nir_offset, b08_transform=TRANSFORM,
                       b04_transform=TRANSFORM, embedded_product_id=None,
-                      calibration=True, seasonal_context=None):
+                      calibration=True, seasonal_context=None,
+                      scl_values=None, scl_transform=None,
+                      raster_shape=(4, 4)):
     red_path = _write_raster(
         tmp_path / f"{product_id}-red.tif",
-        np.full((4, 4), red_dn, dtype=np.uint16),
+        np.full(raster_shape, red_dn, dtype=np.uint16),
         product_id=product_id,
         nodata=0,
         transform=b04_transform,
@@ -59,26 +67,27 @@ def _make_acquisition(tmp_path, product_id, acquired_at, *, red_dn, nir_dn,
         nir_path,
         "w",
         driver="GTiff",
-        width=4,
-        height=4,
+        width=raster_shape[1],
+        height=raster_shape[0],
         count=1,
         dtype="uint16",
         crs="EPSG:6933",
         transform=b08_transform if b08_transform != TRANSFORM else b04_transform,
         nodata=0,
     ) as destination:
-        destination.write(np.full((4, 4), nir_dn, dtype=np.uint16), 1)
+        destination.write(np.full(raster_shape, nir_dn, dtype=np.uint16), 1)
         destination.update_tags(PRODUCT_ID=product_id)
 
-    scl_values = np.full((4, 4), 4, dtype=np.uint8)
-    if product_id == PRODUCT_B:
-        scl_values[1, 1] = 7
+    if scl_values is None:
+        scl_values = np.full(raster_shape, 4, dtype=np.uint8)
+        if product_id == PRODUCT_B:
+            scl_values[1, 1] = 7
     scl_path = _write_raster(
         tmp_path / f"{product_id}-scl.tif",
         scl_values,
         product_id=product_id,
         nodata=0,
-        transform=b04_transform,
+        transform=scl_transform if scl_transform is not None else b04_transform,
     )
     xml_path = tmp_path / f"{product_id}-metadata.xml"
     product_uri = embedded_product_id or f"{product_id}.SAFE"
@@ -134,7 +143,29 @@ def _selected_pair(earlier, later):
         min_aoi_data_coverage_percent=0.0,
         cloud_cover_sum_percent=None,
         suitability=PairSuitability.INSUFFICIENT,
+        scl_policy="usable_land",
     )
+
+
+@pytest.mark.parametrize("policy,selected,expected", [
+    (None, False, [False, True, True, False]),
+    ("land_surface", False, [True, True, True, False]),
+    ("vegetation", False, [False, True, False, False]),
+    ("land_surface", True, [True, True, True, False]),
+])
+def test_service_default_and_explicit_scl_policies(tmp_path, policy, selected, expected):
+    classes = np.array([[2, 4, 5, 7]], dtype=np.uint8)
+    acquisitions = [
+        _make_acquisition(tmp_path, product, datetime(2025, 1, day, tzinfo=timezone.utc),
+                          red_dn=2000, nir_dn=5000, red_offset=-1000, nir_offset=-1000,
+                          scl_values=classes, raster_shape=(1, 4))
+        for product, day in ((PRODUCT_A, 1), (PRODUCT_B, 11))
+    ]
+    pair = replace(_selected_pair(*acquisitions), scl_policy=policy) if selected else None
+    result = analyze_temporal_vegetation_change(
+        *acquisitions, selected_pair=pair, scl_policy=None if selected else policy)
+    assert result.scl_policy == (policy or "usable_land")
+    assert result.comparison.comparison_mask.tolist() == [expected]
 
 
 def test_two_acquisitions_calibrate_align_and_analyze_partial_aoi(tmp_path):
@@ -214,6 +245,49 @@ def test_two_acquisitions_calibrate_align_and_analyze_partial_aoi(tmp_path):
         8 / 9 * 100, abs=1e-8
     )
     assert result.analysis.statistics["count"] == 15
+
+
+def test_service_crops_processing_to_aoi_and_preserves_partial_edge_cells(tmp_path):
+    first = _make_acquisition(
+        tmp_path,
+        PRODUCT_A,
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        red_dn=3000,
+        nir_dn=6000,
+        red_offset=-1000,
+        nir_offset=-1000,
+        raster_shape=(20, 20),
+        b04_transform=from_origin(0, 20, 1, 1),
+    )
+    second = _make_acquisition(
+        tmp_path,
+        PRODUCT_B,
+        datetime(2025, 1, 11, tzinfo=timezone.utc),
+        red_dn=2000,
+        nir_dn=7000,
+        red_offset=-500,
+        nir_offset=-1500,
+        raster_shape=(20, 20),
+        b04_transform=from_origin(0, 20, 1, 1),
+    )
+    aoi_path = tmp_path / "small-partial-aoi.gpkg"
+    gpd.GeoDataFrame(
+        {"geometry": [box(5.8, 5.8, 14.2, 14.2)]}, crs="EPSG:6933"
+    ).to_file(aoi_path, driver="GPKG")
+
+    result = analyze_temporal_vegetation_change(
+        first,
+        second,
+        aoi_path=aoi_path,
+        selected_pair=_selected_pair(first, second),
+        scl_policy="usable_land",
+    )
+
+    assert (result.common_grid.height, result.common_grid.width) == (10, 10)
+    assert result.comparison.comparison_mask.all()
+    assert result.analysis.statistics["count"] == 100
+    assert result.analysis.comparable_coverage_percent == pytest.approx(100.0)
+    assert result.analysis.comparable_area_m2 == pytest.approx(8.4 * 8.4)
 
 
 def test_contract_rejects_asset_manifest_with_wrong_product(tmp_path):
@@ -392,6 +466,112 @@ def test_service_rejects_selected_pair_that_does_not_match_assets(tmp_path):
         )
 
 
+def test_service_rejects_explicit_scl_policy_mismatch_with_selected_pair(tmp_path):
+    first = _make_acquisition(
+        tmp_path,
+        PRODUCT_A,
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        red_dn=3000,
+        nir_dn=6000,
+        red_offset=-1000,
+        nir_offset=-1000,
+    )
+    later = _make_acquisition(
+        tmp_path,
+        PRODUCT_B,
+        datetime(2025, 1, 11, tzinfo=timezone.utc),
+        red_dn=2000,
+        nir_dn=7000,
+        red_offset=-500,
+        nir_offset=-1500,
+    )
+
+    with pytest.raises(ValueError, match="ne correspond pas à celle de la paire"):
+        analyze_temporal_vegetation_change(
+            first,
+            later,
+            selected_pair=_selected_pair(first, later),
+            scl_policy="land_surface",
+        )
+
+
+def test_selected_pair_policy_and_scl_grid_are_traced_separately_from_b04_analysis(
+    tmp_path,
+):
+    scl_grid_transform = from_origin(1, 4, 2, 2)
+    earlier = _make_acquisition(
+        tmp_path,
+        PRODUCT_A,
+        datetime(2025, 1, 1, tzinfo=timezone.utc),
+        red_dn=3000,
+        nir_dn=6000,
+        red_offset=-1000,
+        nir_offset=-1000,
+        scl_values=np.array([[2, 4], [5, 0]], dtype=np.uint8),
+        scl_transform=scl_grid_transform,
+    )
+    later = _make_acquisition(
+        tmp_path,
+        PRODUCT_B,
+        datetime(2025, 1, 11, tzinfo=timezone.utc),
+        red_dn=2000,
+        nir_dn=7000,
+        red_offset=-500,
+        nir_offset=-1500,
+        scl_values=np.array([[2, 5], [4, 4]], dtype=np.uint8),
+        scl_transform=scl_grid_transform,
+    )
+    aoi_path = tmp_path / "partial-grid-aoi.gpkg"
+    gpd.GeoDataFrame(
+        {"geometry": [box(0.5, 0.5, 3.5, 3.5)]}, crs="EPSG:6933"
+    ).to_file(aoi_path, driver="GPKG")
+    search = [
+        {"id": acquisition.product_id, "properties": {"datetime": acquisition.acquired_at.isoformat()}}
+        for acquisition in (earlier, later)
+    ]
+    quality = {
+        acquisition.product_id: {
+            "usable_land_percent": 90.0,
+            "aoi_coverage_percent": 100.0,
+            "aoi_data_coverage_percent": 100.0,
+        }
+        for acquisition in (earlier, later)
+    }
+    selection = select_temporal_pairs(
+        search,
+        scl_paths={
+            earlier.product_id: earlier.scl.path,
+            later.product_id: later.scl.path,
+        },
+        quality_by_product=quality,
+        aoi_path=aoi_path,
+        search_scope=PairSearchScope.LOCAL_SUBSET,
+        config=PairSelectionConfig(scl_policy="land_surface"),
+    )
+    pair = selection.pairs[0]
+
+    result = analyze_temporal_vegetation_change(
+        earlier,
+        later,
+        aoi_path=aoi_path,
+        selected_pair=pair,
+    )
+
+    assert pair.scl_policy == result.scl_policy == "land_surface"
+    assert pair.scl_coverage_grid is not None
+    assert pair.scl_coverage_grid.resolution == (2.0, 2.0)
+    assert pair.scl_coverage_grid.width == 2
+    assert result.common_grid.resolution == (1.0, 1.0)
+    assert result.common_grid.width == 4
+    assert pair.common_coverage_percent == pytest.approx(75.0)
+    # The selector measures its SCL grid; analysis reports its B04-grid basis.
+    assert 0.0 <= result.analysis.comparable_coverage_percent <= 100.0
+    assert result.analysis.comparable_mask.shape == (4, 4)
+    assert result.analysis.comparable_mask.sum() < 16  # SCL NoData propagates.
+    assert result.analysis.comparable_mask[0, 1]  # land_surface keeps class 2.
+    assert not result.analysis.comparable_mask[2, 3]  # Source SCL NoData stays invalid.
+
+
 def test_service_rejects_nonintersecting_acquisition_grids(tmp_path):
     first = _make_acquisition(
         tmp_path,
@@ -467,6 +647,7 @@ def test_inseasonal_labels_are_preserved_and_warn_without_rejecting(tmp_path):
     assert any("intersaisonnière" in warning for warning in result.seasonal_assessment.warnings)
     # Interseasonal comparisons remain analyzable; the assessment is a warning.
     assert result.analysis.statistics["count"] > 0
+    assert result.scl_policy == "usable_land"  # Quantitative land default without a selected pair.
 
 
 def test_same_season_label_is_not_reported_as_proof_of_comparability(tmp_path):

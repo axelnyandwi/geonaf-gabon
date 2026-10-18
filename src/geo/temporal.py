@@ -417,7 +417,7 @@ def harmonize_ndvi_pair(
     scl_date_2_path: str | Path,
     *,
     grid: RasterGrid | None = None,
-    scl_policy: str = "land_surface",
+    scl_policy: str = "usable_land",
 ) -> TemporalComparison:
     """Align two NDVI/SCL dates and calculate their common-mask difference.
 

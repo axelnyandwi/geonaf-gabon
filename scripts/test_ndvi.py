@@ -22,11 +22,21 @@ OUTPUT_DIR = (
 )
 
 
-b04_files = list(RAW_DIR.rglob("*B04_10m.jp2"))
-b08_files = list(RAW_DIR.rglob("*B08_10m.jp2"))
+b04_files = [
+    path
+    for path in RAW_DIR.rglob("*B04_10m.jp2")
+    if (path.parent / path.name.replace("B04_10m", "B08_10m")).is_file()
+    and (path.parent / "MTD_MSIL2A.xml").is_file()
+]
 
-if not b04_files or not b08_files:
-    raise FileNotFoundError("B04 ou B08 introuvable.")
+if not b04_files:
+    raise FileNotFoundError("Paire B04/B08 avec métadonnées de calibration introuvable.")
+
+b04_file = b04_files[0]
+b08_file = b04_file.with_name(
+    b04_file.name.replace("B04_10m", "B08_10m")
+)
+calibration_xml = b04_file.parent / "MTD_MSIL2A.xml"
 
 
 b04_output = OUTPUT_DIR / "libreville_B04_10m.tif"
@@ -35,13 +45,13 @@ ndvi_output = OUTPUT_DIR / "libreville_NDVI.tif"
 
 
 clip_raster_to_aoi(
-    b04_files[0],
+    b04_file,
     b04_output,
     AOI_PATH,
 )
 
 clip_raster_to_aoi(
-    b08_files[0],
+    b08_file,
     b08_output,
     AOI_PATH,
 )
@@ -50,6 +60,7 @@ calculate_ndvi(
     red_path=b04_output,
     nir_path=b08_output,
     output_path=ndvi_output,
+    calibration_xml=calibration_xml,
 )
 
 

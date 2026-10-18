@@ -1,5 +1,38 @@
 # GEONAF
 
+## Prototype Streamlit local V0.1 — Akanda
+
+Depuis la racine du dépôt, avec l’environnement installé :
+
+```powershell
+.venv\Scripts\python.exe -m streamlit run app.py --server.address 127.0.0.1 --server.port 8501 --server.headless true --browser.gatherUsageStats false
+```
+
+Ouvrir `http://127.0.0.1:8501`. Arrêter avec `Ctrl+C`.
+Le prototype lit uniquement les acquisitions locales vérifiées des 15 et
+25 janvier 2025 et `data/aoi/akanda.geojson` (ou le répertoire de données
+configuré). Chaque produit doit posséder son `acquisition_manifest.json`,
+ses bandes B04/B08, sa SCL et son XML BOA. Les empreintes SHA-256 sont
+vérifiées avant calcul. Aucun accès réseau aux données ni contournement TLS.
+
+Les sélecteurs affichent les dates d’acquisition UTC présentes dans les
+manifestes ; aucun moteur de sélection supplémentaire. Le bouton affiche
+la paire sélectionnée sans recalcul si ses entrées sont inchangées. Le
+résultat scientifique reste en session ; acquisitions, AOI, SCL et seuil
+participent à la clé d’invalidation. Seuls les PNG sont partagés via
+`st.cache_data` (quatre entrées en mémoire). Le détail des clés, des limites
+et des mesures est dans [le diagnostic de performance](docs/streamlit_performance.md).
+Les deux NDVI utilisent la même échelle [−1, 1], le delta
+une échelle fixe symétrique [−2, 2] ; le gris représente les observations
+inexploitables ou non comparables. Politique quantitative : SCL 4 et 5.
+
+L’AOI est un carré d’acquisition de 12 × 12 km, pas la limite administrative
+d’Akanda. Les statistiques décrivent les pixels comparables ; les surfaces
+sont pondérées par leur intersection avec l’AOI. Une variation de NDVI ne
+démontre pas une déforestation. Les limites atmosphériques, saisonnières et
+de représentativité restent applicables. Aucun export de provenance contenant
+des chemins locaux n’est proposé dans cette interface.
+
 **Observer · Comprendre · Prédire · Simuler**
 
 GEONAF est une plateforme Python d’intelligence géospatiale destinée à observer, comprendre, prédire et simuler les phénomènes territoriaux. Le MVP porte sur Libreville, Akanda et Owendo, avec l’ambition de pouvoir s’étendre à l’échelle africaine.

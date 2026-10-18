@@ -10,16 +10,11 @@ from enum import Enum
 from pathlib import Path
 from typing import Mapping
 
-import geopandas as gpd
 import numpy as np
 import rasterio
 from affine import Affine
-from rasterio.features import rasterize
-from shapely import is_empty, is_valid
-from shapely.geometry import mapping
 
-from src.diagnostics import safe_call
-from src.geo.change_analysis import ChangeClass
+from src.geo.change_analysis import ChangeClass, _rasterize_aoi_pixel_mask
 from src.services.temporal_analysis import TemporalVegetationChangeResult
 
 
@@ -56,22 +51,7 @@ def _aoi_pixel_mask(result: TemporalVegetationChangeResult) -> np.ndarray:
     grid = result.common_grid
     if result.aoi_path is None:
         return np.ones((grid.height, grid.width), dtype=bool)
-
-    aoi = safe_call(gpd.read_file, result.aoi_path, paths=(result.aoi_path,))
-    if aoi.empty or aoi.crs is None:
-        raise ValueError("L'AOI exportée doit être non vide et avoir un CRS.")
-    if any(geometry is None or is_empty(geometry) or not is_valid(geometry) for geometry in aoi.geometry):
-        raise ValueError("L'AOI exportée contient une géométrie vide ou invalide.")
-    geometries = aoi.to_crs(grid.crs).geometry
-    shapes = [(mapping(geometry), 1) for geometry in geometries]
-    return rasterize(
-        shapes,
-        out_shape=(grid.height, grid.width),
-        transform=grid.transform,
-        fill=0,
-        all_touched=True,
-        dtype="uint8",
-    ).astype(bool)
+    return _rasterize_aoi_pixel_mask(grid, result.aoi_path)
 
 
 def _season_metadata(result: TemporalVegetationChangeResult) -> dict:

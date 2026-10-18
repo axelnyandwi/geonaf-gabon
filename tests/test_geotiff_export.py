@@ -173,6 +173,8 @@ def test_export_aoi_edge_pixels_and_nodata_preserve_weighted_surface_indicators(
     assert raster["valid_pixel_count"] == 4
     assert raster["exported_pixel_counts"]["decrease"] == 4
     assert raster["nodata"] == {"change_class": 0, "delta_ndvi": "NaN"}
+    assert manifest["analysis_indicators"]["statistics"]["count"] == 4
+    assert manifest["analysis_indicators"]["class_pixel_counts"] == raster["exported_pixel_counts"]
     assert manifest["analysis_indicators"]["areas_m2"]["decrease"] == 22500.0
     assert "intersection exacte" in raster["surface_note"]
 

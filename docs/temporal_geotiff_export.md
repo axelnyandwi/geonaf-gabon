@@ -30,14 +30,21 @@ représentée dès qu'elle touche l'AOI. Les cellules invalides/non comparables
 ont un masque GDAL nul ; leur valeur de classe est `0` et leur ΔNDVI est
 `NaN` (NoData). Les tags indiquent ces conventions.
 
-Cette représentation par cellules entières ne mesure pas la surface. Les
-surfaces, couvertures et indicateurs reproduits dans le manifeste restent
-ceux du calcul métier : les intersections exactes AOI-cellule sont pondérées
-en aire égale. Une cellule partiellement couverte compte comme un pixel
-représenté dans le GeoTIFF, mais ne contribue aux surfaces qu'à hauteur de sa
-fraction dans l'AOI. `exported_pixel_counts` décrit les pixels valides écrits
-dans l'emprise AOI ; `analysis_indicators.class_pixel_counts` reste le compte
-calculé par l'analyse sur sa grille complète. Ces comptes peuvent différer.
+Cette représentation par cellules entières ne mesure pas la surface. Avec une
+AOI, les statistiques descriptives et `class_pixel_counts` portent sur les
+pixels comparables sélectionnés par la même règle `all_touched=True` que
+l'export ; chaque cellule touchant l'AOI compte une fois, quelle que soit sa
+fraction couverte. Les pixels extérieurs à cette emprise ne contribuent plus
+à ces indicateurs. Sans AOI, ils conservent leur périmètre historique : toute
+la grille comparable.
+
+Les surfaces et couvertures utilisent une mesure différente : chaque cellule
+contribue selon l'intersection exacte AOI-cellule en aire égale. Ainsi, une
+cellule partielle compte comme un pixel entier dans les comptes et statistiques
+par pixel, mais sa surface ne contribue qu'à hauteur de sa fraction dans l'AOI.
+`exported_pixel_counts` et `analysis_indicators.class_pixel_counts` concordent
+pour les pixels comparables écrits ; le compte des statistiques (`count`) suit
+la même sélection. Les surfaces ne sont pas déduites de ces comptes.
 
 ## Tags et limites
 
