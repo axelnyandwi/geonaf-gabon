@@ -3,26 +3,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from collections import OrderedDict
 from enum import IntEnum
+from hashlib import sha256
 from pathlib import Path
+from threading import RLock
 
 import numpy as np
 from pyproj import Transformer
 from rasterio.features import rasterize
 from shapely import (
     area as geometry_area,
-    bounds as geometry_bounds,
     covers,
+    disjoint,
     intersection,
     is_empty,
     is_valid,
     polygons,
     prepare as prepare_geometry,
     relate_pattern,
-    transform as transform_geometry,
     union_all,
 )
-from shapely.geometry import mapping
+from shapely.geometry import box, mapping
 
 from src.diagnostics import safe_call
 from src.geo.temporal import RasterGrid, TemporalComparison
@@ -31,6 +33,30 @@ from src.geo.temporal import RasterGrid, TemporalComparison
 EQUAL_AREA_CRS = "EPSG:6933"
 DEFAULT_CHANGE_THRESHOLD = 0.10
 MAX_AREA_CELLS_PER_CHUNK = 100_000
+AREA_BLOCK_SIZE = 256
+AREA_CACHE_MAX_BYTES = 64 * 1024 * 1024
+AREA_CACHE_MAX_ENTRIES = 4
+_AREA_ALGORITHM_VERSION = "projected-quadrilateral-v1"
+_area_cache = OrderedDict()
+_area_cache_lock = RLock()
+_area_cache_hits = 0
+_area_cache_misses = 0
+
+
+def clear_area_weight_cache():
+    """Clear process-local weights and diagnostic counters atomically."""
+    global _area_cache_hits, _area_cache_misses
+    with _area_cache_lock:
+        _area_cache.clear()
+        _area_cache_hits = _area_cache_misses = 0
+
+
+def area_weight_cache_info():
+    """Return aggregate diagnostics, never geometry, keys or source paths."""
+    with _area_cache_lock:
+        return {"entries": len(_area_cache),
+                "bytes": sum(v.nbytes for v in _area_cache.values()),
+                "hits": _area_cache_hits, "misses": _area_cache_misses}
 
 
 class ChangeClass(IntEnum):
@@ -94,12 +120,11 @@ def prepare_pixel_area_weights(
     Zero-weight cells lie outside the AOI. The returned float64 array is
     reusable for multiple masks on the same affine grid.
     """
-    weights = np.zeros((grid.height, grid.width), dtype=np.float64)
-    for row_start, row_end, pixel_areas in _pixel_area_chunks(
-        grid, aoi.geometry
-    ):
-        weights[row_start:row_end] = pixel_areas
-    return weights
+    cached = _cached_area_weights(grid, aoi.geometry)
+    if cached is not None:
+        # Public callers own their array, including the right to mutate it.
+        return cached.copy()
+    return _compute_area_weights(grid, aoi.geometry)
 
 
 def _load_aoi_equal_area(aoi_path: str | Path):
@@ -150,109 +175,174 @@ def load_equal_area_aoi(aoi_path: str | Path) -> EqualAreaAOI:
     return EqualAreaAOI(geometry=geometry, area_m2=area_m2)
 
 
-def _pixel_area_chunks(grid: RasterGrid, aoi_geometry=None):
-    """Yield equal-area cell weights in bounded chunks.
+def _area_cache_key(grid, geometry):
+    # Hash the actual projected geometry: edits with unchanged file metadata
+    # still invalidate reuse. No coordinates or file paths remain in the key.
+    geometry_key = None if geometry is None else sha256(geometry.wkb).digest()
+    return (_AREA_ALGORITHM_VERSION, grid.crs.to_wkt(), EQUAL_AREA_CRS,
+            tuple(grid.transform), grid.width, grid.height, tuple(grid.resolution),
+            geometry_key, AREA_BLOCK_SIZE, MAX_AREA_CELLS_PER_CHUNK)
 
-    Cells are classified as outside, fully covered, or partial. Fully covered
-    cells use their transformed cell area; exact intersections are reserved
-    for partial cells. Without an AOI, full cell areas are returned.
-    """
-    transformer = Transformer.from_crs(
-        grid.crs,
-        EQUAL_AREA_CRS,
-        always_xy=True,
-    )
-    width = grid.width
-    rows_per_chunk = max(1, min(128, MAX_AREA_CELLS_PER_CHUNK // width))
-    if aoi_geometry is not None:
-        # Prepared GEOS state accelerates repeated predicates against this AOI
-        # across all cells and row chunks without changing geometry or areas.
-        prepare_geometry(aoi_geometry)
 
-    for row_start in range(0, grid.height, rows_per_chunk):
-        row_end = min(row_start + rows_per_chunk, grid.height)
-        rows, cols = np.meshgrid(
-            np.arange(row_start, row_end, dtype=np.float64),
-            np.arange(width, dtype=np.float64),
-            indexing="ij",
-        )
-        corner_coordinates = []
-        for col_offset, row_offset in (
-            (0, 0),
-            (1, 0),
-            (1, 1),
-            (0, 1),
-            (0, 0),
+def _cached_area_weights(grid, geometry):
+    global _area_cache_hits, _area_cache_misses
+    size = grid.width * grid.height * np.dtype(np.float64).itemsize
+    # Oversized analyses stream instead of allocating a full weight matrix.
+    if size > AREA_CACHE_MAX_BYTES or AREA_CACHE_MAX_ENTRIES < 1:
+        return None
+    key = _area_cache_key(grid, geometry)
+    with _area_cache_lock:
+        if key in _area_cache:
+            _area_cache_hits += 1
+            _area_cache.move_to_end(key)
+            return _area_cache[key]
+        _area_cache_misses += 1
+        # A single builder bounds concurrent scratch allocations. Holding the
+        # lock also prevents publishing stale work across an explicit clear.
+        # Evict before allocation, not after exceeding the storage budget.
+        while _area_cache and (
+            len(_area_cache) >= AREA_CACHE_MAX_ENTRIES
+            or sum(v.nbytes for v in _area_cache.values()) + size > AREA_CACHE_MAX_BYTES
         ):
-            pixel_cols = cols + col_offset
-            pixel_rows = rows + row_offset
-            # Include all six affine terms; the legacy path omitted rotation
-            # and shear (b, d), which shifted cell footprints on such grids.
-            x = (
-                grid.transform.a * pixel_cols
-                + grid.transform.b * pixel_rows
-                + grid.transform.c
-            )
-            y = (
-                grid.transform.d * pixel_cols
-                + grid.transform.e * pixel_rows
-                + grid.transform.f
-            )
-            corner_coordinates.append(np.stack((x, y), axis=-1))
+            _area_cache.popitem(last=False)
+        weights = _compute_area_weights(grid, geometry)
+        weights.flags.writeable = False
+        _area_cache[key] = weights
+        return weights
 
-        cell_coordinates = np.stack(corner_coordinates, axis=2).reshape(-1, 5, 2)
-        cell_polygons = polygons(cell_coordinates)
-        equal_area_cells = transform_geometry(
-            cell_polygons,
-            transformer.transform,
-            interleaved=False,
-        )
-        if aoi_geometry is None:
-            pixel_areas = geometry_area(equal_area_cells)
+
+def _projected_tile(grid, transformer, row, end_row, col, end_col):
+    # Shared vertices retain the exact six-term affine expression used by the
+    # oracle. PROJ transforms each distinct vertex once, rather than five times.
+    rows, cols = np.meshgrid(np.arange(row, end_row + 1, dtype=np.float64),
+                             np.arange(col, end_col + 1, dtype=np.float64),
+                             indexing="ij")
+    affine = grid.transform
+    x = affine.a * cols + affine.b * rows + affine.c
+    y = affine.d * cols + affine.e * rows + affine.f
+    x, y = transformer.transform(x, y)
+    if not np.all(np.isfinite(x)) or not np.all(np.isfinite(y)):
+        raise ValueError("La projection des cellules produit des coordonnées non finies.")
+    return np.stack((x, y), axis=-1)
+
+
+def _quadrilateral_areas(vertices):
+    # GEOS Area::ofRingSigned arithmetic, with the first x as origin, avoids
+    # cancellation of large absolute coordinates. Preserve its operation order.
+    p0 = vertices[:-1, :-1]
+    p1 = vertices[:-1, 1:]
+    p2 = vertices[1:, 1:]
+    p3 = vertices[1:, :-1]
+    total = (p1[..., 0] - p0[..., 0]) * (p0[..., 1] - p2[..., 1])
+    total += (p2[..., 0] - p0[..., 0]) * (p1[..., 1] - p3[..., 1])
+    total += (p3[..., 0] - p0[..., 0]) * (p2[..., 1] - p0[..., 1])
+    return np.abs(total / 2.0)
+
+
+def _fill_projected_block(vertices, geometry, output):
+    # The bounds include ALL transformed vertices, not just four tile corners.
+    # Every straight-edged quadrilateral of the oracle lies within this box,
+    # even for nonlinear projections. AOI predicates run in its EPSG:6933 CRS.
+    envelope = box(float(vertices[..., 0].min()), float(vertices[..., 1].min()),
+                   float(vertices[..., 0].max()), float(vertices[..., 1].max()))
+    if geometry is None or covers(geometry, envelope):
+        output[:] = _quadrilateral_areas(vertices)
+        return
+    if disjoint(geometry, envelope):
+        output[:] = 0.0
+        return
+    height, width = output.shape
+    if height * width > 64:
+        # Subdivide ambiguous boxes; holes and concavities cannot be classified
+        # as interior merely because their outer corners lie in the AOI.
+        if height >= width:
+            middle = height // 2
+            _fill_projected_block(vertices[:middle + 1], geometry, output[:middle])
+            _fill_projected_block(vertices[middle:], geometry, output[middle:])
         else:
-            flat_cells = equal_area_cells.reshape(-1)
-            flat_areas = np.zeros(flat_cells.shape, dtype=np.float64)
-            aoi_min_x, aoi_min_y, aoi_max_x, aoi_max_y = aoi_geometry.bounds
-            cell_bounds = geometry_bounds(flat_cells)
-            candidate_mask = (
-                (cell_bounds[:, 0] <= aoi_max_x)
-                & (cell_bounds[:, 2] >= aoi_min_x)
-                & (cell_bounds[:, 1] <= aoi_max_y)
-                & (cell_bounds[:, 3] >= aoi_min_y)
-            )
-            candidate_indexes = np.flatnonzero(candidate_mask)
-            if candidate_indexes.size:
-                candidate_cells = flat_cells[candidate_indexes]
-                fully_covered = np.asarray(
-                    covers(aoi_geometry, candidate_cells), dtype=bool
-                )
-                interior_indexes = candidate_indexes[fully_covered]
-                if interior_indexes.size:
-                    flat_areas[interior_indexes] = geometry_area(
-                        flat_cells[interior_indexes]
-                    )
+            middle = width // 2
+            _fill_projected_block(vertices[:, :middle + 1], geometry, output[:, :middle])
+            _fill_projected_block(vertices[:, middle:], geometry, output[:, middle:])
+        return
+    coordinates = np.stack((vertices[:-1, :-1], vertices[:-1, 1:],
+                            vertices[1:, 1:], vertices[1:, :-1],
+                            vertices[:-1, :-1]), axis=2).reshape(-1, 5, 2)
+    cells = polygons(coordinates)
+    values = np.zeros(cells.size, dtype=np.float64)
+    interior = np.asarray(covers(geometry, cells), dtype=bool)
+    values[interior] = geometry_area(cells[interior])
+    partial = np.flatnonzero(~interior)
+    if partial.size:
+        overlapping = np.asarray(relate_pattern(geometry, cells[partial], "T********"),
+                                 dtype=bool)
+        partial = partial[overlapping]
+        if partial.size:
+            values[partial] = geometry_area(intersection(cells[partial], geometry))
+    output[:] = values.reshape(output.shape)
 
-                edge_indexes = candidate_indexes[~fully_covered]
-                if edge_indexes.size:
-                    edge_cells = flat_cells[edge_indexes]
-                    positive_area_overlaps = np.asarray(
-                        relate_pattern(
-                            aoi_geometry, edge_cells, "T********"
-                        ),
-                        dtype=bool,
-                    )
-                    partial_indexes = edge_indexes[positive_area_overlaps]
-                    if partial_indexes.size:
-                        partial_intersections = intersection(
-                            flat_cells[partial_indexes], aoi_geometry
-                        )
-                        flat_areas[partial_indexes] = geometry_area(
-                            partial_intersections
-                        )
-            pixel_areas = flat_areas.reshape(row_end - row_start, width)
 
-        pixel_areas = pixel_areas.reshape(row_end - row_start, width)
-        yield row_start, row_end, pixel_areas
+def _tile_size():
+    # Bound both axes, including rasters wider than the former row-strip cap.
+    return max(1, min(AREA_BLOCK_SIZE, int(np.sqrt(MAX_AREA_CELLS_PER_CHUNK))))
+
+
+def _compute_area_weights(grid, geometry):
+    weights = np.empty((grid.height, grid.width), dtype=np.float64)
+    transformer = Transformer.from_crs(grid.crs, EQUAL_AREA_CRS, always_xy=True)
+    if geometry is not None:
+        prepare_geometry(geometry)
+    side = _tile_size()
+    for row in range(0, grid.height, side):
+        end_row = min(row + side, grid.height)
+        for col in range(0, grid.width, side):
+            end_col = min(col + side, grid.width)
+            vertices = _projected_tile(grid, transformer, row, end_row, col, end_col)
+            _fill_projected_block(vertices, geometry, weights[row:end_row, col:end_col])
+    return weights
+
+
+def _reduction_slices(grid):
+    # Preserve the old summation strips whenever their allocation is bounded.
+    # Exception: a row wider than the ceiling must also be split horizontally.
+    rows = max(1, min(128, MAX_AREA_CELLS_PER_CHUNK // grid.width))
+    columns = grid.width if grid.width <= MAX_AREA_CELLS_PER_CHUNK else _tile_size()
+    for row in range(0, grid.height, rows):
+        for col in range(0, grid.width, columns):
+            yield (slice(row, min(row + rows, grid.height)),
+                   slice(col, min(col + columns, grid.width)))
+
+
+def _pixel_area_chunks(grid: RasterGrid, aoi_geometry=None):
+    """Stream bounded weights with geometry scratch limited to 256x256 cells.
+
+    Reductions keep the former row ordering unless even one row exceeds the
+    cell ceiling; that case uses bounded column segments as well.
+    """
+    transformer = Transformer.from_crs(grid.crs, EQUAL_AREA_CRS, always_xy=True)
+    if aoi_geometry is not None:
+        prepare_geometry(aoi_geometry)
+    side = _tile_size()
+    for selection in _reduction_slices(grid):
+        rows, cols = selection
+        values = np.empty((rows.stop - rows.start, cols.stop - cols.start), dtype=np.float64)
+        for row in range(rows.start, rows.stop, side):
+            end_row = min(row + side, rows.stop)
+            for col in range(cols.start, cols.stop, side):
+                end_col = min(col + side, cols.stop)
+                vertices = _projected_tile(grid, transformer, row, end_row, col, end_col)
+                _fill_projected_block(vertices, aoi_geometry,
+                                      values[row-rows.start:end_row-rows.start,
+                                             col-cols.start:end_col-cols.start])
+        yield selection, values
+
+
+def _area_weight_chunks(grid, geometry):
+    weights = _cached_area_weights(grid, geometry)
+    if weights is None:
+        yield from _pixel_area_chunks(grid, geometry)
+        return
+    for selection in _reduction_slices(grid):
+        yield selection, weights[selection]
 
 
 def _cell_area_sums(
@@ -266,10 +356,10 @@ def _cell_area_sums(
     comparable_area = 0.0
     class_areas = {"decrease": 0.0, "stable": 0.0, "increase": 0.0}
 
-    for row_start, row_end, pixel_areas in _pixel_area_chunks(grid, aoi_geometry):
+    for selection, pixel_areas in _area_weight_chunks(grid, aoi_geometry):
         total_grid_area += float(pixel_areas.sum())
-        comparable_chunk = comparable_mask[row_start:row_end]
-        class_chunk = class_map[row_start:row_end]
+        comparable_chunk = comparable_mask[selection]
+        class_chunk = class_map[selection]
         comparable_area += float(pixel_areas[comparable_chunk].sum())
         for class_name, class_value in (
             ("decrease", ChangeClass.DECREASE),
@@ -317,20 +407,16 @@ def measure_mask_coverage(
         # Keep the former row-chunk summation order. Besides bounding temporary
         # arrays, this preserves stable floating-point pair ties against the
         # uncached exact-intersection implementation.
-        rows_per_chunk = max(
-            1, min(128, MAX_AREA_CELLS_PER_CHUNK // grid.width)
-        )
-        for row_start in range(0, grid.height, rows_per_chunk):
-            row_end = min(row_start + rows_per_chunk, grid.height)
-            weight_chunk = weights[row_start:row_end]
-            mask_chunk = mask[row_start:row_end]
+        for selection in _reduction_slices(grid):
+            weight_chunk = weights[selection]
+            mask_chunk = mask[selection]
             covered_area_m2 += float(weight_chunk[mask_chunk].sum(dtype=np.float64))
             covered_pixel_count += int(
                 np.count_nonzero(mask_chunk & (weight_chunk > 0))
             )
     else:
-        for row_start, row_end, pixel_areas in _pixel_area_chunks(grid, aoi_geometry):
-            mask_chunk = mask[row_start:row_end]
+        for selection, pixel_areas in _area_weight_chunks(grid, aoi_geometry):
+            mask_chunk = mask[selection]
             covered_area_m2 += float(pixel_areas[mask_chunk].sum())
             covered_pixel_count += int(np.count_nonzero(mask_chunk & (pixel_areas > 0)))
 
