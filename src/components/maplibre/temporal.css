@@ -1,0 +1,19 @@
+.geonaf-temporal { color: #e5e7eb; background: #0e1117; font: 14px system-ui, sans-serif; padding: 12px; }
+.temporal-controls { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; }
+.temporal-controls label:first-child { display: none; }
+.temporal-controls select, .temporal-controls button { padding: 7px; background: #263445; color: #fff; border: 1px solid #94a3b8; border-radius: 4px; }
+.temporal-panels { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.temporal-panels article { min-width: 0; }
+.temporal-panels h3 { min-height: 42px; font-size: 15px; }
+.temporal-canvas { width: 100%; height: 410px; border: 1px solid #64748b; box-sizing: border-box; }
+.temporal-legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 0; font-size: 12px; }
+.temporal-gradient { display: inline-block; width: 256px; max-width: 100%; height: 14px; image-rendering: pixelated; }
+.temporal-mode-help { border-left: 3px solid #94a3b8; padding: 0 12px 8px; margin-top: 12px; line-height: 1.5; }
+.temporal-swatch { display: inline-block; width: 12px; height: 12px; margin-right: 4px; }
+.temporal-policy, .temporal-status { line-height: 1.5; }
+.temporal-provenance { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+@media (max-width: 760px) {
+  .temporal-panels { grid-template-columns: minmax(0, 1fr); }
+  .temporal-controls label:first-child { display: block; }
+  .temporal-canvas { height: 360px; }
+}

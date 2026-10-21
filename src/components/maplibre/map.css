@@ -1,0 +1,7 @@
+.geonaf-map-shell { color: #e5e7eb; background: #0e1117; font: 14px system-ui, sans-serif; }
+.geonaf-map-toolbar, .geonaf-map-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; padding: 10px 0; }
+.geonaf-map-toolbar button { background: #263445; color: white; border: 1px solid #6b7280; border-radius: 5px; padding: 6px 10px; cursor: pointer; }
+.geonaf-map-canvas { height: 510px; width: 100%; border: 1px solid #6b7280; box-sizing: border-box; }
+.geonaf-gradient { width: 160px; height: 16px; display: inline-block; }
+.geonaf-masked-key { width: 16px; height: 16px; display: inline-block; background: #d1d5db; }
+.geonaf-map-status, .geonaf-map-coordinates { padding: 4px 0; font-size: 12px; }

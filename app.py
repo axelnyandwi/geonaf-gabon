@@ -5,10 +5,14 @@ from PIL import Image
 
 from src.config import APP_TITLE, DATA_DIR, PROJECT_ROOT, TAGLINE
 from src.components.preview_cache import cached_map_png
+from src.components.interactive_map import cached_ndvi_layer, show_interactive_map
+from src.components.temporal_map import cached_temporal_payload, show_temporal_map
+from src.components.observation_picker import pick_observations, observation_quality_notices
 from src.components.formatting import format_pixels, format_ndvi, format_surface, format_percent
 from src.services.local_preview import (
     LocalPreviewError, analyze_local_akanda, list_local_observations, local_preview_key,
 )
+from src.services.observation_selection import observation_label
 
 def _brand_asset(name):
     try:
@@ -29,43 +33,72 @@ if logo is not None:
 else:
     st.title(APP_TITLE)
     st.markdown(TAGLINE)
-st.caption("Prototype local V0.1 · Sentinel-2 L2A · Akanda")
+st.caption("Prototype local V0.2 · Sentinel-2 L2A · Akanda")
 st.info("AOI : carré d’acquisition de 12 × 12 km autour d’Akanda. "
         "Ce carré n’est pas la limite administrative d’Akanda.")
 
 try:
     observations = list_local_observations(DATA_DIR)
-    if {item.acquired_at.date().isoformat() for item in observations} != {"2025-01-15", "2025-01-25"}:
-        st.error("Deux acquisitions locales vérifiées sont nécessaires (15 et 25 janvier 2025).")
+    if len(observations) < 2:
+        st.error("Deux acquisitions locales vérifiées au minimum sont nécessaires.")
         st.stop()
+    earlier, later, submitted, ambiguous = pick_observations(observations)
     label = lambda item: item.acquired_at.strftime("%d/%m/%Y · %H:%M:%S UTC")
-    with st.form("dates"):
-        left, right = st.columns(2)
-        earlier = left.selectbox("Date 1", observations, index=0, format_func=label)
-        later = right.selectbox("Date 2", observations, index=len(observations) - 1, format_func=label)
-        st.form_submit_button("Afficher les dates sélectionnées")
+    selected = (earlier, later)
+    previous_selection = st.session_state.get('selected_observations')
+    if not submitted and ((previous_selection is not None and previous_selection != selected)
+                          or (previous_selection is None and ambiguous)):
+        st.info('Sélection modifiée : cliquer sur « Afficher les dates sélectionnées » pour appliquer ces acquisitions.')
+        st.stop()
     key = local_preview_key(earlier, later, DATA_DIR)
     if st.session_state.get("pair") != key:
         with st.spinner("Vérification des fichiers locaux et calcul du NDVI calibré…"):
             result = analyze_local_akanda(earlier, later, DATA_DIR)
         st.session_state["result"] = result
         st.session_state["pair"] = key
+    st.session_state['selected_observations'] = selected
     result = st.session_state["result"]
 except LocalPreviewError as error:
     st.error(str(error))
     st.stop()
-except Exception:
+except Exception as exc:
     st.error("Affichage indisponible. Vérifier la configuration locale du prototype.")
-    st.stop()
 
-st.caption(f"Acquisitions : {label(earlier)} → {label(later)}. "
+st.caption(f"Acquisitions : {observation_label(earlier)} → {observation_label(later)}. "
            f"Politique SCL : {result.scl_policy} (4 et 5 ; ombres 2 exclues). "
            f"Grille : {result.common_grid.crs}, résolution {result.common_grid.resolution[0]:g} m. "
            "Calibration BOA issue des XML de chaque produit.")
-st.image(cached_map_png(("png-v1", key), result))
-st.caption("Les cartes NDVI montrent les pixels exploitables de chaque date. "
-           "Le delta utilise uniquement leur intersection valide aux deux dates. "
-           "Le gris inclut les pixels masqués (nuages, ombres, eau, invalides) ; il ne signifie pas NDVI nul.")
+for notice in observation_quality_notices(result):
+    st.warning(notice)
+temporal = st.checkbox("Comparaison temporelle interactive", value=True, key="temporal_comparison")
+interactive = temporal or st.checkbox("Carte NDVI interactive (date 2)", value=True, key="interactive_map")
+map_ready = False
+if interactive:
+    try:
+        if temporal:
+            layer = cached_temporal_payload(key, result, max_size=1536)
+            map_ready = show_temporal_map(layer)
+        else:
+            layer = cached_ndvi_layer(("map-v1", key, 1536), result)
+            map_ready = show_interactive_map(layer)
+    except Exception:
+        map_ready = False
+    if not map_ready:
+        st.warning("Carte interactive indisponible ; affichage des cartes Matplotlib.")
+if not interactive or not map_ready:
+    st.image(cached_map_png(("png-v1", key), result))
+if map_ready and temporal:
+    st.caption("Comparaison interactive : les NDVI conservent le masque propre à chaque date ; "
+               "classes et ΔNDVI utilisent uniquement les observations comparables aux deux dates. "
+               "La grille d’affichage est reprojetée ; les indicateurs restent ceux de la grille scientifique native.")
+elif map_ready:
+    st.caption("Carte interactive : NDVI de la date 2. Gris : observation masquée "
+               "(nuages, ombres, eau, invalides) ; fond sombre : extérieur de l’AOI. "
+               "La grille d’affichage est reprojetée ; les statistiques restent celles de la grille scientifique native.")
+else:
+    st.caption("Les cartes NDVI montrent les pixels exploitables de chaque date. "
+               "Le delta utilise uniquement leur intersection valide aux deux dates. "
+               "Le gris inclut les pixels masqués (nuages, ombres, eau, invalides) ; il ne signifie pas NDVI nul.")
 
 analysis = result.analysis
 stats = analysis.statistics
