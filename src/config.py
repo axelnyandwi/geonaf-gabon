@@ -20,7 +20,12 @@ INTERIM_DATA_DIR = DATA_DIR / "interim"
 PROCESSED_DATA_DIR = DATA_DIR / "processed"
 # Copernicus Data Space Ecosystem - S3
 
-CDSE_S3_ENDPOINT = "https://eodata.ams.dataspace.copernicus.eu"
+from src.network_config import STAC_API_URL as DEFAULT_STAC_ENDPOINT
+from src.network_config import CDSE_S3_ENDPOINT as DEFAULT_S3_ENDPOINT
+
+# Validation and TLS initialization happen only when a network client is used.
+STAC_API_URL = os.getenv("GEONAF_STAC_ENDPOINT", DEFAULT_STAC_ENDPOINT)
+CDSE_S3_ENDPOINT = os.getenv("GEONAF_S3_ENDPOINT", DEFAULT_S3_ENDPOINT)
 CDSE_S3_BUCKET = "eodata"
 
 CDSE_S3_ACCESS_KEY = os.environ.get("CDSE_S3_ACCESS_KEY")

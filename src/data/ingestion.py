@@ -1,17 +1,19 @@
 """Acquisition et mise à jour des données géospatiales à développer."""
 import logging
 import os
-import time
 import warnings
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 import boto3
-from botocore.exceptions import ClientError
-from dotenv import load_dotenv
+from botocore.client import BaseClient
+from boto3.s3.transfer import TransferConfig
+from dataclasses import replace
 from pystac_client import Client
 
-
-STAC_API_URL = "https://stac.dataspace.copernicus.eu/v1"
+from src.network_config import NetworkSettings, STAC_API_URL, NetworkConfigurationError
+from src.data.network import (
+    NetworkError, SecureStacIO, classify_error, create_s3_client, run_with_retry,
+)
 STAC_PAGE_SIZE = 100
 DEFAULT_STAC_MAX_ITEMS = 1000
 STAC_TIMEOUT_SECONDS = 30
@@ -19,7 +21,7 @@ STAC_TIMEOUT_SECONDS = 30
 logger = logging.getLogger(__name__)
 
 
-class STACSearchError(RuntimeError):
+class STACSearchError(NetworkError):
     """A STAC search failed or returned an incomplete response."""
 
 
@@ -39,23 +41,13 @@ class STACSearchResults(list):
 def create_cdse_s3_client():
     """Create an authenticated S3 client for Copernicus Data Space."""
 
-    load_dotenv()
-
+    settings = NetworkSettings.from_environment()
     access_key = os.getenv("CDSE_S3_ACCESS_KEY")
     secret_key = os.getenv("CDSE_S3_SECRET_KEY")
-
     if not access_key or not secret_key:
-        raise ValueError(
-            "Variables CDSE_S3_ACCESS_KEY et CDSE_S3_SECRET_KEY manquantes."
-        )
+        raise NetworkConfigurationError("Variables CDSE_S3_ACCESS_KEY et CDSE_S3_SECRET_KEY manquantes.")
+    return create_s3_client(boto3, settings, access_key, secret_key)
 
-    return boto3.client(
-        "s3",
-        endpoint_url="https://eodata.dataspace.copernicus.eu",
-        aws_access_key_id=access_key,
-        aws_secret_access_key=secret_key,
-        region_name="default",
-    )
 
 def get_asset(item: dict, asset_name: str) -> dict:
     """Return an asset from a STAC item."""
@@ -78,108 +70,68 @@ def get_s3_key(asset: dict, bucket_name: str = "eodata") -> str:
     prefix = f"s3://{bucket_name}/"
 
     if not s3_uri.startswith(prefix):
-        raise ValueError(f"URI S3 inattendue : {s3_uri}")
+        raise ValueError("URI S3 inattendue.")
 
     return s3_uri.removeprefix(prefix)
+
+class S3DownloadError(NetworkError):
+    """Public S3 failure with a category, status and safe service code."""
+
+
+def _check_s3_retry_policy(client):
+    if isinstance(client, BaseClient) and client.meta.config.retries.get('total_max_attempts') != 1:
+        raise NetworkConfigurationError('Utiliser un client S3 GEONAF sans retries SDK imbriqués.')
+
 
 def download_asset(
     s3_client,
     asset: dict,
     destination_dir: Path,
-    max_retries: int = 5,
-    retry_delay: int = 5,
+    max_retries: int | None = None,
+    retry_delay: float | None = None,
 ) -> Path:
-    """Download an S3 asset with local cache and retry handling."""
+    """Download with one retry owner; legacy max_retries counts total attempts.
 
-    s3_uri = asset["href"]
-
-    if not s3_uri.startswith("s3://"):
-        raise ValueError(
-            f"Adresse S3 invalide : {s3_uri}"
-        )
-
-    # Exemple :
-    # s3://eodata/Sentinel-2/.../B04_10m.jp2
-    s3_path = s3_uri.removeprefix("s3://")
-
-    bucket_name, object_key = s3_path.split("/", 1)
-
-    filename = Path(object_key).name
-
-    destination_dir.mkdir(
-        parents=True,
-        exist_ok=True,
-    )
-
-    destination_path = (
-        destination_dir
-        / filename
-    )
-
-    # Cache local
-    if (
-        destination_path.exists()
-        and destination_path.stat().st_size > 0
-    ):
-        print(
-            f"Déjà présent : {filename}"
-        )
+    Factory clients disable SDK and transfer-level retries. Existing nonempty
+    local files retain their former cache behavior; integrity checks remain in
+    the ingestion service and are not changed by the transport policy.
+    """
+    settings = NetworkSettings.from_environment()
+    if max_retries is not None:
+        settings = replace(settings, max_attempts=max_retries)
+    if retry_delay is not None:
+        settings = replace(settings, backoff_seconds=retry_delay)
+    s3_uri = asset.get('href', '')
+    if not isinstance(s3_uri, str) or not s3_uri.startswith('s3://eodata/'):
+        raise ValueError('Adresse S3 Copernicus invalide.')
+    object_key = s3_uri.removeprefix('s3://eodata/')
+    filename = PurePosixPath(object_key).name
+    if (not filename or filename in ('.', '..') or object_key.endswith('/')
+            or any(c in filename for c in ('\\', ':', chr(0)))
+            or '?' in object_key or '#' in object_key):
+        raise ValueError('Clé S3 invalide.')
+    destination_dir.mkdir(parents=True, exist_ok=True)
+    destination_path = destination_dir / filename
+    if destination_path.exists() and destination_path.stat().st_size > 0:
         return destination_path
+    options = {}
+    _check_s3_retry_policy(s3_client)
+    if isinstance(s3_client, BaseClient):
+        options['Config'] = TransferConfig(num_download_attempts=1, use_threads=False,
+                                           preferred_transfer_client='classic')
+    try:
+        return run_with_retry(
+            lambda: _download_file_once(s3_client, object_key, destination_path, options),
+            settings, service='s3')
+    except NetworkError as error:
+        raise S3DownloadError(service='s3', category=error.category, status_code=error.status_code,
+                              s3_code=error.s3_code, retry_after=error.retry_after,
+                              attempts=error.attempts) from None
 
-    # Téléchargement avec retries
-    for attempt in range(
-        1,
-        max_retries + 1,
-    ):
-        try:
-            print(
-                f"Téléchargement : {filename} "
-                f"(tentative {attempt}/{max_retries})"
-            )
 
-            s3_client.download_file(
-                bucket_name,
-                object_key,
-                str(destination_path),
-            )
-
-            return destination_path
-
-        except ClientError as error:
-
-            response = error.response
-
-            status_code = (
-                response
-                .get("ResponseMetadata", {})
-                .get("HTTPStatusCode")
-            )
-
-            # Erreurs serveur temporaires
-            if (
-                status_code
-                and status_code >= 500
-                and attempt < max_retries
-            ):
-                wait_seconds = (
-                    retry_delay * attempt
-                )
-
-                print(
-                    f"Erreur serveur {status_code}. "
-                    f"Nouvelle tentative dans "
-                    f"{wait_seconds} s..."
-                )
-
-                time.sleep(wait_seconds)
-
-                continue
-
-            raise
-
-    raise RuntimeError(
-        f"Impossible de télécharger : {s3_uri}"
-    )
+def _download_file_once(client, key, destination, options):
+    client.download_file('eodata', key, str(destination), **options)
+    return destination
 
 
 def search_sentinel2(
@@ -221,10 +173,13 @@ def search_sentinel2(
     if query is not None:
         search_parameters["query"] = query
 
+    settings = NetworkSettings.from_environment()
+    stac_io = SecureStacIO(settings)
     try:
         search = Client.open(
-            STAC_API_URL,
+            settings.stac_endpoint,
             timeout=STAC_TIMEOUT_SECONDS,
+            stac_io=stac_io,
         ).search(**search_parameters)
 
         items = []
@@ -267,17 +222,14 @@ def search_sentinel2(
 
     except STACSearchError:
         raise
-    except Exception as error:
-        status_code = getattr(
-            getattr(error, "response", None),
-            "status_code",
-            None,
-        )
-        status = f", HTTP {status_code}" if status_code is not None else ""
-        raise STACSearchError(
-            "Recherche STAC interrompue "
-            f"({type(error).__name__}{status}); aucun résultat partiel n'est retourné."
-        ) from None
+    except NetworkConfigurationError:
+        raise
+    except Exception as original:
+        error = classify_error(original, 'stac')
+        raise STACSearchError(service='stac', category=error.category, status_code=error.status_code,
+                              retry_after=error.retry_after, attempts=error.attempts) from None
+    finally:
+        stac_io.session.close()
 
     if duplicate_count:
         logger.warning(
@@ -310,6 +262,42 @@ def select_best_product(items: list[dict]) -> dict:
             float("inf"),
         ),
     )
+
+
+def _download_small_stac_asset(
+    s3_client, asset: dict, destination: Path, max_bytes: int
+) -> Path:
+    """Fetch a bounded metadata asset without permitting an oversized response."""
+    _check_s3_retry_policy(s3_client)
+    def fetch():
+        response = s3_client.get_object(Bucket="eodata", Key=get_s3_key(asset))
+        body = response.get("Body")
+        try:
+            if body is None or not callable(getattr(body, "read", None)):
+                raise ValueError("Réponse metadata S3 sans flux de contenu.")
+            content_length = response.get("ContentLength")
+            if (
+                not isinstance(content_length, int)
+                or isinstance(content_length, bool)
+                or content_length < 1
+                or content_length > max_bytes
+            ):
+                raise ValueError("Taille de l'asset metadata supérieure à la limite autorisée.")
+            payload = body.read(max_bytes + 1)
+            if len(payload) != content_length or len(payload) > max_bytes:
+                raise ValueError("Taille reçue de l'asset metadata incohérente.")
+        finally:
+            if body is not None:
+                body.close()
+
+        return payload
+
+    payload = run_with_retry(fetch, NetworkSettings.from_environment(), service='s3')
+
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with destination.open("xb") as output:
+        output.write(payload)
+    return destination
 
 
 def ingest_sentinel2_product(
