@@ -13,7 +13,7 @@ from src.services.local_preview import (
     LocalPreviewError, analyze_local_akanda, list_local_observations, local_preview_key,
 )
 from src.services.observation_selection import observation_label
-from src.geo.scientific_profile import LOCAL_SCIENTIFIC_PROFILES
+from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
 
 def _brand_asset(name):
     try:
@@ -32,19 +32,18 @@ st.page_link("pages/2_Series_NDVI.py", label="Série temporelle NDVI")
 st.page_link("pages/3_Multisource.py", label="Démonstrateur multisource")
 
 try:
-    with st.expander("Profil scientifique · V1 expérimentale"):
-        profile = st.radio("Profil appliqué", LOCAL_SCIENTIFIC_PROFILES,
-                           format_func=lambda item: item.label, key="scientific_profile")
-        st.caption(f"{profile.region} · {profile.climate} · {profile.ecosystem}. "
-                   f"Usage : {profile.usage}. Version : {profile.version}. "
-                   f"Seuil ΔNDVI : {profile.change_threshold:g} ; couverture minimale : "
-                   f"{profile.min_comparable_coverage_percent:g} %. {profile.rationale}")
+    aoi_id = choose_territory(DATA_DIR, "territory")
+    if aoi_id is None:
+        st.stop()
+    configuration = choose_analysis(aoi_id, "analysis")
+    if configuration is None:
+        st.stop()
+    profile = configuration.effective
+    st.caption(f"{profile.region} · {profile.climate} · {profile.ecosystem}. Usage : {profile.usage}. "
+               f"Version : {profile.version}.")
     st.caption(f"Prototype local V0.2 · Sentinel-2 L2A · AOI {profile.aoi_id}")
-    if profile.aoi_id == "akanda":
-        st.info("AOI : carré d’acquisition de 12 × 12 km autour d’Akanda. "
-                "Ce carré n’est pas la limite administrative d’Akanda.")
-    else:
-        st.info(f"AOI configurée : {profile.aoi_id}. Vérifier son périmètre et l’applicabilité du profil.")
+    st.info(f"AOI : carré d’acquisition de 12 × 12 km autour de {TERRITORY_LABELS[aoi_id]}. "
+            "Ce carré n’est pas une limite administrative.")
     observations = list_local_observations(DATA_DIR)
     if len(observations) < 2:
         st.error("Deux acquisitions locales vérifiées au minimum sont nécessaires.")

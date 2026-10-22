@@ -37,7 +37,8 @@ def context():
         pytest.skip("Acquisitions de référence absentes.")
     bounds = tuple(float(v) for v in gpd.read_file(AOI).to_crs("EPSG:4326").total_bounds)
     _, repository = open_store(DATA_DIR)
-    layers = stored_layers(repository, "esa-worldcover", bounds)
+    layers = [layer for layer in stored_layers(repository, "esa-worldcover", bounds)
+              if layer.descriptor.provenance.get("aoi_id") == "akanda"]
     if not layers:
         pytest.skip("Fenêtre WorldCover absente.")
     return observations, bounds, repository, layers[0]
@@ -89,7 +90,8 @@ def test_sentinel1_january_2025_windows(context):
     _, bounds, repository, _ = context
     layers = {layer.descriptor.provenance["polarization"]: layer
               for layer in stored_layers(repository, "sentinel-1-mosaic", bounds)
-              if layer.descriptor.version == "Sentinel-1_IW_mosaic_2025_M01_32NNF_0_0"}
+              if layer.descriptor.version == "Sentinel-1_IW_mosaic_2025_M01_32NNF_0_0"
+              and layer.descriptor.provenance.get("aoi_id") == "akanda"}
     if set(layers) != {"VV", "VH"}:
         pytest.skip("Fenêtres Sentinel-1 de janvier 2025 absentes.")
     expected = {"VV": -7.312017, "VH": -13.841008}
@@ -97,3 +99,30 @@ def test_sentinel1_january_2025_windows(context):
         radar = load_radar_layer(layer.path, layer.descriptor, aoi_path=AOI)
         assert radar.grid.resolution == (20.0, 20.0) and int(radar.valid.sum()) == 361201
         assert radar.median_db == pytest.approx(expected[polarization], abs=1e-5)
+
+
+def test_pair_scientific_digest_is_unchanged(context):
+    """Reference digest of the V0.1 pair (docs/acquisition_catalogue.md, docs/interactive_map.md)."""
+    from scripts.benchmark_streamlit import scientific_digest
+    from src.services.local_preview import analyze_local_akanda
+
+    observations = context[0]
+    result = analyze_local_akanda(observations["2025-01-15"], observations["2025-01-25"], DATA_DIR,
+                                  scientific_profile=PROFILE)
+    assert scientific_digest(result) == "b0356911623b4af85939f9a5bb62f0f01cdff9ffd1dae875ca84b77523cb0e41"
+
+
+def test_group_path_equals_single_date_path(context):
+    import numpy as np
+    from src.services.local_preview import (
+        analyze_local_group, analyze_local_observation, group_local_observations, list_local_observations,
+    )
+
+    observations = context[0]
+    groups = group_local_observations(list_local_observations(DATA_DIR))
+    group = next(g for g in groups if g[0].acquired_at.date().isoformat() == "2025-01-25")
+    assert len(group) == 1  # All local products are on MGRS tile 32NNF.
+    single = analyze_local_observation(observations["2025-01-25"], DATA_DIR, scientific_profile=PROFILE)
+    grouped = analyze_local_group(group, DATA_DIR, scientific_profile=PROFILE)
+    assert grouped.grid == single.grid and grouped.summary == single.summary
+    np.testing.assert_array_equal(grouped.valid, single.valid)

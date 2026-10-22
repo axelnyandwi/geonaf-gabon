@@ -98,3 +98,5 @@ pixel (composite). Masque qualité : NoData/NaN/≤0 ; repliement non signalé.
 - Les instantanés OSM successifs s'accumulent (aucune suppression automatique).
 - Ingestion quotidienne S1/S2 non planifiée : les mosaïques S1 sont mensuelles et
   publiées plusieurs mois après (janvier 2025 publié le 19/06/2025).
+
+Lot 5 (modes d'analyse, multituile, trois territoires) : voir `multiterritoire.md` et `sentinel1_radiometry.md`.

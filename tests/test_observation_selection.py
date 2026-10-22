@@ -74,7 +74,7 @@ def test_calendars_are_bounded_and_missing_day_does_not_reuse_previous_result(lo
     from tests.test_temporal_streamlit import configured_app
     app, prepare, analyze = configured_app(local_data, monkeypatch)
     app.run(timeout=30)
-    assert len(app.date_input) == 2 and not app.selectbox
+    assert len(app.date_input) == 2 and [box.key for box in app.selectbox] == ["territory"]
     for widget in app.date_input:
         assert widget.min == date(2025, 1, 15) and widget.max == date(2025, 1, 25)
     app.date_input[0].set_value(date(2025, 1, 20)).run()

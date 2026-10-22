@@ -94,7 +94,10 @@ def test_aoi_selection_invalidates_search_without_reusing_akanda_profile(local_d
     page.button(key="catalogue_search").click().run()
     assert not page.exception and not page.error and search.call_count == 2
     query = search.call_args.args[0]
-    assert query.aoi.aoi_id == "libreville" and query.profile_identity is None
+    # Libreville now has its own reference profile; Akanda's is never reused.
+    from src.geo.scientific_profile import GABON_EQUATORIAL_LIBREVILLE as LIBREVILLE
+    assert query.aoi.aoi_id == "libreville"
+    assert query.profile_identity == (LIBREVILLE.profile_id, LIBREVILLE.version, LIBREVILLE.fingerprint)
 
 
 def test_empty_and_partial_catalogues_are_explicit(local_data, monkeypatch):

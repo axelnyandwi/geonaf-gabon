@@ -8,7 +8,7 @@ import pandas as pd
 import streamlit as st
 
 from src.components.formatting import format_ndvi, format_percent, format_pixels
-from src.geo.scientific_profile import LOCAL_SCIENTIFIC_PROFILES
+from src.components.analysis_settings import choose_analysis, choose_territory
 from src.services.local_preview import (
     LocalPreviewError, analyze_local_ndvi_series, list_local_observations, local_series_key,
 )
@@ -102,8 +102,13 @@ def show_ndvi_series(data_dir):
     except LocalPreviewError as error:
         st.error(str(error))
         return
-    profile = st.radio("Profil scientifique", LOCAL_SCIENTIFIC_PROFILES, format_func=lambda item: item.label,
-                       key="series_profile")
+    aoi_id = choose_territory(data_dir, "series_territory")
+    if aoi_id is None:
+        return
+    configuration = choose_analysis(aoi_id, "series_analysis")
+    if configuration is None:
+        return
+    profile = configuration.effective
     columns = st.columns(3)
     start = columns[0].date_input("Début de période (UTC)", value=first, key="series_start")
     end = columns[1].date_input("Fin de période (UTC)", value=last, key="series_end")

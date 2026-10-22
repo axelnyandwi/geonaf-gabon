@@ -35,6 +35,8 @@ DEFAULT_TAGS = {"building": None, "highway": None, "landuse": None,
 AREA_KEYS = {"building", "landuse", "natural"}
 MAX_BBOX_DEGREES = 0.5
 MAX_SERVER_MEMORY = 64 * 1024 * 1024
+# Measured on Akanda (22/10/2026): 24 267 051 bytes for 39 164 elements ≈ 620 B; margin included.
+ESTIMATED_BYTES_PER_ELEMENT = 800
 GROUPS = {  # Display groups; detail stays in ``category``.
     "building": "Bâtiments", "highway": "Routes et voies", "waterway": "Eau (OSM)", "natural:water": "Eau (OSM)",
     "natural:wetland": "Zones humides (OSM)", "natural:wood": "Végétation (OSM)", "natural:scrub": "Végétation (OSM)",
@@ -111,6 +113,10 @@ class OpenStreetMapAdapter:
                 clauses.append(f'  relation{selector}["type"="multipolygon"]({bbox});')
         return (f"[out:json][timeout:{int(timeout_s)}][maxsize:{MAX_SERVER_MEMORY}];\n(\n"
                 + "\n".join(clauses) + "\n);\nout geom;")
+
+    def count_query(self, wgs84_bounds, tags=None, *, timeout_s: int = 60) -> str:
+        """Same selection, ``out count``: a few hundred bytes used to estimate the full response."""
+        return self.overpass_query(wgs84_bounds, tags, timeout_s=timeout_s).replace("out geom;", "out count;")
 
     def plan(self, wgs84_bounds) -> RetrievalPlan:
         return RetrievalPlan(self.source_id, (self.overpass_query(wgs84_bounds),), None, (
@@ -218,9 +224,24 @@ def _snapshot_name(instant: datetime) -> str:
     return instant.astimezone(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + ".json"
 
 
+def estimate_osm_bytes(client, wgs84_bounds, tags=None, *, timeout_s: int = 60) -> dict:
+    """Element counts from ``out count`` and a conservative byte estimate (no geometry downloaded)."""
+    query = OpenStreetMapAdapter().count_query(wgs84_bounds, tags, timeout_s=timeout_s)
+    response = client.request("POST", OVERPASS_ENDPOINT, data={"data": query}, max_bytes=64 * 1024,
+                              timeout=(10.0, float(timeout_s) + 30.0))
+    payload = json.loads(response.content.decode("utf-8"))
+    counts = next((element.get("tags", {}) for element in payload.get("elements", [])
+                   if element.get("type") == "count"), None)
+    if not counts or not str(counts.get("total", "")).isdigit():
+        raise ValueError("Comptage Overpass illisible : estimation impossible.")
+    total = int(counts["total"])
+    return {"elements": total, "ways": int(counts.get("ways", 0)), "relations": int(counts.get("relations", 0)),
+            "estimated_bytes": total * ESTIMATED_BYTES_PER_ELEMENT, "count_bytes": len(response.content)}
+
+
 def fetch_osm_snapshot(client, store, repository, *, wgs84_bounds, tags=None, timeout_s: int = 60,
                        max_age: timedelta = timedelta(days=7), force_refresh: bool = False,
-                       now: datetime | None = None, max_bytes: int = 32 * 1024 * 1024):
+                       now: datetime | None = None, max_bytes: int = 32 * 1024 * 1024, estimate: bool = False):
     """Return (frame, descriptor, report); network only on a cache miss or explicit refresh.
 
     Cache: per query digest (AOI bounds + tags + options). The most recent
@@ -242,6 +263,12 @@ def fetch_osm_snapshot(client, store, repository, *, wgs84_bounds, tags=None, ti
             report.update(storage_key=key, age_hours=round((now - retrieved).total_seconds() / 3600, 1))
             repository.save(descriptor, key)
             return frame, descriptor, report
+    if estimate:
+        estimation = estimate_osm_bytes(client, wgs84_bounds, tags, timeout_s=timeout_s)
+        report["estimate"] = estimation
+        if estimation["estimated_bytes"] > max_bytes:
+            raise ValueError(f"Volume OSM estimé ({estimation['estimated_bytes'] // 1_000_000} Mo) supérieur au "
+                             f"plafond ({max_bytes // 1_000_000} Mo) : requête non envoyée.")
     response = client.request("POST", OVERPASS_ENDPOINT, data={"data": query}, max_bytes=max_bytes,
                               timeout=(10.0, float(timeout_s) + 30.0))
     payload = json.loads(response.content.decode("utf-8"))

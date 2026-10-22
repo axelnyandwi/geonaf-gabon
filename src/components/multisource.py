@@ -9,12 +9,12 @@ import pandas as pd
 import streamlit as st
 
 from src.components.formatting import format_ndvi, format_percent, format_pixels
-from src.geo.scientific_profile import LOCAL_SCIENTIFIC_PROFILES
+from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
 from src.services.external_layers import latest_osm, open_store, stored_layers
 from src.services.local_preview import (
-    LocalPreviewError, analyze_local_observation, list_local_observations, local_observation_key,
+    LocalPreviewError, analyze_local_group, analyze_local_observation, group_local_observations,
+    list_local_observations, local_group_key, local_observation_key,
 )
-from src.services.observation_selection import observation_label
 
 NATURE_HELP = {
     "Observation mesurée": "Grandeur dérivée d'une mesure satellitaire à une date connue.",
@@ -30,7 +30,13 @@ def cached_observation(key, _observation, data_dir, _profile):
     return analyze_local_observation(_observation, Path(data_dir), scientific_profile=_profile)
 
 
-@st.cache_resource(max_entries=2, show_spinner=False)
+@st.cache_resource(max_entries=6, show_spinner=False)
+def cached_group(key, _group, data_dir, _profile):
+    # One entry per (acquisition group revisions, AOI digest, effective profile): see local_group_key.
+    return analyze_local_group(_group, Path(data_dir), scientific_profile=_profile)
+
+
+@st.cache_resource(max_entries=3, show_spinner=False)
 def cached_osm(storage_key, fingerprint, data_dir, bounds):
     from src.data.openstreetmap import load_osm_snapshot
 
@@ -38,13 +44,13 @@ def cached_osm(storage_key, fingerprint, data_dir, bounds):
     return load_osm_snapshot(store, storage_key, bounds)
 
 
-@st.cache_resource(max_entries=4, show_spinner=False)
-def cached_radar(fingerprint, _layer, aoi_path, landcover_fingerprint, _landcover, scale):
-    from src.services.sentinel1_layer import load_radar_layer
+@st.cache_resource(max_entries=6, show_spinner=False)
+def cached_radar(fingerprints, _layers, aoi_path, landcover_fingerprints, _landcover, scale):
+    from src.services.sentinel1_layer import load_radar_mosaic
 
-    return load_radar_layer(_layer.path, _layer.descriptor, aoi_path=aoi_path, scale=scale,
-                            landcover_path=_landcover.path if _landcover else None,
-                            landcover_classes=dict(_landcover.descriptor.classes) if _landcover else None)
+    classes = dict(_landcover[0].descriptor.classes) if _landcover else None
+    return load_radar_mosaic([(layer.path, layer.descriptor) for layer in _layers], aoi_path=aoi_path, scale=scale,
+                             landcover_path=[layer.path for layer in _landcover] or None, landcover_classes=classes)
 
 
 @st.cache_resource(max_entries=4, show_spinner=False)
@@ -131,6 +137,21 @@ def _retrieval_panel(data_dir, aoi_id, bounds, month):
                 globals()[name].clear()
 
 
+def _for_aoi(layers, aoi_id):
+    """Layers retrieved for this AOI only (adjacent AOIs overlap), latest record per storage key."""
+    selected = {}
+    for layer in layers:
+        if layer.descriptor.provenance.get("aoi_id") == aoi_id:
+            selected.setdefault(layer.storage_key, layer)
+    return list(selected.values())
+
+
+def _group_label(group):
+    first = group[0]
+    tiles = ", ".join(sorted({item.product_id.split("_")[5] for item in group if len(item.product_id.split("_")) > 5}))
+    return f"{first.acquired_at:%d/%m/%Y · %H:%M UTC} · {len(group)} tuile(s) {tiles}"
+
+
 def show_multisource(data_dir):
     st.title("Démonstrateur multisource")
     st.caption("Sentinel-2 × ESA WorldCover × OpenStreetMap, et Sentinel-1 présenté séparément. "
@@ -138,34 +159,44 @@ def show_multisource(data_dir):
     st.warning("Aucun changement environnemental n'est validé ici : les sources ont des dates, résolutions et "
                "natures différentes. Une validation indépendante (terrain, imagerie très haute résolution) reste "
                "nécessaire.")
-    profiles = [p for p in LOCAL_SCIENTIFIC_PROFILES]
-    profile = st.radio("Profil scientifique", profiles, format_func=lambda item: item.label, key="ms_profile",
-                       horizontal=True)
+    columns = st.columns([1, 3])
+    with columns[0]:
+        aoi_id = choose_territory(data_dir, "ms_territory")
+    if aoi_id is None:
+        return
+    with columns[1]:
+        configuration = choose_analysis(aoi_id, "ms_analysis")
+    if configuration is None:
+        return
+    profile = configuration.effective
     try:
-        observations = list_local_observations(data_dir)
+        groups = group_local_observations(list_local_observations(data_dir))
     except LocalPreviewError as error:
         st.error(str(error))
         return
-    if not observations:
-        st.error("Aucune acquisition Sentinel-2 locale vérifiée.")
+    if not groups:
+        st.error("Aucune acquisition Sentinel-2 locale vérifiée : utiliser le catalogue des acquisitions.")
         return
-    labels = {observation_label(item): item for item in observations}
-    chosen = labels[st.selectbox("Acquisition Sentinel-2 (date d'acquisition UTC)", list(labels),
-                                 index=len(labels) - 1, key="ms_date")]
-    aoi_path = (Path(data_dir) / "aoi" / f"{profile.aoi_id}.geojson").resolve()
+    labels = {_group_label(group): group for group in groups}
+    group = labels[st.selectbox("Acquisition Sentinel-2 (prise de vue, date d'acquisition UTC)", list(labels),
+                                index=len(labels) - 1, key="ms_date")]
+    aoi_path = (Path(data_dir) / "aoi" / f"{aoi_id}.geojson").resolve()
     bounds = tuple(float(v) for v in gpd.read_file(aoi_path).to_crs("EPSG:4326").total_bounds)
-    month = date(chosen.acquired_at.year, chosen.acquired_at.month, 1)
-    _retrieval_panel(Path(data_dir), profile.aoi_id, bounds, month)
+    month = date(group[0].acquired_at.year, group[0].acquired_at.month, 1)
+    _retrieval_panel(Path(data_dir), aoi_id, bounds, month)
 
     try:
-        key = local_observation_key(chosen, data_dir, profile)
-        with st.spinner("Vérification des empreintes et calcul du NDVI de la date…"):
-            observation = cached_observation(key, chosen, str(data_dir), profile)
+        key = local_group_key(group, data_dir, profile)
+        with st.spinner("Vérification des empreintes et calcul du NDVI de la prise de vue…"):
+            observation = cached_group(key, group, str(data_dir), profile)
         store, repository = open_store(Path(data_dir))
-        worldcover = next(iter(stored_layers(repository, "esa-worldcover", bounds, observation.acquired_at_utc)), None)
+        worldcover = _for_aoi(stored_layers(repository, "esa-worldcover", bounds, observation.acquired_at_utc), aoi_id)
+        if worldcover:  # One product version only (closest validity first).
+            version = worldcover[0].descriptor.version
+            worldcover = [layer for layer in worldcover if layer.descriptor.version == version]
         osm_layer = latest_osm(repository, bounds)
-        radar_layers = [layer for layer in stored_layers(repository, "sentinel-1-mosaic", bounds,
-                                                         observation.acquired_at_utc)
+        radar_layers = [layer for layer in _for_aoi(stored_layers(repository, "sentinel-1-mosaic", bounds,
+                                                                  observation.acquired_at_utc), aoi_id)
                         if layer.descriptor.temporal.start_utc.strftime("%Y-%m") == f"{month:%Y-%m}"]
     except (LocalPreviewError, ValueError) as error:
         st.error(str(error) if isinstance(error, LocalPreviewError)
@@ -174,18 +205,24 @@ def show_multisource(data_dir):
     with st.spinner("Croisement des sources…"):
         osm = cached_osm(osm_layer.storage_key, osm_layer.descriptor.fingerprint, str(data_dir), bounds) \
             if osm_layer else None
-        radar = tuple(cached_radar(layer.descriptor.fingerprint, layer, str(aoi_path),
-                                   worldcover.descriptor.fingerprint if worldcover else None, worldcover, "intensity")
-                      for layer in radar_layers)
-        result_key = (key, worldcover.descriptor.fingerprint if worldcover else None,
-                      osm_layer.descriptor.fingerprint if osm_layer else None,
+        wc_fingerprints = tuple(layer.descriptor.fingerprint for layer in worldcover)
+        radar = []
+        for polarization in ("VV", "VH"):
+            layers = [layer for layer in radar_layers if layer.descriptor.provenance.get("polarization") == polarization]
+            if layers:
+                radar.append(cached_radar(tuple(layer.descriptor.fingerprint for layer in layers), layers,
+                                          str(aoi_path), wc_fingerprints, worldcover, "intensity"))
+        result_key = (key, wc_fingerprints, osm_layer.descriptor.fingerprint if osm_layer else None,
                       tuple(layer.descriptor.fingerprint for layer in radar_layers))
         result = cached_multisource(result_key, observation, str(aoi_path),
-                                    (worldcover.path, worldcover.descriptor) if worldcover else None, osm, radar)
-    missing = [name for name, present in (("WorldCover", worldcover), ("OpenStreetMap", osm_layer),
-                                          ("Sentinel-1 du mois", radar_layers)) if not present]
-    if missing:
-        st.info("Couches absentes localement : " + ", ".join(missing) + ". Utiliser le panneau de récupération.")
+                                    [(layer.path, layer.descriptor) for layer in worldcover] or None, osm,
+                                    tuple(radar))
+    if result.missing:
+        st.info(f"Sources absentes localement pour {TERRITORY_LABELS[aoi_id]} : " + ", ".join(result.missing)
+                + ". Elles peuvent être récupérées (volume estimé et plafonné) dans le panneau ci-dessus ; "
+                "l'analyse se poursuit avec les sources disponibles.")
+    with st.expander("Provenance de la configuration d'analyse"):
+        st.json(configuration.provenance, expanded=False)
 
     _indicators(result)
     for warning in result.warnings:
@@ -302,9 +339,17 @@ def _radar_tab(result, chosen):
         st.caption(f"{layer.polarization} · {layer.descriptor.product} · {layer.unit} · médiane AOI "
                    f"{layer.median_db:.2f} dB (Q1 {layer.p25_db:.2f}, Q3 {layer.p75_db:.2f}) · couverture "
                    f"{format_percent(layer.coverage_percent)} % des cellules AOI · invalides {layer.invalid_counts}.")
-    st.caption("Échelle des valeurs : le STAC indique « amplitude », la documentation ne précise pas l'échelle ; "
-               "les médianes par classe (eau VH ≈ −30 dB avec 10·log10) indiquent une intensité linéaire. "
-               "Convention retenue : 10·log10, à confirmer auprès du producteur.")
+    from src.data.sentinel1 import RADIOMETRY
+
+    st.caption(f"Radiométrie ({RADIOMETRY['version']}) : γ⁰ aplani du relief en puissance linéaire, "
+               f"{RADIOMETRY['db_formula']} — {RADIOMETRY['status']}. {RADIOMETRY['inconsistency']} "
+               "Valeurs descriptives : aucune qualification quantitative validée.")
+    with st.expander("Sources de la convention radar"):
+        for source in RADIOMETRY["evidence"]:
+            st.markdown(f"- {source}")
+    for layer in result.radar:
+        for note in layer.mosaic_notes:
+            st.caption(f"{layer.polarization} : {note}")
 
 
 def _provenance_tab(result):
@@ -314,6 +359,8 @@ def _provenance_tab(result):
         "Relation": {"reference": "référence", "within": "dans la validité", "before_layer": "S2 antérieure",
                      "after_layer": "S2 postérieure"}[s.relation],
         "Résolution": s.resolution, "CRS": s.crs,
+        "Couverture AOI (%)": None if s.coverage_percent is None else round(s.coverage_percent, 2),
+        "Tuiles / produits": ", ".join(s.tiles),
     } for s in result.sources]), hide_index=True, width="stretch")
     for source in result.sources:
         with st.expander(f"Limites et licence · {source.source}"):

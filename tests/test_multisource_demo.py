@@ -58,7 +58,9 @@ def osm_payload():
 def layers(local_data, tmp_path):
     store = LayerFileStore(local_data / "external")
     repository = FileLayerRepository(store)
-    path, descriptor = _worldcover(tmp_path, "EPSG:32632")
+    path, _ = _worldcover(tmp_path, "EPSG:32632")
+    from src.data.worldcover import WorldCoverAdapter
+    descriptor = WorldCoverAdapter().describe_local(path, retrieved_at=NOW, extra_provenance={"aoi_id": "akanda"})
     store.path("worldcover").mkdir(parents=True, exist_ok=True)
     shutil.copyfile(path, store.path("worldcover/wc_akanda.tif"))
     repository.save(descriptor, "worldcover/wc_akanda.tif")
@@ -69,7 +71,7 @@ def layers(local_data, tmp_path):
     store.path("sentinel1").mkdir(parents=True, exist_ok=True)
     shutil.copyfile(radar, store.path("sentinel1/s1_vv_akanda.tif"))
     radar_descriptor = describe_window(store.path("sentinel1/s1_vv_akanda.tif"), parse_mosaic_item(mosaic_item()),
-                                       "VV", retrieved_at=NOW)
+                                       "VV", retrieved_at=NOW, extra_provenance={"aoi_id": "akanda"})
     repository.save(radar_descriptor, "sentinel1/s1_vv_akanda.tif")
     return local_data, store, repository
 
@@ -195,4 +197,4 @@ def test_page_renders_offline_and_fetches_only_on_click(layers, monkeypatch):
 def test_page_reports_missing_layers_without_failing(local_data, monkeypatch):
     app, _ = _page(local_data, monkeypatch)
     assert not app.exception and not app.error
-    assert any("Couches absentes" in info.value for info in app.info)
+    assert any("Sources absentes" in info.value for info in app.info)

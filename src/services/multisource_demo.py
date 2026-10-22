@@ -23,7 +23,7 @@ import numpy as np
 
 from src.data.external_sources import ExternalLayerDescriptor, assess_temporal_join
 from src.geo.zonal import ZoneStatistics, rasterize_categories, zonal_statistics
-from src.services.multisource import LayerJoinResult, join_categorical_raster_with_zones
+from src.services.multisource import LayerJoinResult, join_categorical_tiles
 from src.services.ndvi_observation import NDVIObservation
 from src.services.sentinel1_layer import RadarLayer
 
@@ -45,6 +45,8 @@ class SourceSummary:
     crs: str
     attribution: str
     limits: tuple[str, ...]
+    coverage_percent: float | None = None   # Effective share of the AOI with data (None: not applicable).
+    tiles: tuple[str, ...] = ()             # Individual tiles/products used.
 
 
 @dataclass(frozen=True)
@@ -70,6 +72,7 @@ class MultisourceResult:
     sources: tuple[SourceSummary, ...]
     interpretations: tuple[str, ...]
     warnings: tuple[str, ...] = field(default=())
+    missing: tuple[str, ...] = field(default=())
     scope: str = ("Démonstrateur descriptif : croisements exploratoires, aucune relation causale ni "
                   "changement environnemental validé sans vérification indépendante.")
 
@@ -131,34 +134,64 @@ def _interpretations(worldcover, radar):
     return tuple(sentences)
 
 
-def analyze_multisource(observation: NDVIObservation, *, aoi_path: str | Path,
-                        worldcover: tuple[Path, ExternalLayerDescriptor] | None = None,
+def _tiles(items) -> list:
+    """Accept one (path, descriptor) pair or a list of them."""
+    if items is None:
+        return []
+    if isinstance(items, tuple) and len(items) == 2 and isinstance(items[1], ExternalLayerDescriptor):
+        return [items]
+    return list(items)
+
+
+def _aoi_share(observation, mask) -> float:
+    """Exact-area share of the AOI covered by ``mask`` (S2 grid)."""
+    weights = observation.pixel_area_weights
+    total = float(weights.sum(dtype=np.float64))
+    return 100.0 * float(weights[np.asarray(mask, bool)].sum(dtype=np.float64)) / total if total else 0.0
+
+
+def analyze_multisource(observation: NDVIObservation, *, aoi_path: str | Path, worldcover=None,
                         osm: tuple[object, ExternalLayerDescriptor] | None = None,
                         radar: tuple[RadarLayer, ...] = ()) -> MultisourceResult:
+    """``worldcover`` is one (path, descriptor) pair or a list of tiles of the same product."""
     observed_at = observation.acquired_at_utc
+    s2_tiles = tuple(contribution.tile_id for contribution in observation.tiles) or (observation.product_id,)
     sources = [SourceSummary(
         "Sentinel-2 L2A", MEASURED, observation.product_id, f"Acquisition {observed_at:%d/%m/%Y %H:%M} UTC",
         None, "reference", "10 m (B04/B08) ; SCL 20 m", observation.grid.crs.to_string(),
         "Contains modified Copernicus Sentinel data [{}]".format(observed_at.year),
         ("NDVI de réflectance BOA, une seule date ; pixels masqués selon le profil SCL.",
-         "Indicateur de verdeur, pas une mesure de biomasse ni d'occupation du sol."))]
-    warnings = []
+         "Indicateur de verdeur, pas une mesure de biomasse ni d'occupation du sol.")
+        + tuple(observation.mosaic_notes),
+        observation.valid_coverage_percent, s2_tiles)]
+    warnings, missing = [], []
     join = codes = layer_valid = None
-    if worldcover is not None:
-        path, descriptor = worldcover
-        join, codes, layer_valid = join_categorical_raster_with_zones(
-            observation.grid, observation.ndvi, observation.valid, observed_at=observed_at, layer_path=path,
-            descriptor=descriptor, aoi_path=aoi_path, tolerance_days=WORLDCOVER_TOLERANCE_DAYS,
+    tiles = _tiles(worldcover)
+    if tiles:
+        join, codes, layer_valid, mosaic = join_categorical_tiles(
+            observation.grid, observation.ndvi, observation.valid, observed_at=observed_at, tiles=tiles,
+            aoi_path=aoi_path, tolerance_days=WORLDCOVER_TOLERANCE_DAYS,
             pixel_area_weights=observation.pixel_area_weights)
+        descriptor = join.descriptor
+        coverage = _aoi_share(observation, layer_valid & observation.aoi_pixels)
+        notes = []
+        if mosaic is not None:
+            notes.append(f"Mosaïque de {len(tiles)} tuiles ; recouvrement {mosaic.overlap_cells} cellules, "
+                         f"{mosaic.conflicting_cells} en conflit (tuile prioritaire retenue).")
         sources.append(SourceSummary(
             "ESA WorldCover", CLASSIFICATION, descriptor.product, _temporal_label(descriptor),
             join.temporal.offset_days, join.temporal.relation, "10 m (EPSG:4326, 1/12 000°)",
             descriptor.crs, descriptor.license.attribution,
             ("Carte issue d'un modèle de classification (exactitude déclarée, non vérifiée localement).",
              "Alignée au plus proche voisin sur la grille Sentinel-2 : décalage possible d'une demi-cellule.",
-             "Nomenclature mondiale non adaptée aux écosystèmes côtiers gabonais.")))
+             "Nomenclature mondiale non adaptée aux écosystèmes côtiers gabonais.") + tuple(notes),
+            coverage, tuple(Path(path).stem for path, _ in tiles)))
         if not join.temporal.within_tolerance:
             warnings.append(f"WorldCover : {join.temporal.message}")
+        if coverage < 99.0:
+            warnings.append(f"WorldCover ne couvre que {coverage:.1f} % de l'AOI : statistiques partielles.")
+    else:
+        missing.append("ESA WorldCover")
     frame = None
     infrastructure, masks = (), {}
     osm_descriptor = None
@@ -166,15 +199,22 @@ def analyze_multisource(observation: NDVIObservation, *, aoi_path: str | Path,
         frame, osm_descriptor = osm
         assessment = assess_temporal_join(osm_descriptor.temporal, observed_at, OSM_TOLERANCE_DAYS)
         infrastructure, frame, masks = _infrastructure(observation, frame, aoi_path)
+        b, a = osm_descriptor.extent.wgs84_bounds, observation_bounds_wgs84(aoi_path)
+        covers = b[0] <= a[0] + 1e-9 and b[1] <= a[1] + 1e-9 and b[2] >= a[2] - 1e-9 and b[3] >= a[3] - 1e-9
         sources.append(SourceSummary(
             "OpenStreetMap", COLLABORATIVE, osm_descriptor.product, _temporal_label(osm_descriptor),
             assessment.offset_days, assessment.relation, "Vecteur (rasterisé à 10 m pour les statistiques)",
             "EPSG:4326", osm_descriptor.license.attribution,
             ("Complétude inconnue ; absence d'objet ≠ absence sur le terrain.",
              "Date de création des objets inconnue : un objet peut être postérieur à l'image.",
-             "Routes rasterisées en cellules de 10 m : cellules mixtes route/végétation.")))
+             "Routes rasterisées en cellules de 10 m : cellules mixtes route/végétation."),
+            100.0 if covers else None, ()))
+        if not covers:
+            warnings.append("OpenStreetMap : l'emprise de la requête ne couvre pas toute l'AOI.")
         if not assessment.within_tolerance:
             warnings.append(f"OpenStreetMap : {assessment.message}")
+    else:
+        missing.append("OpenStreetMap")
     for layer in radar:
         assessment = assess_temporal_join(layer.descriptor.temporal, observed_at, 31.0)
         sources.append(SourceSummary(
@@ -184,8 +224,27 @@ def analyze_multisource(observation: NDVIObservation, *, aoi_path: str | Path,
             layer.descriptor.license.attribution,
             ("Grandeur physique différente du NDVI : aucune comparaison directe.",
              "Composite mensuel pondéré : pas de date d'acquisition unique.",
-             f"Unité : {layer.unit} ; échelle non confirmée par le producteur.")))
+             f"Unité : {layer.unit}.",
+             "Convention documentée par le producteur, non vérifiée par calibration indépendante ; "
+             "titres STAC « Amplitude » incohérents.") + tuple(layer.mosaic_notes),
+            layer.coverage_percent, tuple(c.tile_id for c in layer.tiles) or (layer.descriptor.version,)))
+        if not layer.documented:
+            warnings.append(f"Sentinel-1 {layer.polarization} : convention d'échelle non documentée, dB expérimentaux.")
+        if layer.coverage_percent < 99.0:
+            warnings.append(f"Sentinel-1 {layer.polarization} ne couvre que {layer.coverage_percent:.1f} % de l'AOI.")
         if not assessment.within_tolerance:
             warnings.append(f"Sentinel-1 {layer.polarization} : {assessment.message}")
+    if not radar:
+        missing.append("Sentinel-1")
+    if observation.valid_coverage_percent < observation.scientific_profile.min_comparable_coverage_percent:
+        warnings.append(f"Sentinel-2 : couverture valide {observation.valid_coverage_percent:.1f} % inférieure au "
+                        "minimum du profil ; statistiques peu représentatives.")
     return MultisourceResult(observation, join, codes, layer_valid, osm_descriptor, frame, infrastructure, masks,
-                             tuple(radar), tuple(sources), _interpretations(join, radar), tuple(warnings))
+                             tuple(radar), tuple(sources), _interpretations(join, radar), tuple(warnings),
+                             missing=tuple(missing))
+
+
+def observation_bounds_wgs84(aoi_path) -> tuple[float, float, float, float]:
+    import geopandas as gpd
+
+    return tuple(float(v) for v in gpd.read_file(aoi_path).to_crs("EPSG:4326").total_bounds)

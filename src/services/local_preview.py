@@ -206,3 +206,45 @@ def analyze_local_observation(observation: LocalObservation, data_dir: Path, *,
     except Exception:
         raise LocalPreviewError(
             "NDVI de la date impossible : vérifier l'acquisition, son manifeste, l'AOI et le profil.") from None
+
+
+def group_local_observations(observations) -> tuple[tuple[LocalObservation, ...], ...]:
+    """Group products of one datatake (same relative orbit, ≤ 15 min apart); never mixes dates."""
+    from src.services.ndvi_observation import ACQUISITION_WINDOW, mgrs_tile, relative_orbit
+
+    groups = []
+    for observation in sorted(observations, key=lambda item: item.acquired_at):
+        current = groups[-1] if groups else None
+        if (current and relative_orbit(observation.product_id) == relative_orbit(current[0].product_id)
+                and observation.acquired_at - current[0].acquired_at <= ACQUISITION_WINDOW
+                and mgrs_tile(observation.product_id) not in {mgrs_tile(item.product_id) for item in current}):
+            current.append(observation)
+        else:
+            groups.append([observation])
+    return tuple(tuple(group) for group in groups)
+
+
+def local_group_key(group, data_dir, scientific_profile: ScientificProfile):
+    """Cache key per acquisition group (all tile revisions), AOI digest and profile."""
+    try:
+        records = []
+        for observation in group:
+            records.extend(_observation_revision(observation))
+        aoi = _profile_aoi(data_dir, scientific_profile)
+        records.append((str(aoi.resolve()), hashlib.sha256(aoi.read_bytes()).hexdigest()))
+        return ("local-ndvi-group-v1", scientific_profile.fingerprint, tuple(records))
+    except Exception:
+        raise LocalPreviewError("Impossible de vérifier les entrées locales du cache.") from None
+
+
+def analyze_local_group(group, data_dir: Path, *, scientific_profile: ScientificProfile):
+    """Verify every tile's manifest and digests, then compute the (mosaicked) NDVI of one datatake."""
+    from src.services.ndvi_observation import analyze_ndvi_mosaic
+
+    try:
+        return analyze_ndvi_mosaic([_load_observation(observation) for observation in group],
+                                   aoi_path=_profile_aoi(data_dir, scientific_profile),
+                                   scientific_profile=scientific_profile)
+    except Exception:
+        raise LocalPreviewError(
+            "NDVI de l'acquisition impossible : vérifier les tuiles, leurs manifestes, l'AOI et le profil.") from None

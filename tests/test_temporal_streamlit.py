@@ -138,11 +138,12 @@ def test_different_valid_acquisition_invalidates_component_and_payload(local_dat
     monkeypatch.setattr(adapter, 'show_temporal_map', show)
     app.run(timeout=30)
     assert not show.called  # A calendar day never silently picks one of two products.
-    app.selectbox[0].select_index(1)
+    picker = lambda: next(box for box in app.selectbox if box.label.startswith('Acquisition de la date'))
+    picker().select_index(1)
     app.button[0].click().run()
     first = show.call_args.args[0]
     assert first['provenance']['final']['product_id'] == product_id
-    app.selectbox[0].select_index(0)
+    picker().select_index(0)
     app.button[0].click().run()
     assert not app.exception and not app.error
     second = show.call_args.args[0]

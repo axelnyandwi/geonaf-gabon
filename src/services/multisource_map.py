@@ -67,15 +67,31 @@ def _warp(array, grid, display, fill):
     return output
 
 
-def _ndvi_rgba(observation, display):
+def _indexed_png(indices, palette):
+    """Palette PNG: index 0 transparent. Display only; statistics keep native values."""
+    image = Image.fromarray(indices.astype(np.uint8), mode="P")
+    flat = [channel for color in palette for channel in color[:3]]
+    image.putpalette(flat + [0] * (768 - len(flat)))
+    output = BytesIO()
+    image.save(output, format="PNG", transparency=0, compress_level=6)
+    return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+
+
+NDVI_LEVELS = 254  # Index 0: exterior (transparent), 1: masked, 2..255: NDVI −1..+1 (step ≈ 0.008).
+NDVI_PALETTE = [(0, 0, 0), MASKED_RGBA[:3]] + [
+    tuple(int(c) for c in colormaps["RdYlGn"](i / (NDVI_LEVELS - 1), bytes=True)[:3]) for i in range(NDVI_LEVELS)]
+GRAY_PALETTE = [(0, 0, 0)] + [(i, i, i) for i in np.linspace(0, 255, 255).astype(int)]
+
+
+def _ndvi_png(observation, display):
     categories = np.where(observation.aoi_pixels, 1, 0).astype(np.uint8)
     categories[observation.valid] = 2
     values = _warp(np.nan_to_num(observation.ndvi, nan=0.0).astype(np.float32), observation.grid, display, 0.0)
     categories = _warp(categories, observation.grid, display, 0)
-    rgba = colormaps["RdYlGn"](np.clip((values + 1) / 2, 0, 1), bytes=True)
-    rgba[categories == 1] = MASKED_RGBA
-    rgba[categories == 0] = (0, 0, 0, 0)
-    return rgba
+    indices = 2 + np.rint(np.clip((values + 1) / 2, 0, 1) * (NDVI_LEVELS - 1)).astype(np.int32)
+    indices[categories == 1] = 1
+    indices[categories == 0] = 0
+    return _indexed_png(indices, NDVI_PALETTE)
 
 
 def _worldcover_rgba(result, display, classes):
@@ -88,14 +104,12 @@ def _worldcover_rgba(result, display, classes):
     return rgba
 
 
-def _radar_rgba(layer, display):
+def _radar_png(layer, display):
     low, high = DISPLAY_RANGE_DB[layer.polarization]
     scaled = np.clip((np.nan_to_num(layer.db, nan=low) - low) / (high - low), 0, 1)
-    gray = (scaled * 255).astype(np.uint8)
-    gray = _warp(gray, layer.grid, display, 0)
-    valid = _warp(layer.valid.astype(np.uint8), layer.grid, display, 0)
-    rgba = np.stack([gray, gray, gray, np.where(valid == 1, 255, 0).astype(np.uint8)], axis=-1)
-    return rgba
+    indices = (1 + np.rint(scaled * 254)).astype(np.uint8)
+    indices = _warp(np.where(layer.valid, indices, 0).astype(np.uint8), layer.grid, display, 0)
+    return _indexed_png(indices, GRAY_PALETTE)
 
 
 def _buildings_rgba(result, display):
@@ -107,13 +121,16 @@ def _buildings_rgba(result, display):
     return rgba
 
 
-def _vector_features(frame, groups):
+def _vector_features(frame, groups, aoi_geometry):
+    """Objects clipped to the AOI (as for statistics), simplified at 1e-5° (≈1.1 m)."""
     selected = frame[frame["group"].isin(groups) & (frame["group"] != "Bâtiments")]
     if len(selected) > MAX_VECTOR_FEATURES:
         raise ValueError("Trop d'objets vecteur pour l'affichage interactif.")
-    simplified = selected.geometry.simplify(1e-5, preserve_topology=True)
+    clipped = selected.geometry.intersection(aoi_geometry).simplify(1e-5, preserve_topology=True)
     features = []
-    for (_, row), geometry in zip(selected.iterrows(), simplified):
+    for (_, row), geometry in zip(selected.iterrows(), clipped):
+        if geometry is None or geometry.is_empty or geometry.geom_type == "GeometryCollection":
+            continue
         shape = geometry.__geo_interface__
         features.append({"type": "Feature", "geometry": _round(shape),
                          "properties": {"group": row["group"], "category": row["category"],
@@ -126,7 +143,7 @@ def _round(shape):
     def walk(value):
         if isinstance(value, (list, tuple)):
             if value and isinstance(value[0], (int, float)):
-                return [round(float(v), 6) for v in value]
+                return [round(float(v), 5) for v in value]  # ≈1.1 m, matches the 1e-5° simplification.
             return [walk(item) for item in value]
         return value
     return {"type": shape["type"], "coordinates": walk(shape["coordinates"])}
@@ -142,13 +159,14 @@ def prepare_multisource_map(result, *, aoi_path, worldcover_classes=None, osm_gr
     if not isinstance(max_size, int) or isinstance(max_size, bool) or not 64 <= max_size <= 2048:
         raise ValueError("Taille d'affichage hors bornes.")
     observation = result.observation
+    aoi_geometry = gpd.read_file(aoi_path).to_crs("EPSG:4326").geometry.union_all()
     display = _display_grid(observation.grid, max_size)
     transform, width, height = display
     left, bottom, right, top = array_bounds(height, width, transform)
     to_wgs84 = Transformer.from_crs("EPSG:3857", "EPSG:4326", always_xy=True)
     corners = [list(to_wgs84.transform(x, y)) for x, y in ((left, top), (right, top), (right, bottom), (left, bottom))]
     rasters = [{"id": "ndvi", "label": f"NDVI Sentinel-2 · {observation.acquired_at_utc:%d/%m/%Y}",
-                "nature": "Observation mesurée", "image": _png(_ndvi_rgba(observation, display)),
+                "nature": "Observation mesurée", "image": _ndvi_png(observation, display),
                 "visible": True, "opacity": 0.9,
                 "legend": {"kind": "gradient", "low": "−1", "high": "+1",
                            "colors": ["#a50026", "#fdae61", "#ffffbf", "#a6d96a", "#006837"],
@@ -167,7 +185,7 @@ def prepare_multisource_map(result, *, aoi_path, worldcover_classes=None, osm_gr
         low, high = DISPLAY_RANGE_DB[layer.polarization]
         rasters.append({"id": f"s1-{layer.polarization.lower()}",
                         "label": f"Sentinel-1 {layer.polarization} · {layer.descriptor.temporal.start_utc:%m/%Y}",
-                        "nature": "Observation mesurée (radar)", "image": _png(_radar_rgba(layer, display)),
+                        "nature": "Observation mesurée (radar)", "image": _radar_png(layer, display),
                         "visible": False, "opacity": 0.9,
                         "legend": {"kind": "gradient", "low": f"{low:g} dB", "high": f"{high:g} dB",
                                    "colors": ["#000000", "#ffffff"], "extra": []}})
@@ -181,8 +199,8 @@ def prepare_multisource_map(result, *, aoi_path, worldcover_classes=None, osm_gr
                             "visible": True, "opacity": 0.85,
                             "legend": {"kind": "classes", "items": [{"color": OSM_COLORS["Bâtiments"],
                                                                      "label": "Cellule 10 m dont le centre est dans un bâtiment"}]}})
-        vectors = _vector_features(result.osm_frame, groups)
-    aoi = gpd.read_file(aoi_path).to_crs("EPSG:4326").geometry.union_all().__geo_interface__
+        vectors = _vector_features(result.osm_frame, groups, aoi_geometry)
+    aoi = aoi_geometry.__geo_interface__
     attributions = sorted({source.attribution for source in result.sources})
     return {
         "schema_version": SCHEMA_VERSION, "coordinates": corners, "width": width, "height": height,

@@ -13,7 +13,9 @@ import math
 import re
 
 from src.data.acquisition import SeasonalContext
-from src.data.cloud_mask import SCL_MASK_POLICIES
+from src.data.cloud_mask import (
+    SCL_CLOUD_SHADOW_CLASSES, SCL_DEFECTIVE_CLASSES, SCL_MASK_POLICIES, SCL_UNCERTAIN_CLASSES,
+)
 
 
 class ScientificStatus(str, Enum):
@@ -129,7 +131,111 @@ GABON_SENSITIVITY_EXPERIMENTAL = replace(
     rationale="Scénario de sensibilité : 0,15 et 50 % ne sont pas des seuils validés.",
 )
 
-LOCAL_SCIENTIFIC_PROFILES = (GABON_EQUATORIAL_EXPERIMENTAL, GABON_SENSITIVITY_EXPERIMENTAL)
+# Same declared context and parameters for the two other Estuaire AOIs; ecosystems
+# are described, not calibrated. Akanda's reference profile is unchanged.
+GABON_EQUATORIAL_LIBREVILLE = replace(
+    GABON_EQUATORIAL_EXPERIMENTAL, profile_id="gabon-equatorial-libreville",
+    label="Gabon équatorial · Libreville · expérimental", aoi_id="libreville",
+    ecosystem="tissu urbain dense, mangroves et littoral",
+    rationale="Paramètres repris du profil Akanda (même contexte déclaré), non validés pour un milieu "
+              "majoritairement urbain. Humidité, marées et ombres urbaines non corrigées.",
+)
+GABON_EQUATORIAL_OWENDO = replace(
+    GABON_EQUATORIAL_EXPERIMENTAL, profile_id="gabon-equatorial-owendo",
+    label="Gabon équatorial · Owendo · expérimental", aoi_id="owendo",
+    ecosystem="zones portuaires et industrielles, mangroves et estuaire",
+    rationale="Paramètres repris du profil Akanda (même contexte déclaré), non validés pour les zones "
+              "portuaires et l'estuaire. Humidité, marées et surfaces artificielles non corrigées.",
+)
+
+LOCAL_SCIENTIFIC_PROFILES = (GABON_EQUATORIAL_EXPERIMENTAL, GABON_SENSITIVITY_EXPERIMENTAL,
+                             GABON_EQUATORIAL_LIBREVILLE, GABON_EQUATORIAL_OWENDO)
+# Standard mode: one default profile per AOI, selected automatically.
+REFERENCE_PROFILES = {profile.aoi_id: profile for profile in
+                      (GABON_EQUATORIAL_EXPERIMENTAL, GABON_EQUATORIAL_LIBREVILLE, GABON_EQUATORIAL_OWENDO)}
+
+ADVANCED_CONFIG_VERSION = "advanced-1"
+ADVANCED_BOUNDS = {"change_threshold": (0.02, 0.50), "min_comparable_coverage_percent": (1.0, 100.0)}
+# Policies keeping defective, uncertain, cloud or shadow classes are never offered:
+# they would bypass the fundamental quality mask.
+ADVANCED_SCL_POLICIES = tuple(
+    name for name, classes in SCL_MASK_POLICIES.items()
+    if not classes & (SCL_DEFECTIVE_CLASSES | SCL_UNCERTAIN_CLASSES | SCL_CLOUD_SHADOW_CLASSES))
+SENSITIVITY_PRESET = {"change_threshold": 0.15, "min_comparable_coverage_percent": 50.0}
+
+
+def reference_profile(aoi_id: str) -> ScientificProfile:
+    """Default experimental profile for an AOI (standard mode)."""
+    try:
+        return REFERENCE_PROFILES[aoi_id]
+    except KeyError:
+        raise ValueError("Aucun profil de référence pour cette AOI.") from None
+
+
+@dataclass(frozen=True)
+class AnalysisConfiguration:
+    """Mode, reference and effective profile; the effective fingerprint keys caches and exports."""
+
+    mode: str                       # "standard" or "advanced"
+    reference: ScientificProfile
+    effective: ScientificProfile
+    overrides: tuple[tuple[str, object], ...] = ()
+
+    @property
+    def provenance(self) -> dict:
+        return {"mode": self.mode, "config_version": ADVANCED_CONFIG_VERSION,
+                "reference_profile": f"{self.reference.profile_id} {self.reference.version}",
+                "reference_fingerprint": self.reference.fingerprint,
+                "effective_profile": f"{self.effective.profile_id} {self.effective.version}",
+                "effective_fingerprint": self.effective.fingerprint,
+                "overrides": {name: value for name, value in self.overrides},
+                "validated": False}
+
+
+def standard_configuration(aoi_id: str) -> AnalysisConfiguration:
+    profile = reference_profile(aoi_id)
+    return AnalysisConfiguration("standard", profile, profile)
+
+
+def advanced_configuration(aoi_id: str, *, change_threshold=None, min_comparable_coverage_percent=None,
+                           scl_policy=None) -> AnalysisConfiguration:
+    """Derive a new, versioned profile; the reference profile itself is never modified.
+
+    Values are checked against ``ADVANCED_BOUNDS`` and ``ADVANCED_SCL_POLICIES``.
+    Without any effective change the reference profile is returned unchanged.
+    """
+    reference = reference_profile(aoi_id)
+    requested = {"change_threshold": change_threshold,
+                 "min_comparable_coverage_percent": min_comparable_coverage_percent,
+                 "scl_policy": scl_policy}
+    overrides = []
+    for name, value in requested.items():
+        if value is None or value == getattr(reference, name):
+            continue
+        if name == "scl_policy":
+            if value not in ADVANCED_SCL_POLICIES:
+                raise ValueError("Politique SCL non autorisée : elle conserverait des pixels nuageux, "
+                                 "ombragés, incertains ou défectueux.")
+        else:
+            low, high = ADVANCED_BOUNDS[name]
+            _finite_number(value, name, low, high)
+            value = float(value)
+        overrides.append((name, value))
+    if not overrides:
+        return AnalysisConfiguration("advanced", reference, reference)
+    overrides = tuple(sorted(overrides))
+    digest = hashlib.sha256(json.dumps([reference.fingerprint, ADVANCED_CONFIG_VERSION, overrides],
+                                       ensure_ascii=True).encode("ascii")).hexdigest()
+    changes = ", ".join(f"{name}={value}" for name, value in overrides)
+    effective = replace(
+        reference, **dict(overrides), profile_id=f"{reference.profile_id}-avance-{digest[:10]}",
+        version=f"{reference.version}.{ADVANCED_CONFIG_VERSION}",
+        label=f"{reference.label} · configuration avancée",
+        usage="analyse avancée (paramètres choisis par l'utilisateur)", experimental=True,
+        rationale=(f"Configuration avancée {ADVANCED_CONFIG_VERSION} dérivée de {reference.profile_id} "
+                   f"{reference.version} (empreinte {reference.fingerprint[:16]}) : {changes}. "
+                   "Paramètres non validés scientifiquement."))
+    return AnalysisConfiguration("advanced", reference, effective, overrides)
 
 
 def public_scientific_metadata(result):

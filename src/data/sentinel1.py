@@ -10,11 +10,12 @@ weighted monthly composite of both orbit directions. It is therefore already
 calibrated and terrain corrected, unlike GRD (≈1 GB per scene, slant geometry
 corrections still required).
 
-Uncertainty kept explicit: STAC describes the values as "amplitude" but the
-algorithm page does not state the scale. dB conversion therefore records the
-convention used (20·log10 for amplitude, 10·log10 for intensity) and the
-descriptor carries the caveat. Values are a monthly composite: there is no
-single acquisition instant, incidence angle or orbit direction per pixel.
+Radiometry (decision of 22/10/2026, see ``RADIOMETRY`` and docs/sentinel1_radiometry.md):
+pixels are terrain-flattened gamma nought (γ⁰_T) in linear power units, so
+dB = 10·log10(value). Evidence comes from the producer (Sinergise) on CDSE,
+not from value plausibility. The STAC asset titles still say "Amplitude": this
+inconsistency is recorded and shown. Values are a monthly composite: there is
+no single acquisition instant, incidence angle or orbit direction per pixel.
 """
 
 from __future__ import annotations
@@ -38,6 +39,26 @@ NODATA = -32768.0
 MAX_SEARCH_MONTHS = 24
 LICENSE_URL = "https://sentinels.copernicus.eu/documents/247904/690755/Sentinel_Data_Legal_Notice"
 SCALE_CONVENTIONS = {"amplitude": 20.0, "intensity": 10.0}
+RADIOMETRY = {
+    "version": "s1-mosaic-radiometry-1",
+    "quantity": "gamma0_terrain_flattened",
+    "scale": "linear_power",
+    "convention": "intensity",          # Key of SCALE_CONVENTIONS used for dB.
+    "db_formula": "10·log10(γ⁰_T)",
+    "nodata": "−32768 (STAC) ; NaN pour l'ombre radar persistante",
+    "scale_factor": "1, offset 0, sans unité dans les balises GeoTIFF (vérifié sur 2025-01 32NNF)",
+    "status": "documentée par le producteur ; non vérifiée par calibration indépendante",
+    "evidence": (
+        "Annonce CDSE (Sinergise, 06/08/2024) : « terrain-flattened gamma nought backscatter », "
+        "échelle linéaire, intensités — https://dataspace.copernicus.eu/node/1621",
+        "Forum CDSE (G. Milčinski, Sinergise, 28/05/2025) : « Values are in linear units », conversion "
+        "dB par 10·log10 — https://forum.dataspace.copernicus.eu/t/sentinel-1-monthly-mosaics-linear-or-db/3757",
+        "Algorithme CDSE : calibration β⁰, RTC par intégration d'aires, Range-Doppler, ombres exclues — "
+        "https://documentation.dataspace.copernicus.eu/Data/Others/Sentinel1_Mosaic_Algorithm.html",
+    ),
+    "inconsistency": "Les titres des actifs STAC indiquent « Amplitude » ; contredit par le producteur, "
+                     "non retenu. Les valeurs ne sont pas en dB (minimum strictement positif observé).",
+}
 
 
 @dataclass(frozen=True)
@@ -161,8 +182,8 @@ def describe_window(path, mosaic: Sentinel1Mosaic, polarization: str, *, retriev
         quality=LayerQuality("declared", (
             "Rétrodiffusion calibrée β⁰ puis corrigée du relief (RTC, Copernicus DEM 30 m) par le producteur.",
             "Composite mensuel pondéré des deux orbites : pas d'instant, d'angle d'incidence ni d'orbite uniques.",
-            "Échelle amplitude/intensité non confirmée par la documentation : conversion dB à interpréter "
-            "selon la convention indiquée.",
+            "γ⁰ aplani du relief en puissance linéaire (producteur Sinergise/CDSE) ; dB = 10·log10. "
+            "Les titres STAC « Amplitude » sont incohérents avec la documentation du producteur.",
             "Masque qualité : NoData/NaN uniquement (ombres radar exclues par le producteur) ; "
             "repliement (layover) non signalé.",
             "Chatoiement atténué par le composite mais présent ; pas de filtrage GEONAF."),

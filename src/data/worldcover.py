@@ -108,9 +108,46 @@ def _covers(path: Path, wgs84_bounds) -> bool:
     return b[0] <= left + tolerance and b[1] <= bottom + tolerance and b[2] >= right - tolerance and b[3] >= top - tolerance
 
 
+def tile_bounds(name: str) -> tuple[float, float, float, float]:
+    """WGS84 bounds of a 3° tile named after its south-west corner (e.g. N00E009)."""
+    lat = int(name[1:3]) * (1 if name[0] == "N" else -1)
+    lon = int(name[4:7]) * (1 if name[3] == "E" else -1)
+    return float(lon), float(lat), float(lon + 3), float(lat + 3)
+
+
+def fetch_worldcover_windows(client, store, repository, *, aoi_id: str, wgs84_bounds, version: str = "v200",
+                             max_bytes: int = 4 * 1024 * 1024, now: datetime | None = None):
+    """Discover every tile intersecting the AOI and return [(tile, path, descriptor, report)].
+
+    Each tile contributes only its part of the AOI (AOI ∩ tile), with its own
+    window, file, checksum and provenance; ``max_bytes`` applies per tile.
+    """
+    adapter = WorldCoverAdapter(version)
+    left, bottom, right, top = wgs84_bounds
+    output = []
+    for tile in adapter.tiles(wgs84_bounds):
+        tl, tb, tr, tt = tile_bounds(tile)
+        part = (max(left, tl), max(bottom, tb), min(right, tr), min(top, tt))
+        if part[0] >= part[2] or part[1] >= part[3]:
+            continue
+        output.append((tile, *_fetch_tile_window(client, store, repository, adapter, tile, aoi_id=aoi_id,
+                                                  wgs84_bounds=part, max_bytes=max_bytes, now=now)))
+    return output
+
+
 def fetch_worldcover_window(client, store, repository, *, aoi_id: str, wgs84_bounds, version: str = "v200",
                             max_bytes: int = 4 * 1024 * 1024, now: datetime | None = None):
-    """Return (path, descriptor, report) for the WorldCover window over an AOI.
+    """Single-tile contract: (path, descriptor, report); see :func:`fetch_worldcover_windows`."""
+    windows = fetch_worldcover_windows(client, store, repository, aoi_id=aoi_id, wgs84_bounds=wgs84_bounds,
+                                       version=version, max_bytes=max_bytes, now=now)
+    if len(windows) != 1:
+        raise ValueError("AOI sur plusieurs tuiles WorldCover : utiliser fetch_worldcover_windows.")
+    return windows[0][1:]
+
+
+def _fetch_tile_window(client, store, repository, adapter, tile, *, aoi_id: str, wgs84_bounds, max_bytes: int,
+                       now: datetime | None):
+    """Return (path, descriptor, report) for the WorldCover window of one tile over (part of) an AOI.
 
     Cache by AOI and version: an existing stored window covering the bounds is
     reused without network (its recorded descriptor is returned). Otherwise
@@ -123,11 +160,8 @@ def fetch_worldcover_window(client, store, repository, *, aoi_id: str, wgs84_bou
 
     if not aoi_id.replace("_", "").replace("-", "").isalnum():
         raise ValueError("Identifiant d'AOI invalide.")
-    adapter = WorldCoverAdapter(version)
-    tiles = adapter.tiles(wgs84_bounds)
-    if len(tiles) != 1:
-        raise ValueError("AOI à cheval sur plusieurs tuiles WorldCover : non pris en charge en V1.")
-    url = adapter.tile_url(tiles[0])
+    version = adapter.version
+    url = adapter.tile_url(tile)
     key = f"worldcover/{Path(url).stem}_{aoi_id}.tif"
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     report = {"storage_key": key, "network_bytes": 0, "requests": 0, "reused": True}

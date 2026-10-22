@@ -208,9 +208,19 @@ def test_streamlit_profile_selection_invalidates_science_and_displays_restrictio
     first_key = app.session_state["pair"]
     assert app.session_state["result"].scientific_profile == BASE
     assert any("Comparabilité non évaluée" in message.value for message in app.warning)
-    app.radio(key="scientific_profile").set_value(GABON_SENSITIVITY_EXPERIMENTAL).run(timeout=30)
+    # Advanced mode with the sensitivity preset derives a new versioned profile.
+    app.radio(key="analysis_mode").set_value("Analyse avancée").run(timeout=30)
+    assert app.session_state["result"].scientific_profile == BASE  # Unchanged values: no derived profile.
+    app.button(key="analysis_preset").click().run(timeout=30)
     assert not app.exception and not app.error
     assert app.session_state["pair"] != first_key
-    assert app.session_state["result"].threshold == 0.15
-    assert app.session_state["result"].scientific_profile == GABON_SENSITIVITY_EXPERIMENTAL
+    derived = app.session_state["result"].scientific_profile
+    assert app.session_state["result"].threshold == 0.15 and derived.min_comparable_coverage_percent == 50.0
+    assert derived.fingerprint != BASE.fingerprint and derived.experimental
+    assert derived.version.endswith(".advanced-1") and BASE.fingerprint[:16] in derived.rationale
+    options = app.selectbox(key="analysis_scl").options  # Formatted labels; cloudy policies never offered.
+    assert len(options) == 3 and not any("nuage" in option.lower() or "observation" in option for option in options)
+    assert any("non validée" in message.value for message in app.warning)
     assert len(app.metric) == 4
+    app.radio(key="analysis_mode").set_value("Analyse standard").run(timeout=30)
+    assert app.session_state["result"].scientific_profile == BASE and app.session_state["pair"] == first_key

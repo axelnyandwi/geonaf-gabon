@@ -112,7 +112,7 @@ def test_streamlit_renders_local_results_without_private_paths(local_data, monke
     assert not app.exception
     assert not app.error
     assert len(app.metric) == 4
-    assert len(app.date_input) == 2 and not app.selectbox
+    assert len(app.date_input) == 2 and [box.key for box in app.selectbox] == ["territory"]
     assert app.metric[0].value == "50,00 %"
     assert "limite administrative" in app.info[0].value
     for kind in (app.caption, app.info, app.warning):
@@ -128,6 +128,11 @@ def test_streamlit_missing_data_is_safe(tmp_path, monkeypatch):
     import src.config
 
     monkeypatch.setattr(src.config, "DATA_DIR", tmp_path)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
+    assert not app.exception and "Aucune AOI locale" in app.error[0].value  # No AOI file at all.
+    (tmp_path / "aoi").mkdir()
+    gpd.GeoDataFrame(geometry=[box(500000, 99980, 500020, 100000)], crs="EPSG:32632").to_file(
+        tmp_path / "aoi" / "akanda.geojson")
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
     assert not app.exception
     assert "Deux acquisitions" in app.error[0].value

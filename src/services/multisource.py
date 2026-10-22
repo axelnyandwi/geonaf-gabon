@@ -89,3 +89,48 @@ def join_vector_categories(grid: RasterGrid, values: np.ndarray, valid: np.ndarr
     zones = rasterize_categories(frame, grid, codes, all_touched=all_touched)
     return _result(descriptor, observed_at, tolerance_days, values, valid, zones, zones > 0,
                    {code: category for category, code in codes.items()}, weights)
+
+
+def categorical_tiles_on_grid(tiles, grid: RasterGrid, *, resampling=None):
+    """Mosaic of categorical tiles [(tile_id, path)] aligned on ``grid`` (see ``src.geo.mosaic``)."""
+    import rasterio
+    from rasterio.enums import Resampling
+    from src.geo.mosaic import AlignedTile, mosaic_tiles, same_lattice
+
+    aligned = []
+    for tile_id, path in tiles:
+        codes, layer_valid = align_categorical_to_grid(path, grid, resampling=resampling or Resampling.nearest)
+        with rasterio.open(path) as source:
+            aligned.append(AlignedTile(tile_id, source.crs.to_string(), tuple(source.res),
+                                       same_lattice(source.transform, grid, source.crs), codes, layer_valid))
+    return mosaic_tiles(aligned, categorical=True)
+
+
+def join_categorical_tiles(grid: RasterGrid, values: np.ndarray, valid: np.ndarray, *, observed_at: datetime,
+                           tiles, aoi_path: str | Path, tolerance_days: float = 365.0, pixel_area_weights=None):
+    """Join over one or several tiles [(path, descriptor)] of the same product and version.
+
+    Returns (LayerJoinResult, codes, layer_valid, mosaic or None). One tile uses
+    the established single-raster path unchanged.
+    """
+    tiles = list(tiles)
+    if not tiles:
+        raise ValueError("Aucune tuile de couche catégorielle.")
+    first = tiles[0][1]
+    if any((d.source_id, d.version, dict(d.classes)) != (first.source_id, first.version, dict(first.classes))
+           for _, d in tiles):
+        raise ValueError("Tuiles de produits, versions ou nomenclatures différents : mosaïque refusée.")
+    if len(tiles) == 1:
+        join, codes, layer_valid = join_categorical_raster_with_zones(
+            grid, values, valid, observed_at=observed_at, layer_path=tiles[0][0], descriptor=first,
+            aoi_path=aoi_path, tolerance_days=tolerance_days, pixel_area_weights=pixel_area_weights)
+        return join, codes, layer_valid, None
+    if pixel_area_weights is None:
+        valid, weights = _prepare(grid, values, valid, aoi_path)
+    else:
+        valid, weights = np.asarray(valid, bool) & _rasterize_aoi_pixel_mask(grid, aoi_path), pixel_area_weights
+    mosaic = categorical_tiles_on_grid([(Path(path).stem, path) for path, _ in tiles], grid)
+    codes = np.where(mosaic.valid, mosaic.values, 0).astype(np.uint16)
+    join = _result(first, observed_at, tolerance_days, values, valid, codes, mosaic.valid, dict(first.classes),
+                   weights)
+    return join, codes, mosaic.valid, mosaic

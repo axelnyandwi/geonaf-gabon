@@ -278,7 +278,7 @@ def test_sentinel1_window_respects_cap_and_records_provenance(tmp_path, monkeypa
     assert descriptor.kind == "continuous_raster" and descriptor.resolution_m == 20
     assert descriptor.temporal.kind == "interval" and descriptor.temporal.start_utc == datetime(2025, 1, 1, tzinfo=UTC)
     assert descriptor.license.spdx_id.startswith("LicenseRef-Copernicus") and "[2025]" in descriptor.license.attribution
-    assert any("amplitude/intensité" in note for note in descriptor.quality.notes)
+    assert any("γ⁰ aplani" in note and "10·log10" in note for note in descriptor.quality.notes)
     assert descriptor.provenance["polarization"] == "VV" and "s3_key" in descriptor.provenance
 
 
@@ -303,8 +303,33 @@ def test_radar_layer_units_masks_and_per_class_statistics(tmp_path):
     assert layer.invalid_counts == {"nodata": 1, "non_fini": 1, "non_positif": 1}
     assert layer.median_db == pytest.approx(-10.0) and layer.coverage_percent == pytest.approx(13 / 16 * 100)
     amplitude = load_radar_layer(tile, descriptor, aoi_path=aoi, scale="amplitude")
-    assert amplitude.median_db == pytest.approx(-20.0) and "20·log10" in amplitude.unit
+    assert amplitude.median_db == pytest.approx(-20.0) and not amplitude.documented
+    assert "non documentée" in amplitude.unit and layer.documented and "10·log10" in layer.unit
     zones = {zone.code: zone for zone in layer.per_class}
     assert zones[10].pixel_count == 5 and zones[80].pixel_count == 8  # Mode 10 m → 20 m.
     with pytest.raises(ValueError):
         load_radar_layer(tile, descriptor, aoi_path=aoi, scale="decibel")
+
+
+def test_radiometry_decision_is_sourced_and_never_validated():
+    from src.data.sentinel1 import RADIOMETRY, SCALE_CONVENTIONS
+    from src.services.sentinel1_layer import DEFAULT_SCALE
+
+    assert RADIOMETRY["quantity"] == "gamma0_terrain_flattened" and RADIOMETRY["scale"] == "linear_power"
+    assert DEFAULT_SCALE == "intensity" and SCALE_CONVENTIONS[DEFAULT_SCALE] == 10.0
+    assert all("https://" in source for source in RADIOMETRY["evidence"]) and len(RADIOMETRY["evidence"]) >= 2
+    assert "non vérifiée" in RADIOMETRY["status"] and "Amplitude" in RADIOMETRY["inconsistency"]
+
+
+@pytest.mark.parametrize("linear, expected_db", [(1.0, 0.0), (0.1, -10.0), (0.01, -20.0), (0.001, -30.0)])
+def test_power_to_db_reference_values(tmp_path, linear, expected_db):
+    import geopandas as gpd
+    from shapely.geometry import box
+    from src.services.sentinel1_layer import load_radar_layer
+
+    tile, _ = radar_cog(tmp_path, np.full((2, 2), linear, np.float32))
+    descriptor = describe_window(tile, parse_mosaic_item(mosaic_item()), "VH", retrieved_at=NOW)
+    aoi = tmp_path / "aoi.geojson"
+    gpd.GeoDataFrame(geometry=[box(560000, 51960, 560040, 52000)], crs="EPSG:32632").to_file(aoi)
+    layer = load_radar_layer(tile, descriptor, aoi_path=aoi)
+    assert layer.median_db == pytest.approx(expected_db, abs=1e-5) and layer.polarization == "VH"
