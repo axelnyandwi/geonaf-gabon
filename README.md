@@ -146,6 +146,10 @@ Ne jamais versionner de secrets. Les fichiers `.env` et les secrets Streamlit so
 
 Les scripts de `scripts/` servent principalement à l’expérimentation et au diagnostic manuel ; ils ne sont pas tous des étapes requises du pipeline applicatif. L’ingestion Sentinel-2 s’appuie sur les interfaces Copernicus configurées dans le module de données. Les dossiers de données restent séparés du code afin de conserver les sources et les produits dérivés hors des commits ordinaires.
 
+## Recherche STAC Sentinel-2
+
+`search_sentinel2` utilise `pystac-client` et suit les liens de pagination STAC. `limit=100` est la taille de page demandée au service, tandis que `max_items` borne le nombre de fiches STAC brutes lues, doublons inclus. La limite totale vaut 1 000 par défaut et peut être ajustée par appel ; elle doit rester positive. Un délai maximal de 30 secondes s’applique à chaque requête. La fonction lit une fiche supplémentaire pour détecter le dépassement. Si elle existe, la fonction retourne les items uniques parmi les premiers résultats plafonnés et émet `STACSearchTruncatedWarning`. Le nombre d’items uniques retournés peut donc être inférieur à `max_items`. Un résultat tronqué ne doit pas être présenté comme une recherche exhaustive. Les doublons d’identifiant sont retirés en conservant le premier item rencontré. Une erreur pendant la pagination fait échouer la recherche entière plutôt que de retourner silencieusement une liste partielle.
+
 ## Indicateurs de qualité SCL
 
 Dans `calculate_scl_quality`, `total_pixels` désigne les pixels observés : pixels non masqués dont la classe SCL n’est pas 0. `invalid_percent` est calculé parmi ces observations, en comptant les classes nuage/ombre, défectueuses et neige/glace selon les ensembles de classes définis dans le code. Les pixels masqués et la classe 0 sont exclus du numérateur et du dénominateur ; l’eau reste une observation valide. Les métriques terrestres utilisent un dénominateur sans eau.

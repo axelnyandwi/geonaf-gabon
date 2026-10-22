@@ -23,17 +23,11 @@ def _brand_asset(name):
         return None
 
 
-logo = _brand_asset("geonaf_logo_dark.png")
 favicon = _brand_asset("geonaf_favicon.png")
 st.set_page_config(page_title=APP_TITLE, page_icon=favicon if favicon is not None else "🌍", layout="wide")
-if logo is not None:
-    st.markdown("<style>.st-key-branding {background: #0e1117; border-radius: 8px; padding: 12px;}</style>",
-                unsafe_allow_html=True)
-    with st.container(key="branding"):
-        st.image(logo, width=720)
-else:
-    st.title(APP_TITLE)
-    st.markdown(TAGLINE)
+st.title(APP_TITLE)
+st.markdown(TAGLINE)
+st.page_link("pages/1_Acquisitions_Sentinel2.py", label="Catalogue des acquisitions Sentinel-2")
 
 try:
     with st.expander("Profil scientifique · V1 expérimentale"):

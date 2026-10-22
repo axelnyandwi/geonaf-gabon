@@ -37,14 +37,13 @@ def _manifest(path):
 
 
 def list_local_observations(data_dir: Path) -> tuple[LocalObservation, ...]:
-    """Only expose the two dates covered by this prototype's local study."""
+    """Expose every verified local acquisition, retaining its exact UTC date."""
     try:
         observations = []
         for path in sorted((data_dir / "raw" / "sentinel2").glob("*/acquisition_manifest.json")):
             manifest = _manifest(path)
             acquired = datetime.fromisoformat(manifest["acquired_at_utc"].replace("Z", "+00:00"))
-            if acquired.date().isoformat() in {"2025-01-15", "2025-01-25"}:
-                observations.append(LocalObservation(acquired, path, manifest['product_id']))
+            observations.append(LocalObservation(acquired, path, manifest['product_id']))
         return tuple(sorted(observations, key=lambda item: item.acquired_at))
     except Exception:
         raise LocalPreviewError("Catalogue local indisponible ou manifeste non vérifié.") from None

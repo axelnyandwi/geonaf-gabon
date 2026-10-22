@@ -241,12 +241,54 @@ def test_branding_and_asset_fallback(local_data, monkeypatch, missing_assets):
     assert not app.exception and not app.error
     icon = configure.call_args.kwargs["page_icon"]
     slogans = [element for element in app.markdown if element.value == src.config.TAGLINE]
+    assert app.title[0].value == "GEONAF"
+    assert len(slogans) == 1
+    assert not any(getattr(element, "key", None) == "branding" for element in app.get("container"))
     if missing_assets:
         assert icon == "🌍"
-        assert app.title[0].value == "GEONAF"
-        assert len(slogans) == 1
     else:
         assert isinstance(icon, Image.Image)
         assert icon.size == (512, 512)
-        assert not app.title
-        assert not slogans  # The official logo already contains the slogan.
+
+
+def test_interactive_layer_cache_reuses_science_and_never_sends_paths(local_data, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    from unittest.mock import Mock
+    import src.config
+    import src.components.interactive_map as interactive
+    import src.services.local_preview as preview
+
+    monkeypatch.setattr(src.config, "DATA_DIR", local_data)
+    # AppTest creates a new Streamlit runtime; register its renderer afresh.
+    interactive._renderer.clear()
+    interactive.cached_ndvi_layer.clear()
+    prepare = Mock(wraps=interactive.prepare_ndvi_layer)
+    analyze = Mock(wraps=preview.analyze_local_akanda)
+    monkeypatch.setattr(interactive, "prepare_ndvi_layer", prepare)
+    monkeypatch.setattr(preview, "analyze_local_akanda", analyze)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
+    app.session_state["temporal_comparison"] = False
+    app.run(timeout=30)
+    assert not app.exception and not app.error
+    assert not any("Carte interactive indisponible" in warning.value for warning in app.warning)
+    app.button[0].click().run()
+    assert analyze.call_count == prepare.call_count == 1
+    original = app.session_state["result"].comparison.ndvi_date_2.copy()
+    app.checkbox(key="interactive_map").uncheck().run()
+    assert not app.exception and not app.error
+    assert analyze.call_count == 1
+    np.testing.assert_array_equal(original, app.session_state["result"].comparison.ndvi_date_2)
+
+
+def test_map_adapter_failure_uses_matplotlib(local_data, monkeypatch):
+    from streamlit.testing.v1 import AppTest
+    import src.config
+    import src.components.interactive_map as interactive
+
+    monkeypatch.setattr(src.config, "DATA_DIR", local_data)
+    monkeypatch.setattr(interactive, "show_interactive_map", lambda payload: False)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
+    app.session_state["temporal_comparison"] = False
+    app.run(timeout=30)
+    assert not app.exception and not app.error
+    assert any("Carte interactive indisponible" in warning.value for warning in app.warning)
