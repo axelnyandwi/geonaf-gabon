@@ -94,3 +94,5 @@ CREATE INDEX ON external_layers USING gist (extent);
   WorldCover et Overpass reste à valider (politique réseau, quotas, mise en cache).
 - Exactitude WorldCover non vérifiée localement ; nomenclature non adaptée au Gabon.
 - Pas encore d'interface Streamlit pour les jointures.
+
+Suite réalisée au lot 4 (récupération bornée, multipolygones OSM, Sentinel-1, interface) : voir `multisource_demo.md`.

@@ -1,8 +1,10 @@
 """ESA WorldCover adapter: tile planning and local description, no hidden I/O.
 
 Tiles are 3° × 3° Cloud Optimized GeoTIFFs in EPSG:4326 (1/12 000°, ≈10 m),
-named after their south-west corner. Planning never downloads; a COG window
-read over the AOI (HTTP Range) is the intended retrieval, not full tiles.
+named after their south-west corner. Planning never downloads. The
+authorised retrieval (:func:`fetch_worldcover_window`) reads only the COG
+window over the AOI by HTTP Range with an exact byte estimate and a ceiling,
+stores it once (never overwritten) and records its descriptor.
 """
 
 from __future__ import annotations
@@ -67,8 +69,8 @@ class WorldCoverAdapter:
             ("Lecture fenêtrée COG sur l'AOI recommandée (HTTP Range) ; ne pas télécharger les tuiles entières.",
              "Hôte hors de la politique réseau Copernicus actuelle : autorisation explicite requise."))
 
-    def describe_local(self, path, *, retrieved_at: datetime, source_url: str | None = None
-                       ) -> ExternalLayerDescriptor:
+    def describe_local(self, path, *, retrieved_at: datetime, source_url: str | None = None,
+                       extra_provenance: dict | None = None) -> ExternalLayerDescriptor:
         path = Path(path)
         with rasterio.open(path) as source:
             if source.crs is None or source.count != 1 or source.dtypes[0] != "uint8":
@@ -83,6 +85,7 @@ class WorldCoverAdapter:
             if not source_url.startswith(BUCKET_URL + "/"):
                 raise ValueError("URL source WorldCover non reconnue.")
             provenance["source_url"] = source_url
+        provenance.update({key: str(value) for key, value in (extra_provenance or {}).items()})
         return ExternalLayerDescriptor(
             source_id=self.source_id, product=f"ESA WorldCover 10 m {self.year}", version=self.version,
             kind="categorical_raster",
@@ -95,3 +98,72 @@ class WorldCoverAdapter:
                 f"Carte annuelle {self.year} : ne décrit pas l'état à la date d'une acquisition ultérieure."),
                 digest),
             classes=CLASSES)
+
+
+def _covers(path: Path, wgs84_bounds) -> bool:
+    with rasterio.open(path) as source:
+        b = source.bounds if source.crs.to_epsg() == 4326 else transform_bounds(source.crs, "EPSG:4326", *source.bounds)
+    tolerance = 1 / 12000  # One WorldCover cell.
+    left, bottom, right, top = wgs84_bounds
+    return b[0] <= left + tolerance and b[1] <= bottom + tolerance and b[2] >= right - tolerance and b[3] >= top - tolerance
+
+
+def fetch_worldcover_window(client, store, repository, *, aoi_id: str, wgs84_bounds, version: str = "v200",
+                            max_bytes: int = 4 * 1024 * 1024, now: datetime | None = None):
+    """Return (path, descriptor, report) for the WorldCover window over an AOI.
+
+    Cache by AOI and version: an existing stored window covering the bounds is
+    reused without network (its recorded descriptor is returned). Otherwise
+    the window is read by HTTP Range within ``max_bytes`` (header + tiles) and
+    published under a new key. ``client`` is an ``ExternalHttpClient``; it is
+    only used on a cache miss.
+    """
+    from src.data.layer_store import sha256_file
+    from src.data.remote_window import ByteBudget, HttpRangeSource, RangeFile, read_remote_window
+
+    if not aoi_id.replace("_", "").replace("-", "").isalnum():
+        raise ValueError("Identifiant d'AOI invalide.")
+    adapter = WorldCoverAdapter(version)
+    tiles = adapter.tiles(wgs84_bounds)
+    if len(tiles) != 1:
+        raise ValueError("AOI à cheval sur plusieurs tuiles WorldCover : non pris en charge en V1.")
+    url = adapter.tile_url(tiles[0])
+    key = f"worldcover/{Path(url).stem}_{aoi_id}.tif"
+    now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    report = {"storage_key": key, "network_bytes": 0, "requests": 0, "reused": True}
+    for descriptor, stored_key in repository.find_with_storage(adapter.source_id, wgs84_bounds):
+        if stored_key == key and descriptor.version == version and store.exists(key):
+            if sha256_file(store.path(key)) != descriptor.quality.checksum_sha256:
+                raise ValueError("Fenêtre WorldCover locale modifiée depuis son enregistrement.")
+            if _covers(store.path(key), wgs84_bounds):
+                return store.path(key), descriptor, report
+    if store.exists(key):
+        path = store.path(key)
+        if not _covers(path, wgs84_bounds):
+            raise ValueError("Fenêtre WorldCover existante ne couvrant pas l'AOI : choisir un autre identifiant.")
+        modified = datetime.fromtimestamp(path.stat().st_mtime, timezone.utc)
+        descriptor = adapter.describe_local(path, retrieved_at=modified, source_url=url, extra_provenance={
+            "retrieved_at_basis": "date du fichier local (récupération antérieure au catalogue)",
+            "aoi_id": aoi_id, "aoi_bounds_wgs84": ",".join(f"{v:.6f}" for v in wgs84_bounds)})
+        repository.save(descriptor, key)
+        return path, descriptor, report
+    budget = ByteBudget(max_bytes)
+    remote = RangeFile(HttpRangeSource(client, url), budget, label=url)
+    data, profile, estimate = read_remote_window(remote, wgs84_bounds, "EPSG:4326")
+    temporary = store.temporary(key)
+    try:
+        with rasterio.open(temporary, "w", **profile) as destination:
+            destination.write(data, 1)
+        path = store.publish(temporary, key)
+    finally:
+        temporary.unlink(missing_ok=True)
+    descriptor = adapter.describe_local(path, retrieved_at=now, source_url=url, extra_provenance={
+        "retrieved_at_basis": "requête HTTP Range", "aoi_id": aoi_id,
+        "aoi_bounds_wgs84": ",".join(f"{v:.6f}" for v in wgs84_bounds),
+        "window": f"col={estimate.window.col_off},row={estimate.window.row_off},"
+                  f"w={estimate.width},h={estimate.height}",
+        "range_bytes": remote.received, "remote_size_bytes": remote.size})
+    repository.save(descriptor, key)
+    report.update(network_bytes=remote.received, requests=len(remote.blocks) + 1, reused=False,
+                  estimated_tile_bytes=estimate.compressed_bytes, remote_size_bytes=remote.size)
+    return path, descriptor, report

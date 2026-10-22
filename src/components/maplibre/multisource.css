@@ -1,0 +1,13 @@
+.gms-shell { color: #e5e7eb; background: #0e1117; font: 14px system-ui, sans-serif; }
+.gms-toolbar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 8px 0; }
+.gms-layers { display: flex; flex-wrap: wrap; gap: 6px 16px; }
+.gms-toggle { cursor: pointer; white-space: nowrap; }
+.gms-reset { background: #263445; color: white; border: 1px solid #6b7280; border-radius: 5px; padding: 6px 10px; cursor: pointer; }
+.gms-canvas { height: 560px; width: 100%; border: 1px solid #6b7280; box-sizing: border-box; }
+.gms-legend { display: flex; flex-wrap: wrap; gap: 8px 28px; padding: 8px 0; font-size: 13px; }
+.gms-legend-block { display: flex; flex-direction: column; gap: 3px; }
+.gms-legend-row { display: flex; align-items: center; gap: 6px; }
+.gms-gradient { width: 140px; height: 12px; display: inline-block; }
+.gms-swatch { width: 14px; height: 14px; display: inline-block; border: 1px solid #374151; }
+.gms-info, .gms-coords, .gms-status, .gms-attribution { font-size: 12px; padding: 2px 0; }
+.gms-attribution { color: #9ca3af; }

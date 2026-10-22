@@ -51,12 +51,31 @@ def _result(descriptor, observed_at, tolerance_days, values, valid, zones, layer
 def join_categorical_raster(grid: RasterGrid, values: np.ndarray, valid: np.ndarray, *, observed_at: datetime,
                             layer_path: str | Path, descriptor: ExternalLayerDescriptor, aoi_path: str | Path,
                             tolerance_days: float = 365.0) -> LayerJoinResult:
+    return join_categorical_raster_with_zones(
+        grid, values, valid, observed_at=observed_at, layer_path=layer_path, descriptor=descriptor,
+        aoi_path=aoi_path, tolerance_days=tolerance_days)[0]
+
+
+def join_categorical_raster_with_zones(grid: RasterGrid, values: np.ndarray, valid: np.ndarray, *,
+                                       observed_at: datetime, layer_path: str | Path,
+                                       descriptor: ExternalLayerDescriptor, aoi_path: str | Path,
+                                       tolerance_days: float = 365.0, pixel_area_weights=None,
+                                       resampling=None):
+    """Same join, also returning the aligned (codes, layer_valid) for display and filters."""
+    from rasterio.enums import Resampling
+
     if descriptor.kind != "categorical_raster" or not descriptor.classes:
         raise ValueError("Descripteur de raster catégoriel avec classes requis.")
-    valid, weights = _prepare(grid, values, valid, aoi_path)
-    zones, layer_valid = align_categorical_to_grid(layer_path, grid)
-    return _result(descriptor, observed_at, tolerance_days, values, valid, zones, layer_valid,
-                   dict(descriptor.classes), weights)
+    if pixel_area_weights is None:
+        valid, weights = _prepare(grid, values, valid, aoi_path)
+    else:
+        if np.shape(values) != (grid.height, grid.width) or np.shape(valid) != np.shape(values):
+            raise ValueError("Les valeurs ne correspondent pas à la grille.")
+        valid = np.asarray(valid, bool) & _rasterize_aoi_pixel_mask(grid, aoi_path)
+        weights = pixel_area_weights
+    zones, layer_valid = align_categorical_to_grid(layer_path, grid, resampling=resampling or Resampling.nearest)
+    return (_result(descriptor, observed_at, tolerance_days, values, valid, zones, layer_valid,
+                    dict(descriptor.classes), weights), zones, layer_valid)
 
 
 def join_vector_categories(grid: RasterGrid, values: np.ndarray, valid: np.ndarray, *, observed_at: datetime,

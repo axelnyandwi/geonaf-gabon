@@ -225,6 +225,12 @@ def build_series_grid(ndvi_paths) -> RasterGrid:
     return RasterGrid(first["crs"], first["resolution"], transform, width, height)
 
 
+def grid_from_raster(path: str | Path) -> RasterGrid:
+    """Native grid of one north-up raster (single-date analyses)."""
+    item = _north_up_metadata(path)[0]
+    return RasterGrid(item["crs"], item["resolution"], item["transform"], item["width"], item["height"])
+
+
 def _is_same_grid(source, grid: RasterGrid) -> bool:
     return (
         source.crs == grid.crs

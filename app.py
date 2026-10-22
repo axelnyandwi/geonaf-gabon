@@ -29,6 +29,7 @@ st.title(APP_TITLE)
 st.markdown(TAGLINE)
 st.page_link("pages/1_Acquisitions_Sentinel2.py", label="Catalogue des acquisitions Sentinel-2")
 st.page_link("pages/2_Series_NDVI.py", label="Série temporelle NDVI")
+st.page_link("pages/3_Multisource.py", label="Démonstrateur multisource")
 
 try:
     with st.expander("Profil scientifique · V1 expérimentale"):

@@ -194,6 +194,41 @@ class LayerRepository(Protocol):
              ) -> tuple[ExternalLayerDescriptor, ...]: ...
 
 
+def descriptor_to_record(descriptor: ExternalLayerDescriptor) -> dict:
+    """JSON-ready record (one row of the future ``external_layers`` table)."""
+    record = {name: getattr(descriptor, name) for name in descriptor.__dataclass_fields__}
+    for name in ("temporal", "extent", "license", "quality"):
+        record[name] = asdict(record[name])
+    record["temporal"]["start_utc"] = descriptor.temporal.start_utc.isoformat()
+    record["temporal"]["end_utc"] = descriptor.temporal.end_utc.isoformat()
+    record["quality"]["notes"] = list(descriptor.quality.notes)
+    record["extent"]["bounds"] = list(descriptor.extent.bounds)
+    record["extent"]["wgs84_bounds"] = list(descriptor.extent.wgs84_bounds)
+    record["provenance"] = dict(descriptor.provenance)
+    record["classes"] = {str(code): label for code, label in descriptor.classes.items()}
+    record["fingerprint"] = descriptor.fingerprint
+    return record
+
+
+def descriptor_from_record(record: Mapping) -> ExternalLayerDescriptor:
+    """Inverse of :func:`descriptor_to_record`; the fingerprint must match."""
+    temporal = record["temporal"]
+    extent = record["extent"]
+    descriptor = ExternalLayerDescriptor(
+        source_id=record["source_id"], product=record["product"], version=record["version"], kind=record["kind"],
+        temporal=TemporalValidity(temporal["kind"], datetime.fromisoformat(temporal["start_utc"]),
+                                  datetime.fromisoformat(temporal["end_utc"])),
+        resolution_m=record["resolution_m"], crs=record["crs"],
+        extent=SpatialExtent(extent["crs"], tuple(extent["bounds"]), tuple(extent["wgs84_bounds"])),
+        license=LayerLicense(**record["license"]), provenance=dict(record["provenance"]),
+        quality=LayerQuality(record["quality"]["status"], tuple(record["quality"]["notes"]),
+                             record["quality"]["checksum_sha256"]),
+        classes={int(code): label for code, label in record["classes"].items()})
+    if "fingerprint" in record and record["fingerprint"] != descriptor.fingerprint:
+        raise ValueError("Empreinte du descripteur incohérente : enregistrement modifié.")
+    return descriptor
+
+
 class InMemoryLayerRepository:
     def __init__(self):
         self._items: dict[tuple[str, str, str], ExternalLayerDescriptor] = {}

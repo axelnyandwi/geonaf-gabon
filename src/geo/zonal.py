@@ -32,8 +32,15 @@ class ZoneStatistics:
     median: float | None
 
 
-def align_categorical_to_grid(path, grid: RasterGrid, *, nodata: int = 0) -> tuple[np.ndarray, np.ndarray]:
-    """Return (codes uint16, valid) on ``grid``; outside footprint/NoData is invalid."""
+def align_categorical_to_grid(path, grid: RasterGrid, *, nodata: int = 0,
+                              resampling: Resampling = Resampling.nearest) -> tuple[np.ndarray, np.ndarray]:
+    """Return (codes uint16, valid) on ``grid``; outside footprint/NoData is invalid.
+
+    ``nearest`` when the target is as fine as the source; ``mode`` (majority
+    class) when aggregating onto a coarser grid, e.g. 10 m classes on 20 m radar.
+    """
+    if resampling not in (Resampling.nearest, Resampling.mode):
+        raise ValueError("Ré-échantillonnage catégoriel : plus proche voisin ou mode uniquement.")
     with rasterio.open(path) as source:
         if source.crs is None or source.count != 1:
             raise ValueError("Raster catégoriel mono-bande avec CRS requis.")
@@ -56,7 +63,7 @@ def align_categorical_to_grid(path, grid: RasterGrid, *, nodata: int = 0) -> tup
         transform = source.window_transform(window)
         for array, destination in ((data, codes), (source_valid, valid)):
             reproject(source=array, destination=destination, src_transform=transform, src_crs=source.crs,
-                      dst_transform=grid.transform, dst_crs=grid.crs, resampling=Resampling.nearest,
+                      dst_transform=grid.transform, dst_crs=grid.crs, resampling=resampling,
                       init_dest_nodata=True, dst_nodata=0)
     valid = valid.astype(bool)
     codes[~valid] = 0

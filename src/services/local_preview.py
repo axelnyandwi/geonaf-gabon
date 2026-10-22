@@ -181,3 +181,28 @@ def analyze_local_ndvi_series(observations, data_dir: Path, *, scientific_profil
         raise LocalPreviewError(
             "Série NDVI impossible : vérifier les acquisitions, leurs manifestes, l’AOI, la période et le profil."
         ) from None
+
+
+def local_observation_key(observation, data_dir, scientific_profile: ScientificProfile):
+    """Cache key per date and AOI (file revisions, AOI digest, profile)."""
+    try:
+        records = list(_observation_revision(observation))
+        aoi = _profile_aoi(data_dir, scientific_profile)
+        records.append((str(aoi.resolve()), hashlib.sha256(aoi.read_bytes()).hexdigest()))
+        return ("local-ndvi-date-v1", scientific_profile.fingerprint, tuple(records))
+    except Exception:
+        raise LocalPreviewError("Impossible de vérifier les entrées locales du cache.") from None
+
+
+def analyze_local_observation(observation: LocalObservation, data_dir: Path, *,
+                              scientific_profile: ScientificProfile):
+    """Verify manifest and asset digests, then compute the NDVI of one date."""
+    from src.services.ndvi_observation import analyze_ndvi_observation
+
+    try:
+        return analyze_ndvi_observation(_load_observation(observation),
+                                        aoi_path=_profile_aoi(data_dir, scientific_profile),
+                                        scientific_profile=scientific_profile)
+    except Exception:
+        raise LocalPreviewError(
+            "NDVI de la date impossible : vérifier l'acquisition, son manifeste, l'AOI et le profil.") from None

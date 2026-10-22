@@ -119,6 +119,27 @@ def _summary(values: np.ndarray) -> NDVISummary:
                        float(np.std(values, ddof=0)), float(p25), float(p75))
 
 
+def prepare_date_ndvi(acquisition: Sentinel2Acquisition, aoi_path: Path, scratch: Path,
+                      prefix: str) -> tuple[Path, Path]:
+    """Clip B04/B08/SCL to the AOI (all touched), calibrate BOA, write NDVI.
+
+    Returns temporary (ndvi_path, clipped_scl_path) inside ``scratch``; the
+    clipped reflectance bands are removed once NDVI is written.
+    """
+    clipped = {}
+    for role, asset in (("b04", acquisition.b04), ("b08", acquisition.b08), ("scl", acquisition.scl)):
+        clipped[role] = clip_raster_to_aoi(asset.path, scratch / f"{prefix}-{role}.tif", aoi_path, all_touched=True)
+    calibration = acquisition.calibration
+    ndvi, profile_raster = calculate_ndvi(
+        clipped["b04"], clipped["b08"], None, calibration.red_offset,
+        calibration.nir_offset, calibration.quantification_value)
+    ndvi_path = _write_temporary_ndvi(scratch / f"{prefix}-ndvi.tif", ndvi, profile_raster)
+    del ndvi
+    clipped["b04"].unlink()
+    clipped["b08"].unlink()
+    return ndvi_path, clipped["scl"]
+
+
 def _validate_inputs(acquisitions, aoi_path, profile, period, gap_warning_days):
     if not isinstance(profile, ScientificProfile):
         raise TypeError("Un ScientificProfile est requis pour une série NDVI.")
@@ -220,21 +241,8 @@ def analyze_ndvi_time_series(
 
     with TemporaryDirectory(prefix="geonaf-ndvi-series-") as scratch:
         scratch = Path(scratch)
-        inputs = []
-        for index, acquisition in enumerate(ordered):
-            clipped = {}
-            for role, asset in (("b04", acquisition.b04), ("b08", acquisition.b08), ("scl", acquisition.scl)):
-                clipped[role] = clip_raster_to_aoi(asset.path, scratch / f"{index}-{role}.tif",
-                                                   aoi_path, all_touched=True)
-            calibration = acquisition.calibration
-            ndvi, profile_raster = calculate_ndvi(
-                clipped["b04"], clipped["b08"], None, calibration.red_offset,
-                calibration.nir_offset, calibration.quantification_value)
-            ndvi_path = _write_temporary_ndvi(scratch / f"{index}-ndvi.tif", ndvi, profile_raster)
-            del ndvi
-            (scratch / f"{index}-b04.tif").unlink()
-            (scratch / f"{index}-b08.tif").unlink()
-            inputs.append((ndvi_path, clipped["scl"]))
+        inputs = [prepare_date_ndvi(acquisition, aoi_path, scratch, str(index))
+                  for index, acquisition in enumerate(ordered)]
 
         grid = build_series_grid([path for path, _ in inputs])
         aoi_pixels = _rasterize_aoi_pixel_mask(grid, aoi_path)
