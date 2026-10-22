@@ -1,6 +1,13 @@
 # Sources de données
 
-Aucune source n’est encore intégrée. Avant chaque ingestion, documenter :
+Sources intégrées ou préparées :
+
+- Copernicus Sentinel-2 L2A (CDSE, STAC + S3) : ingestion opérationnelle, voir
+  `acquisition_catalogue.md` et `acquisition_downloads.md`.
+- ESA WorldCover 10 m (CC BY 4.0) et OpenStreetMap (ODbL 1.0) : adaptateurs préparés,
+  sans récupération automatique, voir `multisource.md`.
+
+Avant chaque ingestion, documenter :
 
 - le fournisseur et l’URL officielle ;
 - la licence et les conditions de réutilisation ;

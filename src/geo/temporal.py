@@ -192,6 +192,39 @@ def build_common_grid(
     )
 
 
+def build_series_grid(ndvi_paths) -> RasterGrid:
+    """Inward-snapped grid over N single-band footprints (time series).
+
+    Same rules as :func:`build_common_grid` without overrides: the first raster
+    supplies CRS, resolution and origin; the grid covers the rectangular
+    intersection of every footprint. For two rasters, both functions agree.
+    """
+    metadata = [_north_up_metadata(path)[0] for path in ndvi_paths]
+    if len(metadata) < 2:
+        raise ValueError("Au moins deux rasters sont requis pour une grille commune.")
+    first = metadata[0]
+    if all(item["crs"] == first["crs"] and item["transform"] == first["transform"]
+           and item["width"] == first["width"] and item["height"] == first["height"]
+           for item in metadata[1:]):
+        return RasterGrid(first["crs"], first["resolution"], first["transform"],
+                          first["width"], first["height"])
+    bounds = [first["bounds"]] + [transform_bounds(item["crs"], first["crs"], *item["bounds"])
+                                  for item in metadata[1:]]
+    left, bottom = max(b[0] for b in bounds), max(b[1] for b in bounds)
+    right, top = min(b[2] for b in bounds), min(b[3] for b in bounds)
+    if left >= right or bottom >= top:
+        raise ValueError("Les rasters de la série n'ont aucune intersection spatiale commune.")
+    origin_x, origin_y = first["transform"].c, first["transform"].f
+    col_start, row_start, width, height = _inward_grid_window(
+        (left, bottom, right, top), origin_x, origin_y, first["resolution"])
+    if width <= 0 or height <= 0:
+        raise ValueError("L'intersection est trop petite pour contenir une cellule cible.")
+    transform = (Affine.translation(origin_x, origin_y)
+                 @ Affine.scale(first["resolution"][0], -first["resolution"][1])
+                 @ Affine.translation(col_start, row_start))
+    return RasterGrid(first["crs"], first["resolution"], transform, width, height)
+
+
 def _is_same_grid(source, grid: RasterGrid) -> bool:
     return (
         source.crs == grid.crs

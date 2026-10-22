@@ -83,6 +83,26 @@ def _profile_aoi(data_dir, scientific_profile):
     return path
 
 
+def _observation_revision(observation):
+    """File identity, size, mtime/ctime and manifest digest of one observation."""
+    manifest = _manifest(observation.manifest_path)
+    root = observation.manifest_path.parent.resolve()
+    paths = [observation.manifest_path]
+    for asset in manifest["assets"].values():
+        path = (root / asset["path"]).resolve()
+        if not path.is_relative_to(root):
+            raise ValueError("Actif hors du produit local.")
+        paths.append(path)
+    records = []
+    for path in paths:
+        stat = path.stat()
+        records.append((str(path.resolve()), stat.st_size, stat.st_mtime_ns,
+                        stat.st_ctime_ns, stat.st_ino))
+    records.append((manifest["product_id"], observation.acquired_at.isoformat(),
+                    hashlib.sha256(observation.manifest_path.read_bytes()).hexdigest()))
+    return records
+
+
 def local_preview_key(earlier, later, data_dir, *, scl_policy=None,
                       threshold=None, scientific_profile: ScientificProfile | None = None):
     """Cheap invalidation for normal local file edits; not an integrity check.
@@ -101,20 +121,7 @@ def local_preview_key(earlier, later, data_dir, *, scl_policy=None,
         threshold = DEFAULT_CHANGE_THRESHOLD if threshold is None else threshold
         records = []
         for observation in (earlier, later):
-            manifest = _manifest(observation.manifest_path)
-            root = observation.manifest_path.parent.resolve()
-            paths = [observation.manifest_path]
-            for asset in manifest["assets"].values():
-                path = (root / asset["path"]).resolve()
-                if not path.is_relative_to(root):
-                    raise ValueError("Actif hors du produit local.")
-                paths.append(path)
-            for path in paths:
-                stat = path.stat()
-                records.append((str(path.resolve()), stat.st_size, stat.st_mtime_ns,
-                                stat.st_ctime_ns, stat.st_ino))
-            records.append((manifest["product_id"], observation.acquired_at.isoformat(),
-                            hashlib.sha256(observation.manifest_path.read_bytes()).hexdigest()))
+            records.extend(_observation_revision(observation))
         aoi = _profile_aoi(data_dir, scientific_profile)
         records.append((str(aoi.resolve()), hashlib.sha256(aoi.read_bytes()).hexdigest()))
         return ("local-science-v2-profiles", scientific_profile.fingerprint if scientific_profile else None,
@@ -136,4 +143,41 @@ def analyze_local_akanda(earlier: LocalObservation, later: LocalObservation, dat
     except Exception:
         raise LocalPreviewError(
             "Analyse locale impossible : vérifier les acquisitions, leurs manifestes, l’AOI et le profil."
+        ) from None
+
+
+def local_series_key(observations, data_dir, scientific_profile: ScientificProfile, period,
+                     gap_warning_days):
+    """Cheap cache invalidation for a series; full SHA-256 still runs on a miss."""
+    try:
+        records = []
+        for observation in observations:
+            records.extend(_observation_revision(observation))
+        aoi = _profile_aoi(data_dir, scientific_profile)
+        records.append((str(aoi.resolve()), hashlib.sha256(aoi.read_bytes()).hexdigest()))
+        return ("local-ndvi-series-v1", scientific_profile.fingerprint,
+                tuple(day.isoformat() for day in period), float(gap_warning_days), tuple(records))
+    except Exception:
+        raise LocalPreviewError("Impossible de vérifier les entrées locales du cache.") from None
+
+
+def analyze_local_ndvi_series(observations, data_dir: Path, *, scientific_profile: ScientificProfile,
+                              period, gap_warning_days: float = 15.0):
+    """Verify every manifest and asset digest, then delegate to the series engine."""
+    from src.services.ndvi_time_series import analyze_ndvi_time_series
+
+    try:
+        acquisitions, digests = [], {}
+        for observation in observations:
+            acquisitions.append(_load_observation(observation))
+            manifest = _manifest(observation.manifest_path)
+            digests[manifest["product_id"]] = {role: record["sha256"]
+                                               for role, record in manifest["assets"].items()}
+        return analyze_ndvi_time_series(
+            acquisitions, aoi_path=_profile_aoi(data_dir, scientific_profile),
+            scientific_profile=scientific_profile, period=period,
+            gap_warning_days=gap_warning_days, source_sha256=digests)
+    except Exception:
+        raise LocalPreviewError(
+            "Série NDVI impossible : vérifier les acquisitions, leurs manifestes, l’AOI, la période et le profil."
         ) from None
