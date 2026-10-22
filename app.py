@@ -13,6 +13,7 @@ from src.services.local_preview import (
     LocalPreviewError, analyze_local_akanda, list_local_observations, local_preview_key,
 )
 from src.services.observation_selection import observation_label
+from src.geo.scientific_profile import LOCAL_SCIENTIFIC_PROFILES
 
 def _brand_asset(name):
     try:
@@ -33,11 +34,21 @@ if logo is not None:
 else:
     st.title(APP_TITLE)
     st.markdown(TAGLINE)
-st.caption("Prototype local V0.2 · Sentinel-2 L2A · Akanda")
-st.info("AOI : carré d’acquisition de 12 × 12 km autour d’Akanda. "
-        "Ce carré n’est pas la limite administrative d’Akanda.")
 
 try:
+    with st.expander("Profil scientifique · V1 expérimentale"):
+        profile = st.radio("Profil appliqué", LOCAL_SCIENTIFIC_PROFILES,
+                           format_func=lambda item: item.label, key="scientific_profile")
+        st.caption(f"{profile.region} · {profile.climate} · {profile.ecosystem}. "
+                   f"Usage : {profile.usage}. Version : {profile.version}. "
+                   f"Seuil ΔNDVI : {profile.change_threshold:g} ; couverture minimale : "
+                   f"{profile.min_comparable_coverage_percent:g} %. {profile.rationale}")
+    st.caption(f"Prototype local V0.2 · Sentinel-2 L2A · AOI {profile.aoi_id}")
+    if profile.aoi_id == "akanda":
+        st.info("AOI : carré d’acquisition de 12 × 12 km autour d’Akanda. "
+                "Ce carré n’est pas la limite administrative d’Akanda.")
+    else:
+        st.info(f"AOI configurée : {profile.aoi_id}. Vérifier son périmètre et l’applicabilité du profil.")
     observations = list_local_observations(DATA_DIR)
     if len(observations) < 2:
         st.error("Deux acquisitions locales vérifiées au minimum sont nécessaires.")
@@ -50,10 +61,10 @@ try:
                           or (previous_selection is None and ambiguous)):
         st.info('Sélection modifiée : cliquer sur « Afficher les dates sélectionnées » pour appliquer ces acquisitions.')
         st.stop()
-    key = local_preview_key(earlier, later, DATA_DIR)
+    key = local_preview_key(earlier, later, DATA_DIR, scientific_profile=profile)
     if st.session_state.get("pair") != key:
         with st.spinner("Vérification des fichiers locaux et calcul du NDVI calibré…"):
-            result = analyze_local_akanda(earlier, later, DATA_DIR)
+            result = analyze_local_akanda(earlier, later, DATA_DIR, scientific_profile=profile)
         st.session_state["result"] = result
         st.session_state["pair"] = key
     st.session_state['selected_observations'] = selected
@@ -63,9 +74,19 @@ except LocalPreviewError as error:
     st.stop()
 except Exception as exc:
     st.error("Affichage indisponible. Vérifier la configuration locale du prototype.")
+    st.stop()
+
+status_labels = {"exploration": "Exploration", "not_assessed": "Comparabilité non évaluée",
+                 "not_comparable": "Non comparable", "validated": "Résultat validé"}
+st.warning(f"Statut scientifique : {status_labels[result.interpretation.status.value]}. "
+           "Les cartes et classes restent exploratoires ; aucun changement durable validé dans la V1.")
+for restriction in result.interpretation.restrictions:
+    st.caption(restriction)
+st.caption(f"Profil {profile.profile_id} · {profile.version} · empreinte {profile.fingerprint}. "
+           f"Saisonnalité : {result.seasonal_assessment.status} ({result.seasonal_assessment.season_relation}).")
 
 st.caption(f"Acquisitions : {observation_label(earlier)} → {observation_label(later)}. "
-           f"Politique SCL : {result.scl_policy} (4 et 5 ; ombres 2 exclues). "
+           f"Politique SCL : {result.scl_policy}. "
            f"Grille : {result.common_grid.crs}, résolution {result.common_grid.resolution[0]:g} m. "
            "Calibration BOA issue des XML de chaque produit.")
 for notice in observation_quality_notices(result):

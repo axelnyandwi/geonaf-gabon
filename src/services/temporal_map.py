@@ -23,6 +23,7 @@ from rasterio.transform import array_bounds
 from rasterio.warp import calculate_default_transform, reproject
 
 from src.geo.change_analysis import _rasterize_aoi_pixel_mask
+from src.geo.scientific_profile import public_scientific_metadata
 
 
 SCHEMA_VERSION = "geonaf.temporal-map/v1"
@@ -175,7 +176,8 @@ def prepare_temporal_map(result, *, max_size=1536):
                                        "height": grid.height, "transform": list(grid.transform)[:6],
                                        "resolution": list(grid.resolution)},
                        "coverage_denominator": analysis.coverage_denominator,
-                       "excluded_out_of_range_pixels": analysis.excluded_out_of_range_pixels},
+                       "excluded_out_of_range_pixels": analysis.excluded_out_of_range_pixels,
+                       "scientific": public_scientific_metadata(result)},
         "display": {"max_size": max_size, "resampling": "nearest", "quantitative": False,
                     "render_version": RENDER_VERSION, "estimated_working_bytes": estimated_bytes},
     }
@@ -231,7 +233,7 @@ class TemporalMapCache:
             SCHEMA_VERSION, RENDER_VERSION, scientific_key, max_size, aoi_digest,
             str(grid.crs), list(grid.transform)[:6], grid.width, grid.height,
             result.scl_policy, result.threshold, result.earlier.product_id,
-            result.later.product_id])).digest()
+            result.later.product_id, public_scientific_metadata(result)])).digest()
         with self._lock:
             encoded = self._entries.pop(key, None)
             if encoded is not None:

@@ -10,6 +10,7 @@ from src.data.acquisition import create_sentinel2_acquisition
 from src.data.acquisition_manifest import validate_acquisition_manifest
 from src.services.temporal_analysis import analyze_temporal_vegetation_change
 from src.geo.change_analysis import DEFAULT_CHANGE_THRESHOLD
+from src.geo.scientific_profile import ScientificProfile
 
 
 class LocalPreviewError(ValueError):
@@ -20,6 +21,7 @@ class LocalPreviewError(ValueError):
 class LocalObservation:
     acquired_at: datetime
     manifest_path: Path
+    product_id: str = ''
 
 
 def _manifest(path):
@@ -42,7 +44,7 @@ def list_local_observations(data_dir: Path) -> tuple[LocalObservation, ...]:
             manifest = _manifest(path)
             acquired = datetime.fromisoformat(manifest["acquired_at_utc"].replace("Z", "+00:00"))
             if acquired.date().isoformat() in {"2025-01-15", "2025-01-25"}:
-                observations.append(LocalObservation(acquired, path))
+                observations.append(LocalObservation(acquired, path, manifest['product_id']))
         return tuple(sorted(observations, key=lambda item: item.acquired_at))
     except Exception:
         raise LocalPreviewError("Catalogue local indisponible ou manifeste non vérifié.") from None
@@ -73,8 +75,17 @@ def _load_observation(observation):
     )
 
 
-def local_preview_key(earlier, later, data_dir, *, scl_policy="usable_land",
-                      threshold=DEFAULT_CHANGE_THRESHOLD):
+def _profile_aoi(data_dir, scientific_profile):
+    root = (data_dir / "aoi").resolve()
+    aoi_id = scientific_profile.aoi_id if scientific_profile is not None else "akanda"
+    path = (root / f"{aoi_id}.geojson").resolve()
+    if not path.is_relative_to(root):
+        raise ValueError("AOI hors du répertoire local autorisé.")
+    return path
+
+
+def local_preview_key(earlier, later, data_dir, *, scl_policy=None,
+                      threshold=None, scientific_profile: ScientificProfile | None = None):
     """Cheap invalidation for normal local file edits; not an integrity check.
 
     Full SHA-256 verification still runs on every analysis cache miss. File
@@ -82,6 +93,13 @@ def local_preview_key(earlier, later, data_dir, *, scl_policy="usable_land",
     and AOI are also content-hashed. No scientific results are rounded.
     """
     try:
+        if scientific_profile is not None:
+            if ((scl_policy is not None and scl_policy != scientific_profile.scl_policy) or
+                    (threshold is not None and threshold != scientific_profile.change_threshold)):
+                raise ValueError("Paramètres différents du profil.")
+            scl_policy, threshold = scientific_profile.scl_policy, scientific_profile.change_threshold
+        scl_policy = scl_policy or "usable_land"
+        threshold = DEFAULT_CHANGE_THRESHOLD if threshold is None else threshold
         records = []
         for observation in (earlier, later):
             manifest = _manifest(observation.manifest_path)
@@ -98,23 +116,25 @@ def local_preview_key(earlier, later, data_dir, *, scl_policy="usable_land",
                                 stat.st_ctime_ns, stat.st_ino))
             records.append((manifest["product_id"], observation.acquired_at.isoformat(),
                             hashlib.sha256(observation.manifest_path.read_bytes()).hexdigest()))
-        aoi = data_dir / "aoi" / "akanda.geojson"
+        aoi = _profile_aoi(data_dir, scientific_profile)
         records.append((str(aoi.resolve()), hashlib.sha256(aoi.read_bytes()).hexdigest()))
-        return ("akanda-science-v1", scl_policy, threshold, tuple(records))
+        return ("local-science-v2-profiles", scientific_profile.fingerprint if scientific_profile else None,
+                scl_policy, threshold, tuple(records))
     except Exception:
         raise LocalPreviewError("Impossible de vérifier les entrées locales du cache.") from None
 
 
-def analyze_local_akanda(earlier: LocalObservation, later: LocalObservation, data_dir: Path):
+def analyze_local_akanda(earlier: LocalObservation, later: LocalObservation, data_dir: Path,
+                         *, scientific_profile: ScientificProfile | None = None):
     """Delegate calibration, masking, harmonization and statistics to the service."""
     if earlier.acquired_at >= later.acquired_at:
         raise LocalPreviewError("Choisir deux acquisitions dans l’ordre chronologique.")
     try:
         return analyze_temporal_vegetation_change(
             _load_observation(earlier), _load_observation(later),
-            aoi_path=data_dir / "aoi" / "akanda.geojson", scl_policy="usable_land",
+            aoi_path=_profile_aoi(data_dir, scientific_profile), scientific_profile=scientific_profile,
         )
     except Exception:
         raise LocalPreviewError(
-            "Analyse locale impossible : vérifier les acquisitions, leurs manifestes et l’AOI Akanda."
+            "Analyse locale impossible : vérifier les acquisitions, leurs manifestes, l’AOI et le profil."
         ) from None

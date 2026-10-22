@@ -30,6 +30,40 @@ PRODUCT_B = "S2B_SYNTHETIC_B"
 TRANSFORM = from_origin(0, 4, 1, 1)
 
 
+def test_service_masks_cloud_before_warp_and_keeps_provenance(tmp_path):
+    first = _make_acquisition(
+        tmp_path, PRODUCT_A, datetime(2025, 1, 1, tzinfo=timezone.utc),
+        red_dn=2000, nir_dn=2000, red_offset=-1000, nir_offset=-1000,
+        b04_transform=from_origin(0, 1, 1, 1), raster_shape=(1, 4),
+        scl_values=np.array([[4, 4, 4, 4]], dtype=np.uint8),
+    )
+    second = _make_acquisition(
+        tmp_path, PRODUCT_B, datetime(2025, 1, 11, tzinfo=timezone.utc),
+        red_dn=2000, nir_dn=2000, red_offset=-1000, nir_offset=-1000,
+        b04_transform=from_origin(0.5, 1, 1, 1), raster_shape=(1, 4),
+        scl_values=np.array([[4, 9, 4, 4]], dtype=np.uint8),
+    )
+    # Calibrated cloud NDVI = 1; the other pixels remain exactly zero.
+    with rasterio.open(second.b04.path, "r+") as destination:
+        destination.write(np.array([[2000, 1000, 2000, 2000]], dtype=np.uint16), 1)
+    pair = _selected_pair(first, second)
+    result = analyze_temporal_vegetation_change(first, second, selected_pair=pair)
+    assert result.comparison.comparison_mask.tolist() == [[False, False, True]]
+    assert result.analysis.statistics["mean"] == 0
+    assert result.analysis.statistics["count"] == 1
+    assert result.analysis.class_pixel_counts == {"decrease": 0, "stable": 1, "increase": 0}
+    assert result.analysis.areas_m2 == pytest.approx({"decrease": 0, "stable": 1, "increase": 0})
+    for provenance, acquisition in ((result.earlier, first), (result.later, second)):
+        assert provenance.product_id == acquisition.product_id
+        assert provenance.acquired_at_utc == acquisition.acquired_at
+        assert provenance.calibration == acquisition.calibration
+        assert dict(provenance.asset_product_ids) == dict(acquisition.asset_product_ids)
+        assert provenance.asset_metadata["scl"] == acquisition.scl
+    assert result.selected_pair == pair
+    assert result.scl_policy == "usable_land"
+    assert result.threshold == 0.1
+
+
 def _write_raster(path, values, *, product_id, nodata, transform=TRANSFORM):
     values = np.asarray(values)
     with rasterio.open(

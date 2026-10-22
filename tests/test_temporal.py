@@ -361,3 +361,92 @@ def test_custom_grid_must_match_its_affine_resolution(tmp_path):
 
     with pytest.raises(ValueError, match="ne correspond pas"):
         _compare(paths, grid=invalid_grid)
+
+
+@pytest.mark.parametrize("invalid", ["cloud", "shadow", "cast_shadow", "scl_nodata", "scl_mask", "ndvi_nodata"])
+def test_half_pixel_warp_rejects_invalid_source_neighbours(tmp_path, invalid):
+    """A rejected source must not create the former comparable +0.5 delta."""
+    first = np.zeros((1, 4), dtype=np.float32)
+    second = np.array([[0, 1, 0, 0]], dtype=np.float32)
+    scl = np.full((1, 4), 4, dtype=np.uint8)
+    scl[0, 1] = {"cloud": 9, "shadow": 3, "cast_shadow": 2,
+                 "scl_nodata": 0}.get(invalid, 4)
+    paths = _make_pair(
+        tmp_path, first, second, first_transform=from_origin(0, 1, 1, 1),
+        second_transform=from_origin(0.5, 1, 1, 1), second_scl=scl,
+        second_scl_mask=[[True, False, True, True]] if invalid == "scl_mask" else None,
+        second_nodata=1 if invalid == "ndvi_nodata" else None,
+        crs1="EPSG:6933",
+    )
+    result = _compare(paths)
+    assert result.comparison_mask.tolist() == [[False, False, True]]
+    assert np.isnan(result.ndvi_date_2[0, :2]).all()
+    np.testing.assert_array_equal(result.delta_ndvi[result.comparison_mask], [0])
+
+    from src.geo.change_analysis import ChangeClass, analyze_ndvi_changes
+    analysis = analyze_ndvi_changes(result)
+    assert analysis.statistics["count"] == 1
+    assert analysis.statistics["mean"] == 0
+    assert analysis.class_pixel_counts == {"decrease": 0, "stable": 1, "increase": 0}
+    assert analysis.areas_m2 == pytest.approx({"decrease": 0, "stable": 1, "increase": 0})
+    assert analysis.comparable_coverage_percent == pytest.approx(100 / 3)
+    assert analysis.change_class_map.tolist() == [[ChangeClass.NON_COMPARABLE,
+                                                 ChangeClass.NON_COMPARABLE, ChangeClass.STABLE]]
+
+
+@pytest.mark.parametrize("different_crs", [False, True])
+def test_resolution_warp_cannot_mix_cloud_values(tmp_path, different_crs):
+    from rasterio.warp import transform_bounds
+
+    second = np.zeros((4, 4), dtype=np.float32)
+    second[1, 1] = 1
+    scl = np.full((4, 4), 4, dtype=np.uint8)
+    scl[1, 1] = 9
+    crs2 = "EPSG:4326" if different_crs else "EPSG:3857"
+    bounds = transform_bounds("EPSG:3857", crs2, 0, 0, 4000, 4000)
+    paths = _make_pair(
+        tmp_path, np.zeros((8, 8), dtype=np.float32), second,
+        first_transform=from_origin(0, 4000, 500, 500),
+        second_transform=from_bounds(*bounds, 4, 4), second_scl=scl,
+        crs2=crs2,
+    )
+    result = _compare(paths)
+    assert result.comparison_mask.any()
+    assert not result.comparison_mask.all()
+    np.testing.assert_array_equal(result.delta_ndvi[result.comparison_mask], 0)
+    assert np.isnan(result.delta_ndvi[~result.comparison_mask]).all()
+
+
+def test_warp_rejects_partial_kernel_at_source_border(tmp_path):
+    paths = _make_pair(tmp_path, np.zeros((3, 3), dtype=np.float32),
+                       np.zeros((3, 3), dtype=np.float32),
+                       first_transform=from_origin(0, 3, 1, 1))
+    grid = temporal.RasterGrid(rasterio.crs.CRS.from_epsg(3857), (0.5, 0.5),
+                             from_origin(0, 3, 0.5, 0.5), 6, 6)
+    result = _compare(paths, grid=grid)
+    assert result.comparison_mask[1:-1, 1:-1].all()
+    assert not result.comparison_mask[[0, -1], :].any()
+    assert not result.comparison_mask[:, [0, -1]].any()
+
+
+@pytest.mark.parametrize("target_resolution", [5, 20])
+def test_coarse_scl_masks_source_before_up_or_downsampling(tmp_path, target_resolution):
+    """A 20 m SCL excludes its mapped 10 m sources before either warp."""
+    second = np.zeros((16, 16), dtype=np.float32)
+    second[2:4, 2:4] = 1
+    paths = _make_pair(
+        tmp_path, np.zeros_like(second), second,
+        first_transform=from_origin(0, 160, 10, 10),
+    )
+    coarse_scl = np.full((8, 8), 4, dtype=np.uint8)
+    coarse_scl[1, 1] = 9
+    _write_raster(paths["scl2"], coarse_scl, transform=from_origin(0, 160, 20, 20), nodata=0)
+    size = 160 // target_resolution
+    grid = temporal.RasterGrid(
+        rasterio.crs.CRS.from_epsg(3857), (target_resolution, target_resolution),
+        from_origin(0, 160, target_resolution, target_resolution), size, size,
+    )
+    result = _compare(paths, grid=grid)
+    assert result.comparison_mask.any()
+    assert not result.comparison_mask.all()
+    np.testing.assert_array_equal(result.delta_ndvi[result.comparison_mask], 0)

@@ -256,7 +256,9 @@ def _aligned_integer_window(source, grid: RasterGrid) -> tuple[int, int] | None:
     return col, row
 
 
-def _read_ndvi_on_grid(path: str | Path, grid: RasterGrid) -> tuple[np.ndarray, np.ndarray]:
+def _read_ndvi_on_grid(
+    path: str | Path, grid: RasterGrid, scl_path: str | Path, scl_policy: str
+) -> tuple[np.ndarray, np.ndarray]:
     with rasterio.open(path) as source:
         if source.crs is None:
             raise ValueError("CRS manquant sur un raster NDVI.")
@@ -279,8 +281,19 @@ def _read_ndvi_on_grid(path: str | Path, grid: RasterGrid) -> tuple[np.ndarray, 
             valid = ~np.ma.getmaskarray(window_data) & np.isfinite(values)
             return values, valid
 
-        numerator_source = np.where(source_valid, source_values, 0).astype(np.float32)
-        weight_source = source_valid.astype(np.float32)
+        # Classify on the NDVI source grid BEFORE any continuous interpolation.
+        # Nearest-neighbour SCL alignment does not increase its native precision.
+        source_grid = RasterGrid(
+            source.crs, source.res, source.transform, source.width, source.height
+        )
+        source_valid &= scl_policy_mask_on_grid(scl_path, source_grid, scl_policy)
+        # Explicit invalid padding prevents GDAL from normalizing a truncated
+        # edge kernel into full validity. Zero weights are data, not src_nodata.
+        numerator_source = np.pad(
+            np.where(source_valid, source_values, 0).astype(np.float32), 1
+        )
+        weight_source = np.pad(source_valid.astype(np.float32), 1)
+        source_transform = source.transform @ Affine.translation(-1, -1)
         numerator = np.zeros((grid.height, grid.width), dtype=np.float32)
         weights = np.zeros((grid.height, grid.width), dtype=np.float32)
 
@@ -291,7 +304,7 @@ def _read_ndvi_on_grid(path: str | Path, grid: RasterGrid) -> tuple[np.ndarray, 
             reproject(
                 source=source_array,
                 destination=destination,
-                src_transform=source.transform,
+                src_transform=source_transform,
                 src_crs=source.crs,
                 dst_transform=grid.transform,
                 dst_crs=grid.crs,
@@ -302,7 +315,9 @@ def _read_ndvi_on_grid(path: str | Path, grid: RasterGrid) -> tuple[np.ndarray, 
 
     # Require the complete bilinear kernel to come from valid source pixels.
     # This avoids normalizing a partial neighborhood into a seemingly valid
-    # observation at a NoData edge.
+    # observation at a NoData/SCL exclusion or footprint edge. Accept only
+    # weight >= 1 - 1e-6 (floating-point warp tolerance); never fill a partial
+    # neighbourhood by renormalizing its remaining valid observations.
     valid = weights >= (1.0 - 1e-6)
     values = np.full((grid.height, grid.width), np.nan, dtype=np.float32)
     np.divide(numerator, weights, out=values, where=valid & (weights > 0))
@@ -428,14 +443,26 @@ def harmonize_ndvi_pair(
     policy (from ``src.data.cloud_mask.SCL_MASK_POLICIES``) is applied to both
     dates. ``delta_ndvi`` is ``ndvi_date_2 - ndvi_date_1`` and is NaN outside
     the common valid mask.
+
+    For interpolated NDVI, SCL is first aligned by nearest neighbour to each
+    NDVI source grid. Excluded source values contribute neither numerator nor
+    validity weight. The full bilinear weight must be valid (tolerance 1e-6),
+    including at NoData and footprint edges; otherwise the output is NaN.
+    Destination SCL remains an additional nearest-neighbour check. This does
+    not infer SCL detail at 10 m from a coarser classification. Identical grids
+    and exact integer windows retain their values without interpolation.
     """
     if grid is None:
         grid = build_common_grid(ndvi_date_1_path, ndvi_date_2_path)
     else:
         _validate_grid(grid)
 
-    ndvi_1, raster_valid_1 = _read_ndvi_on_grid(ndvi_date_1_path, grid)
-    ndvi_2, raster_valid_2 = _read_ndvi_on_grid(ndvi_date_2_path, grid)
+    ndvi_1, raster_valid_1 = _read_ndvi_on_grid(
+        ndvi_date_1_path, grid, scl_date_1_path, scl_policy
+    )
+    ndvi_2, raster_valid_2 = _read_ndvi_on_grid(
+        ndvi_date_2_path, grid, scl_date_2_path, scl_policy
+    )
     scl_valid_1 = scl_policy_mask_on_grid(scl_date_1_path, grid, scl_policy)
     scl_valid_2 = scl_policy_mask_on_grid(scl_date_2_path, grid, scl_policy)
 

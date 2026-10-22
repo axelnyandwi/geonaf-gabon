@@ -16,6 +16,7 @@ from rasterio.warp import calculate_default_transform, reproject
 from affine import Affine
 
 from src.geo.change_analysis import _rasterize_aoi_pixel_mask
+from src.geo.scientific_profile import public_scientific_metadata
 
 
 def prepare_ndvi_layer(result, *, max_size=1536):
@@ -84,5 +85,6 @@ def prepare_ndvi_layer(result, *, max_size=1536):
         "acquired_at": result.later.acquired_at_utc.isoformat(),
         "scl_policy": result.scl_policy, "source_crs": str(grid.crs),
         "display_crs": "EPSG:3857", "legend": stops,
+        "scientific": public_scientific_metadata(result),
         "preparation_ms": (perf_counter() - started) * 1000,
     }

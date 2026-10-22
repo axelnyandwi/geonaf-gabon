@@ -1,6 +1,6 @@
 """Offline adapter and Streamlit checks; synthetic data, not scientific validation."""
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 from pathlib import Path
 
@@ -112,12 +112,12 @@ def test_streamlit_renders_local_results_without_private_paths(local_data, monke
     assert not app.exception
     assert not app.error
     assert len(app.metric) == 4
-    assert len(app.selectbox) == 2
+    assert len(app.date_input) == 2 and not app.selectbox
     assert app.metric[0].value == "50,00 %"
     assert "limite administrative" in app.info[0].value
     for kind in (app.caption, app.info, app.warning):
         assert all(str(local_data) not in element.value for element in kind)
-    app.selectbox[0].select_index(1)
+    app.date_input[0].set_value(date(2025, 1, 25))
     app.button[0].click().run()
     assert app.error
     assert "chronologique" in app.error[0].value
@@ -147,7 +147,10 @@ def test_same_pair_submit_reuses_result_and_invalidates_changed_aoi(local_data, 
     images.cached_map_png.clear()
     encode = Mock(wraps=images.render_ndvi_png)
     monkeypatch.setattr(images, "render_ndvi_png", encode)
-    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
+    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
+    app.session_state["interactive_map"] = False  # Specifically exercise the PNG fallback cache.
+    app.session_state["temporal_comparison"] = False
+    app.run(timeout=30)
     original = app.session_state["result"].analysis.delta_ndvi.copy()
     app.button[0].click().run()
     assert not app.exception and not app.error

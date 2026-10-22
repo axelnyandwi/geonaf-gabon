@@ -70,6 +70,10 @@ def _manifest(result, exported_pixel_counts: dict[str, int], valid_pixel_count: 
         "schema_version": _SCHEMA_VERSION,
         "product": "GEONAF temporal Sentinel-2 NDVI variation",
         "interpretation_scope": result.interpretation_scope,
+        "scientific_profile": _json_value(result.scientific_profile),
+        "scientific_profile_fingerprint": result.scientific_profile.fingerprint if result.scientific_profile else None,
+        "interpretation": _json_value(result.interpretation),
+        "aoi_sha256": result.aoi_sha256,
         "inputs": {
             "earlier": _json_value(result.earlier),
             "later": _json_value(result.later),

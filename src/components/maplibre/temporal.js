@@ -106,6 +106,8 @@ export function mountTemporalMap(container, payload, maplibre, { onError = () =>
   root.querySelector(".temporal-provenance").textContent = JSON.stringify({
     initial: publicAcquisition(payload.provenance.initial), final: publicAcquisition(payload.provenance.final),
     source_grid: pick(payload.provenance.source_grid, ["crs", "width", "height", "transform", "resolution"]),
+    scientific: { ...pick(payload.provenance.scientific, ["interpretation_status", "seasonal_status", "season_relation", "aoi_sha256", "persistent_change_validation"]),
+      profile: pick(payload.provenance.scientific?.profile, ["profile_id", "version", "fingerprint", "aoi_id", "experimental"]) },
     classification: { ...pick(payload.classification, ["threshold", "delta_order"]),
       rules: pick(payload.classification.rules, ["0", "1", "2", "3"]) },
     mask_policy: { ...pick(payload.mask_policy, ["scl_policy", "scl_classes", "aoi_pixel_rule", "masked_rgba"]),

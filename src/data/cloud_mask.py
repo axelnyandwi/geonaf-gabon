@@ -26,6 +26,19 @@ SCL_MASK_POLICIES = {
 }
 
 
+def change_policy_restrictions(policy):
+    """Eligibility for land-change interpretation, not a raster-mask change."""
+    if policy not in SCL_MASK_POLICIES:
+        raise ValueError("Politique SCL inconnue.")
+    classes = SCL_MASK_POLICIES[policy]
+    restrictions = []
+    if classes & (SCL_DEFECTIVE_CLASSES | SCL_UNCERTAIN_CLASSES | SCL_CLOUD_SHADOW_CLASSES):
+        restrictions.append("La politique SCL conserve des pixels défectueux, incertains, nuageux ou ombragés.")
+    if not SCL_USABLE_LAND_CLASSES.issubset(classes):
+        restrictions.append("La politique SCL exclut systématiquement les transitions végétation vers sol nu.")
+    return tuple(restrictions)
+
+
 def scl_mask_from_values(scl_values, policy="observation", valid_mask=None):
     """Build a named SCL mask while respecting class 0 and source NoData.
 

@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
+import hashlib
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from types import MappingProxyType
@@ -19,7 +20,7 @@ from src.data.acquisition import (
     Sentinel2Acquisition,
     create_sentinel2_acquisition,
 )
-from src.data.cloud_mask import SCL_MASK_POLICIES
+from src.data.cloud_mask import SCL_MASK_POLICIES, change_policy_restrictions
 from src.data.preparation import clip_raster_to_aoi
 from src.geo.change_analysis import (
     DEFAULT_CHANGE_THRESHOLD,
@@ -34,6 +35,9 @@ from src.geo.temporal import (
     harmonize_ndvi_pair,
 )
 from src.geo.vegetation_indices import calculate_ndvi
+from src.geo.scientific_profile import (
+    ScientificProfile, ScientificStatus, InterpretationAssessment,
+)
 
 
 @dataclass(frozen=True)
@@ -98,6 +102,11 @@ class TemporalVegetationChangeResult:
     aoi_path: str | None
     interpretation_scope: str = (
         "Variation du NDVI ; ne permet pas à elle seule de conclure à une déforestation."
+    )
+    scientific_profile: ScientificProfile | None = None
+    aoi_sha256: str | None = None
+    interpretation: InterpretationAssessment = InterpretationAssessment(
+        ScientificStatus.NOT_ASSESSED, ("Validation indépendante non réalisée.",)
     )
 
 
@@ -275,15 +284,71 @@ def _write_temporary_ndvi(path: Path, values: np.ndarray, profile: dict) -> Path
     return path
 
 
+def _profile_context(acquisition, profile):
+    context = profile.seasonal_context(acquisition.acquired_at)
+    if context is not None and acquisition.seasonal_context not in (None, context):
+        raise ValueError("Le contexte fourni contredit le calendrier du profil.")
+    return replace(acquisition, seasonal_context=context or acquisition.seasonal_context)
+
+
+def _profile_seasonality(earlier, later, profile):
+    rules = profile.seasonal_rules
+    first, second = earlier.seasonal_context, later.seasonal_context
+    baseline = _default_seasonal_assessment(first, second)
+    method = f"profile:{profile.profile_id}/{profile.version}"
+    interval = (_utc(later.acquired_at) - _utc(earlier.acquired_at)).total_seconds() / 86400
+    if rules.max_interval_days is not None and interval > rules.max_interval_days:
+        return replace(baseline, status="not_comparable", method=method,
+                       rationale="Intervalle supérieur à la limite du profil.",
+                       warnings=baseline.warnings + ("Intervalle temporel non comparable selon le profil.",))
+    if first is None or second is None or any(
+        context.region != profile.region or context.vegetation_type != profile.ecosystem
+        for context in (first, second)
+    ) or first.source != second.source or first.version != second.version:
+        return replace(baseline, status="not_assessed", method=method,
+                       rationale="Contextes absents, hors du profil ou issus de sources/versions différentes.",
+                       warnings=baseline.warnings + ("Comparabilité saisonnière non évaluée pour ce profil.",))
+    if rules.require_same_season and first.season_id != second.season_id:
+        return replace(baseline, status="not_comparable", method=method,
+                       rationale="Saisons différentes ; le profil exige la même saison.")
+    return replace(baseline, status="conditional", method=method,
+                   rationale="Règles saisonnières satisfaites ; calendrier déclaratif, sans validation de persistance.")
+
+
+def _interpretation(analysis, seasonal, scl_policy, profile):
+    restrictions = list(change_policy_restrictions(scl_policy))
+    rejected = bool(restrictions) or seasonal.status == "not_comparable"
+    if seasonal.status in {"not_assessed", "not_comparable"}:
+        restrictions.append(seasonal.rationale)
+    if analysis.comparable_area_m2 <= 0:
+        rejected = True
+        restrictions.append("Aucune surface comparable : interprétation impossible.")
+    if profile is not None:
+        if (analysis.coverage_denominator != "aoi" or
+                analysis.comparable_coverage_percent < profile.min_comparable_coverage_percent):
+            rejected = True
+            restrictions.append("Couverture comparable de l'AOI inférieure au minimum du profil.")
+        if profile.experimental:
+            restrictions.append("Profil expérimental : seuils non validés scientifiquement.")
+    restrictions.extend(seasonal.warnings)
+    restrictions.append("Cartes et classes exploratoires ; aucun changement durable validé. "
+                        "Validation indépendante de persistance non réalisée dans la V1.")
+    status = (ScientificStatus.NOT_COMPARABLE if rejected else
+              ScientificStatus.NOT_ASSESSED if seasonal.status == "not_assessed" else
+              ScientificStatus.EXPLORATION)
+    return InterpretationAssessment(status, tuple(restrictions))
+
+
 def analyze_temporal_vegetation_change(
     earlier: Sentinel2Acquisition,
     later: Sentinel2Acquisition,
     *,
     aoi_path: str | Path | None = None,
     scl_policy: str | None = None,
-    threshold: float = DEFAULT_CHANGE_THRESHOLD,
+    threshold: float | None = None,
     selected_pair: TemporalPair | None = None,
     seasonal_evaluator: SeasonalComparabilityEvaluator | None = None,
+    scientific_profile: ScientificProfile | None = None,
 ) -> TemporalVegetationChangeResult:
     """Calibrate, harmonize, and analyze one chronologically ordered pair.
 
@@ -293,10 +358,31 @@ def analyze_temporal_vegetation_change(
     a selected pair is supplied, its recorded SCL policy is inherited unless
     an explicit matching policy is provided. Without a pair, ``usable_land``
     keeps only SCL classes 4 and 5, excluding cast shadows (class 2).
+
+    An explicit scientific profile owns the threshold and SCL policy; conflicting
+    overrides/evaluators fail rather than silently overriding its provenance.
+    Profile comparisons require an AOI for the coverage denominator. V1 only
+    qualifies exploration: it has no independent persistent-change validator.
     """
     earlier = _revalidate(earlier)
     later = _revalidate(later)
     _validate_selected_pair(earlier, later, selected_pair)
+    if scientific_profile is not None:
+        if not isinstance(scientific_profile, ScientificProfile):
+            raise TypeError("Un ScientificProfile est requis.")
+        if aoi_path is None:
+            raise ValueError("Une AOI est requise pour appliquer un profil scientifique.")
+        if seasonal_evaluator is not None:
+            raise ValueError("Choisir les règles du profil ou un évaluateur externe, pas les deux.")
+        if ((scl_policy is not None and scl_policy != scientific_profile.scl_policy) or
+                (threshold is not None and threshold != scientific_profile.change_threshold)):
+            raise ValueError("Les paramètres explicites contredisent le profil scientifique.")
+        scl_policy = scientific_profile.scl_policy
+        threshold = scientific_profile.change_threshold
+        earlier = _profile_context(earlier, scientific_profile)
+        later = _profile_context(later, scientific_profile)
+    if threshold is None:
+        threshold = DEFAULT_CHANGE_THRESHOLD
     if scl_policy is None:
         scl_policy = (
             selected_pair.scl_policy
@@ -313,11 +399,12 @@ def analyze_temporal_vegetation_change(
         raise ValueError(
             "La politique SCL ne correspond pas à celle de la paire sélectionnée."
         )
-    seasonal_assessment = _assess_seasonality(
-        earlier.seasonal_context,
-        later.seasonal_context,
-        seasonal_evaluator,
-    )
+    if scientific_profile is not None:
+        seasonal_assessment = _profile_seasonality(earlier, later, scientific_profile)
+    else:
+        seasonal_assessment = _assess_seasonality(
+            earlier.seasonal_context, later.seasonal_context, seasonal_evaluator
+        )
 
     # Fail before reading band pixels when source footprints cannot form a
     # supported comparison grid. The harmonizer receives this same grid when
@@ -404,4 +491,7 @@ def analyze_temporal_vegetation_change(
         comparison=comparison,
         analysis=analysis,
         aoi_path=str(aoi_path) if aoi_path is not None else None,
+        scientific_profile=scientific_profile,
+        aoi_sha256=hashlib.sha256(Path(aoi_path).read_bytes()).hexdigest() if scientific_profile else None,
+        interpretation=_interpretation(analysis, seasonal_assessment, scl_policy, scientific_profile),
     )
