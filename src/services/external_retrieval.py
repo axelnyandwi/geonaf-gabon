@@ -26,13 +26,14 @@ def _external_client(client):
 
 
 def retrieve_worldcover(data_dir: Path, *, aoi_id: str, wgs84_bounds, client=None,
-                        max_bytes: int = WORLDCOVER_MAX_BYTES) -> dict:
+                        max_bytes: int = WORLDCOVER_MAX_BYTES, aoi_geometry_sha256: str | None = None) -> dict:
     """Every WorldCover tile intersecting the AOI; one window, file and provenance per tile."""
     from src.data.worldcover import fetch_worldcover_windows
 
     store, repository = open_store(data_dir)
     windows = fetch_worldcover_windows(_LazyClient(client), store, repository, aoi_id=aoi_id,
-                                       wgs84_bounds=wgs84_bounds, max_bytes=max_bytes)
+                                       wgs84_bounds=wgs84_bounds, max_bytes=max_bytes,
+                                       aoi_geometry_sha256=aoi_geometry_sha256)
     tiles = {tile: {k: v for k, v in report.items() if k != "storage_key"} for tile, _, _, report in windows}
     return {"tiles": tiles, "network_bytes": sum(t["network_bytes"] for t in tiles.values()),
             "reused": all(t["reused"] for t in tiles.values()),
@@ -52,9 +53,9 @@ def retrieve_osm(data_dir: Path, *, wgs84_bounds, force_refresh: bool = False, c
 
 
 def retrieve_sentinel1(data_dir: Path, *, aoi_id: str, wgs84_bounds, month: date, stac_io=None, s3_client=None,
-                       max_bytes: int = SENTINEL1_MAX_BYTES) -> dict:
+                       max_bytes: int = SENTINEL1_MAX_BYTES, aoi_geometry_sha256: str | None = None) -> dict:
     """Search the month's IW mosaics (one per MGRS tile), estimate each window, fetch only under the cap."""
-    from src.data.sentinel1 import estimate_window_bytes, fetch_sentinel1_window, search_mosaics
+    from src.data.sentinel1 import estimate_window_bytes, fetch_sentinel1_window, reusable_window, search_mosaics
 
     store, repository = open_store(data_dir)
     if stac_io is None:
@@ -79,9 +80,9 @@ def retrieve_sentinel1(data_dir: Path, *, aoi_id: str, wgs84_bounds, month: date
         if part[0] >= part[2] or part[1] >= part[3]:
             continue
         for polarization in ("VV", "VH"):
-            key = f"sentinel1/{mosaic.item_id}_{polarization}_{aoi_id}.tif"
             entry = {"asset_size_bytes": mosaic.assets[polarization].size_bytes, "cap_bytes": max_bytes}
-            if not store.exists(key):
+            if reusable_window(store, repository, mosaic.item_id, polarization, aoi_id=aoi_id, wgs84_bounds=part,
+                               aoi_geometry_sha256=aoi_geometry_sha256) is None:
                 estimate, header = estimate_window_bytes(s3_client, mosaic, polarization, part)
                 entry.update(estimated_tile_bytes=estimate.compressed_bytes, header_bytes=header,
                              window=f"{estimate.width}×{estimate.height}")
@@ -91,7 +92,8 @@ def retrieve_sentinel1(data_dir: Path, *, aoi_id: str, wgs84_bounds, month: date
                     report["windows"][f"{mosaic.grid_code} {polarization}"] = entry
                     continue
             _, descriptor, fetched = fetch_sentinel1_window(s3_client, store, repository, mosaic, polarization,
-                                                            aoi_id=aoi_id, wgs84_bounds=part, max_bytes=max_bytes)
+                                                            aoi_id=aoi_id, wgs84_bounds=part, max_bytes=max_bytes,
+                                                            aoi_geometry_sha256=aoi_geometry_sha256)
             entry.update({k: v for k, v in fetched.items() if k != "storage_key"}, status="ok")
             report["network_bytes"] += fetched["network_bytes"]
             report["windows"][f"{mosaic.grid_code} {polarization}"] = entry

@@ -203,23 +203,61 @@ def estimate_window_bytes(s3_client, mosaic: Sentinel1Mosaic, polarization: str,
     return estimate, remote.received
 
 
+def window_key(item_id: str, polarization: str, aoi_id: str, aoi_geometry_sha256: str | None = None) -> str:
+    """Historical key without fingerprint; ``-<fingerprint[:12]>`` binds a window to one zone geometry."""
+    suffix = "" if aoi_geometry_sha256 is None else f"-{aoi_geometry_sha256[:12]}"
+    return f"sentinel1/{item_id}_{polarization}_{aoi_id}{suffix}.tif"
+
+
+def _covers(path, wgs84_bounds) -> bool:
+    """The stored window covers ``wgs84_bounds`` within one cell."""
+    from rasterio.warp import transform_bounds
+
+    with rasterio.open(path) as source:
+        b = transform_bounds(source.crs, "EPSG:4326", *source.bounds, densify_pts=21)
+        tolerance = max(source.res) / 111_320.0
+    left, bottom, right, top = wgs84_bounds
+    return (b[0] <= left + tolerance and b[1] <= bottom + tolerance and b[2] >= right - tolerance
+            and b[3] >= top - tolerance)
+
+
+def reusable_window(store, repository, item_id: str, polarization: str, *, aoi_id: str, wgs84_bounds,
+                    aoi_geometry_sha256: str | None = None):
+    """(path, descriptor, key) of a recorded window covering the bounds, never one of another geometry."""
+    keys = {window_key(item_id, polarization, aoi_id),
+            window_key(item_id, polarization, aoi_id, aoi_geometry_sha256)}
+    for descriptor, stored_key in repository.find_with_storage("sentinel-1-mosaic", wgs84_bounds):
+        recorded = descriptor.provenance.get("aoi_geometry_sha256")
+        if aoi_geometry_sha256 is not None and recorded is not None and recorded != aoi_geometry_sha256:
+            continue
+        if stored_key in keys and store.exists(stored_key) and _covers(store.path(stored_key), wgs84_bounds):
+            return store.path(stored_key), descriptor, stored_key
+    return None
+
+
 def fetch_sentinel1_window(s3_client, store, repository, mosaic: Sentinel1Mosaic, polarization: str, *,
                            aoi_id: str, wgs84_bounds, max_bytes: int = 16 * 1024 * 1024,
-                           now: datetime | None = None):
-    """Return (path, descriptor, report); reuse a stored window, else read within ``max_bytes``."""
+                           now: datetime | None = None, aoi_geometry_sha256: str | None = None):
+    """Return (path, descriptor, report); reuse a stored window covering the zone, else read within ``max_bytes``.
+
+    A stored window is reused only if it covers the bounds and was not recorded
+    for another geometry (``aoi_geometry_sha256``, see ``src.geo.aoi_identity``).
+    """
     from src.data.remote_window import ByteBudget, RangeFile, S3RangeSource, read_remote_window
 
     if polarization not in POLARIZATIONS:
         raise ValueError("Polarisation non prise en charge.")
     if not aoi_id.replace("_", "").replace("-", "").isalnum():
         raise ValueError("Identifiant d'AOI invalide.")
-    key = f"sentinel1/{mosaic.item_id}_{polarization}_{aoi_id}.tif"
+    key = window_key(mosaic.item_id, polarization, aoi_id, aoi_geometry_sha256)
     report = {"storage_key": key, "network_bytes": 0, "reused": True}
-    for descriptor, stored_key in repository.find_with_storage("sentinel-1-mosaic", wgs84_bounds):
-        if stored_key == key and store.exists(key):
-            return store.path(key), descriptor, report
+    reused = reusable_window(store, repository, mosaic.item_id, polarization, aoi_id=aoi_id,
+                             wgs84_bounds=wgs84_bounds, aoi_geometry_sha256=aoi_geometry_sha256)
+    if reused is not None:
+        return reused[0], reused[1], {**report, "storage_key": reused[2]}
     if store.exists(key):
-        raise ValueError("Fenêtre Sentinel-1 présente sans enregistrement de provenance : non réutilisée.")
+        raise ValueError("Fenêtre Sentinel-1 présente sans enregistrement de provenance ou ne couvrant pas "
+                         "l'AOI : non réutilisée.")
     asset = mosaic.assets[polarization]
     remote = RangeFile(S3RangeSource(s3_client, asset.s3_key), ByteBudget(max_bytes), label=asset.s3_key)
     data, profile, estimate = read_remote_window(remote, wgs84_bounds, "EPSG:4326")
@@ -233,7 +271,8 @@ def fetch_sentinel1_window(s3_client, store, repository, mosaic: Sentinel1Mosaic
         temporary.unlink(missing_ok=True)
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     descriptor = describe_window(path, mosaic, polarization, retrieved_at=now, extra_provenance={
-        "aoi_id": aoi_id, "range_bytes": remote.received, "remote_size_bytes": remote.size,
+        "aoi_id": aoi_id, **({"aoi_geometry_sha256": aoi_geometry_sha256} if aoi_geometry_sha256 else {}),
+        "range_bytes": remote.received, "remote_size_bytes": remote.size,
         "estimated_tile_bytes": estimate.compressed_bytes, "max_bytes": max_bytes,
         "window": f"col={estimate.window.col_off},row={estimate.window.row_off},"
                   f"w={estimate.width},h={estimate.height}"})

@@ -116,11 +116,14 @@ def tile_bounds(name: str) -> tuple[float, float, float, float]:
 
 
 def fetch_worldcover_windows(client, store, repository, *, aoi_id: str, wgs84_bounds, version: str = "v200",
-                             max_bytes: int = 4 * 1024 * 1024, now: datetime | None = None):
+                             max_bytes: int = 4 * 1024 * 1024, now: datetime | None = None,
+                             aoi_geometry_sha256: str | None = None):
     """Discover every tile intersecting the AOI and return [(tile, path, descriptor, report)].
 
     Each tile contributes only its part of the AOI (AOI ∩ tile), with its own
     window, file, checksum and provenance; ``max_bytes`` applies per tile.
+    ``aoi_geometry_sha256`` (see ``src.geo.aoi_identity``) binds new windows to
+    the zone geometry; a window recorded for another geometry is never reused.
     """
     adapter = WorldCoverAdapter(version)
     left, bottom, right, top = wgs84_bounds
@@ -131,29 +134,34 @@ def fetch_worldcover_windows(client, store, repository, *, aoi_id: str, wgs84_bo
         if part[0] >= part[2] or part[1] >= part[3]:
             continue
         output.append((tile, *_fetch_tile_window(client, store, repository, adapter, tile, aoi_id=aoi_id,
-                                                  wgs84_bounds=part, max_bytes=max_bytes, now=now)))
+                                                  wgs84_bounds=part, max_bytes=max_bytes, now=now,
+                                                  aoi_geometry_sha256=aoi_geometry_sha256)))
     return output
 
 
 def fetch_worldcover_window(client, store, repository, *, aoi_id: str, wgs84_bounds, version: str = "v200",
-                            max_bytes: int = 4 * 1024 * 1024, now: datetime | None = None):
+                            max_bytes: int = 4 * 1024 * 1024, now: datetime | None = None,
+                            aoi_geometry_sha256: str | None = None):
     """Single-tile contract: (path, descriptor, report); see :func:`fetch_worldcover_windows`."""
     windows = fetch_worldcover_windows(client, store, repository, aoi_id=aoi_id, wgs84_bounds=wgs84_bounds,
-                                       version=version, max_bytes=max_bytes, now=now)
+                                       version=version, max_bytes=max_bytes, now=now,
+                                       aoi_geometry_sha256=aoi_geometry_sha256)
     if len(windows) != 1:
         raise ValueError("AOI sur plusieurs tuiles WorldCover : utiliser fetch_worldcover_windows.")
     return windows[0][1:]
 
 
 def _fetch_tile_window(client, store, repository, adapter, tile, *, aoi_id: str, wgs84_bounds, max_bytes: int,
-                       now: datetime | None):
+                       now: datetime | None, aoi_geometry_sha256: str | None = None):
     """Return (path, descriptor, report) for the WorldCover window of one tile over (part of) an AOI.
 
     Cache by AOI and version: an existing stored window covering the bounds is
     reused without network (its recorded descriptor is returned). Otherwise
     the window is read by HTTP Range within ``max_bytes`` (header + tiles) and
     published under a new key. ``client`` is an ``ExternalHttpClient``; it is
-    only used on a cache miss.
+    only used on a cache miss. With a geometry fingerprint, new windows go to
+    ``<tile>_<aoi_id>-<fingerprint[:12]>.tif``; the historical key
+    ``<tile>_<aoi_id>.tif`` stays reusable when it covers the bounds.
     """
     from src.data.layer_store import sha256_file
     from src.data.remote_window import ByteBudget, HttpRangeSource, RangeFile, read_remote_window
@@ -162,15 +170,24 @@ def _fetch_tile_window(client, store, repository, adapter, tile, *, aoi_id: str,
         raise ValueError("Identifiant d'AOI invalide.")
     version = adapter.version
     url = adapter.tile_url(tile)
-    key = f"worldcover/{Path(url).stem}_{aoi_id}.tif"
+    legacy_key = f"worldcover/{Path(url).stem}_{aoi_id}.tif"
+    key = legacy_key if aoi_geometry_sha256 is None else (
+        f"worldcover/{Path(url).stem}_{aoi_id}-{aoi_geometry_sha256[:12]}.tif")
     now = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
     report = {"storage_key": key, "network_bytes": 0, "requests": 0, "reused": True}
     for descriptor, stored_key in repository.find_with_storage(adapter.source_id, wgs84_bounds):
-        if stored_key == key and descriptor.version == version and store.exists(key):
-            if sha256_file(store.path(key)) != descriptor.quality.checksum_sha256:
+        recorded = descriptor.provenance.get("aoi_geometry_sha256")
+        if aoi_geometry_sha256 is not None and recorded is not None and recorded != aoi_geometry_sha256:
+            continue  # Retrieved for another geometry of this zone identifier.
+        if stored_key in (key, legacy_key) and descriptor.version == version and store.exists(stored_key):
+            if sha256_file(store.path(stored_key)) != descriptor.quality.checksum_sha256:
                 raise ValueError("Fenêtre WorldCover locale modifiée depuis son enregistrement.")
-            if _covers(store.path(key), wgs84_bounds):
-                return store.path(key), descriptor, report
+            if _covers(store.path(stored_key), wgs84_bounds):
+                return store.path(stored_key), descriptor, {**report, "storage_key": stored_key}
+    if (key != legacy_key and store.exists(legacy_key) and _covers(store.path(legacy_key), wgs84_bounds)
+            and not any(stored == legacy_key for _, stored in repository.records())):
+        key = legacy_key  # Unrecorded historical window covering the zone: describe it below.
+        report["storage_key"] = key
     if store.exists(key):
         path = store.path(key)
         if not _covers(path, wgs84_bounds):
@@ -193,6 +210,7 @@ def _fetch_tile_window(client, store, repository, adapter, tile, *, aoi_id: str,
         temporary.unlink(missing_ok=True)
     descriptor = adapter.describe_local(path, retrieved_at=now, source_url=url, extra_provenance={
         "retrieved_at_basis": "requête HTTP Range", "aoi_id": aoi_id,
+        **({"aoi_geometry_sha256": aoi_geometry_sha256} if aoi_geometry_sha256 else {}),
         "aoi_bounds_wgs84": ",".join(f"{v:.6f}" for v in wgs84_bounds),
         "window": f"col={estimate.window.col_off},row={estimate.window.row_off},"
                   f"w={estimate.width},h={estimate.height}",

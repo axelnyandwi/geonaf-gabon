@@ -531,19 +531,19 @@ class IndicatorInputs:
 
 
 def indicator_inputs(data_dir, aoi_id: str, profile: IndicatorProfile = AFRICA_DEFAULT_V1) -> IndicatorInputs:
-    """Stored layers for the study zone (verified digests) and the temporal availability per source."""
-    import geopandas as gpd
+    """Stored layers for the study zone (verified digests) and the temporal availability per source.
 
-    from src.services.external_layers import latest_osm, open_store, stored_layers
+    The zone is validated strictly (``load_aoi_identity``); land cover windows
+    recorded for another geometry of the same identifier are never used.
+    """
+    from src.geo.aoi_identity import load_aoi_identity
+    from src.services.external_layers import latest_osm, layers_for_aoi, open_store, stored_layers
 
     aoi_path = (Path(data_dir) / "aoi" / f"{aoi_id}.geojson").resolve()
-    bounds = tuple(float(v) for v in gpd.read_file(aoi_path).to_crs("EPSG:4326").total_bounds)
+    identity = load_aoi_identity(aoi_path, aoi_id)
+    bounds = identity.wgs84_bounds
     _, repository = open_store(Path(data_dir))
-    by_key = {}
-    for layer in stored_layers(repository, profile.landcover_source, bounds):
-        if layer.descriptor.provenance.get("aoi_id") == aoi_id:   # Adjacent zones overlap.
-            by_key.setdefault(layer.storage_key, layer)
-    worldcover = list(by_key.values())
+    worldcover = list(layers_for_aoi(stored_layers(repository, profile.landcover_source, bounds), identity))
     versions = sorted({layer.descriptor.version for layer in worldcover})
     if worldcover:
         latest = max(versions, key=lambda v: max(l.descriptor.temporal.end_utc for l in worldcover
@@ -564,7 +564,7 @@ def indicator_inputs(data_dir, aoi_id: str, profile: IndicatorProfile = AFRICA_D
                  + ("aucune évolution calculée." if len(snapshots) < 2 else
                     "une différence entre instantanés décrirait l'évolution de la cartographie, pas des "
                     "constructions ; non affichée dans cette version."))
-    key = (hashlib.sha256(aoi_path.read_bytes()).hexdigest(),
+    key = (identity.file_sha256, identity.geometry_sha256,
            tuple(layer.descriptor.fingerprint for layer in worldcover),
            osm.descriptor.fingerprint if osm else None, profile.fingerprint)
     return IndicatorInputs(Path(data_dir), aoi_id, aoi_path, bounds, tuple(worldcover), osm, tuple(notes), key)

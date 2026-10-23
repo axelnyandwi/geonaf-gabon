@@ -4,13 +4,13 @@ from datetime import date
 from pathlib import Path
 
 import altair as alt
-import geopandas as gpd
 import pandas as pd
 import streamlit as st
 
 from src.components.formatting import format_ndvi, format_percent, format_pixels
 from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
-from src.services.external_layers import latest_osm, open_store, stored_layers
+from src.geo.aoi_identity import load_aoi_identity
+from src.services.external_layers import latest_osm, layers_for_aoi, open_store, stored_layers
 from src.services.local_preview import (
     LocalPreviewError, analyze_local_group, analyze_local_observation, group_local_observations,
     list_local_observations, local_group_key, local_observation_key,
@@ -45,7 +45,8 @@ def cached_osm(storage_key, fingerprint, data_dir, bounds):
 
 
 @st.cache_resource(max_entries=6, show_spinner=False)
-def cached_radar(fingerprints, _layers, aoi_path, landcover_fingerprints, _landcover, scale):
+def cached_radar(fingerprints, _layers, aoi_path, aoi_geometry_sha256, landcover_fingerprints, _landcover, scale):
+    # The AOI geometry fingerprint is part of the key: a modified zone file never reuses old statistics.
     from src.services.sentinel1_layer import load_radar_mosaic
 
     classes = dict(_landcover[0].descriptor.classes) if _landcover else None
@@ -103,7 +104,7 @@ def _nature(label):
     st.caption(f"**Nature : {label}** — {NATURE_HELP[label]}")
 
 
-def _retrieval_panel(data_dir, aoi_id, bounds, month):
+def _retrieval_panel(data_dir, identity, month):
     from src.services import external_retrieval as retrieval
 
     with st.expander("Récupération des couches externes (réseau, sur action explicite)"):
@@ -111,12 +112,14 @@ def _retrieval_panel(data_dir, aoi_id, bounds, month):
                    f"plafonds : WorldCover {retrieval.WORLDCOVER_MAX_BYTES // 2**20} Mo, OSM "
                    f"{retrieval.OSM_MAX_BYTES // 2**20} Mo, Sentinel-1 {retrieval.SENTINEL1_MAX_BYTES // 2**20} Mo "
                    "par polarisation (estimation préalable par l'index des tuiles COG).")
+        aoi_id, bounds, digest = identity.aoi_id, identity.wgs84_bounds, identity.geometry_sha256
         columns = st.columns(3)
         action, report = None, None
         try:
             if columns[0].button("WorldCover (fenêtre AOI)", key="ms_fetch_wc"):
                 action, report = "WorldCover", retrieval.retrieve_worldcover(data_dir, aoi_id=aoi_id,
-                                                                             wgs84_bounds=bounds)
+                                                                             wgs84_bounds=bounds,
+                                                                             aoi_geometry_sha256=digest)
             force = columns[1].checkbox("Forcer un nouvel instantané OSM", key="ms_osm_force",
                                         help="Sinon, un instantané de moins de 7 jours est réutilisé.")
             if columns[1].button("OpenStreetMap (Overpass)", key="ms_fetch_osm"):
@@ -124,7 +127,8 @@ def _retrieval_panel(data_dir, aoi_id, bounds, month):
                                                                          force_refresh=force)
             if columns[2].button(f"Sentinel-1 VV/VH ({month:%m/%Y})", key="ms_fetch_s1"):
                 action, report = "Sentinel-1", retrieval.retrieve_sentinel1(data_dir, aoi_id=aoi_id,
-                                                                            wgs84_bounds=bounds, month=month)
+                                                                            wgs84_bounds=bounds, month=month,
+                                                                            aoi_geometry_sha256=digest)
         except Exception:
             st.error("Récupération impossible (réseau, autorisation, plafond ou réponse invalide). "
                      "Aucune donnée partielle n'a été enregistrée.")
@@ -135,15 +139,6 @@ def _retrieval_panel(data_dir, aoi_id, bounds, month):
             st.json(public, expanded=False)
             for name in ("cached_osm", "cached_radar", "cached_multisource", "cached_map_payload"):
                 globals()[name].clear()
-
-
-def _for_aoi(layers, aoi_id):
-    """Layers retrieved for this AOI only (adjacent AOIs overlap), latest record per storage key."""
-    selected = {}
-    for layer in layers:
-        if layer.descriptor.provenance.get("aoi_id") == aoi_id:
-            selected.setdefault(layer.storage_key, layer)
-    return list(selected.values())
 
 
 def _group_label(group):
@@ -181,23 +176,31 @@ def show_multisource(data_dir):
     group = labels[st.selectbox("Acquisition Sentinel-2 (prise de vue, date d'acquisition UTC)", list(labels),
                                 index=len(labels) - 1, key="ms_date")]
     aoi_path = (Path(data_dir) / "aoi" / f"{aoi_id}.geojson").resolve()
-    bounds = tuple(float(v) for v in gpd.read_file(aoi_path).to_crs("EPSG:4326").total_bounds)
+    try:
+        identity = load_aoi_identity(aoi_path, aoi_id)
+    except ValueError as error:
+        st.error(f"Zone d'étude refusée : {error}")
+        return
+    bounds = identity.wgs84_bounds
     month = date(group[0].acquired_at.year, group[0].acquired_at.month, 1)
-    _retrieval_panel(Path(data_dir), aoi_id, bounds, month)
+    _retrieval_panel(Path(data_dir), identity, month)
 
     try:
         key = local_group_key(group, data_dir, profile)
         with st.spinner("Vérification des empreintes et calcul du NDVI de la prise de vue…"):
             observation = cached_group(key, group, str(data_dir), profile)
         store, repository = open_store(Path(data_dir))
-        worldcover = _for_aoi(stored_layers(repository, "esa-worldcover", bounds, observation.acquired_at_utc), aoi_id)
+        worldcover = list(layers_for_aoi(stored_layers(repository, "esa-worldcover", bounds,
+                                                       observation.acquired_at_utc), identity))
         if worldcover:  # One product version only (closest validity first).
             version = worldcover[0].descriptor.version
             worldcover = [layer for layer in worldcover if layer.descriptor.version == version]
         osm_layer = latest_osm(repository, bounds)
-        radar_layers = [layer for layer in _for_aoi(stored_layers(repository, "sentinel-1-mosaic", bounds,
-                                                                  observation.acquired_at_utc), aoi_id)
-                        if layer.descriptor.temporal.start_utc.strftime("%Y-%m") == f"{month:%Y-%m}"]
+        monthly = [layer for layer in stored_layers(repository, "sentinel-1-mosaic", bounds,
+                                                    observation.acquired_at_utc)
+                   if layer.descriptor.temporal.start_utc.strftime("%Y-%m") == f"{month:%Y-%m}"]
+        radar_layers = [layer for polarization in ("VV", "VH") for layer in layers_for_aoi(
+            [l for l in monthly if l.descriptor.provenance.get("polarization") == polarization], identity)]
     except (LocalPreviewError, ValueError) as error:
         st.error(str(error) if isinstance(error, LocalPreviewError)
                  else "Couche externe locale invalide (empreinte modifiée) : affichage interrompu.")
@@ -211,7 +214,8 @@ def show_multisource(data_dir):
             layers = [layer for layer in radar_layers if layer.descriptor.provenance.get("polarization") == polarization]
             if layers:
                 radar.append(cached_radar(tuple(layer.descriptor.fingerprint for layer in layers), layers,
-                                          str(aoi_path), wc_fingerprints, worldcover, "intensity"))
+                                          str(aoi_path), identity.geometry_sha256, wc_fingerprints, worldcover,
+                                          "intensity"))
         result_key = (key, wc_fingerprints, osm_layer.descriptor.fingerprint if osm_layer else None,
                       tuple(layer.descriptor.fingerprint for layer in radar_layers))
         result = cached_multisource(result_key, observation, str(aoi_path),
