@@ -89,3 +89,5 @@ instantané OSM, fenêtres radar, croisement, charge carte).
 - Multituile réel non rencontré sur ces AOI ; seule la validation synthétique existe.
 - Parsing OSM à froid de 2 à 5 s et pic mémoire à 780 Mo lors du téléchargement de
   Libreville (JSON de 41 Mo) : un format intermédiaire (GeoParquet) réduirait ce coût.
+
+Lot 6 (chiffres clés du territoire) : voir `territorial_indicators.md`.

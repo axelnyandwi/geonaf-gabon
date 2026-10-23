@@ -14,6 +14,7 @@ from src.services.local_preview import (
 )
 from src.services.observation_selection import observation_label
 from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
+from src.components.territorial_indicators import show_key_figures
 
 def _brand_asset(name):
     try:
@@ -35,6 +36,11 @@ try:
     aoi_id = choose_territory(DATA_DIR, "territory")
     if aoi_id is None:
         st.stop()
+    st.info(f"Zone d'étude {TERRITORY_LABELS[aoi_id]} : carré d’acquisition de 12 × 12 km autour de "
+            f"{TERRITORY_LABELS[aoi_id]}. Ce carré n’est pas une limite administrative.")
+    show_key_figures(DATA_DIR, aoi_id, TERRITORY_LABELS[aoi_id])
+    st.divider()
+    st.header("Analyses scientifiques")
     configuration = choose_analysis(aoi_id, "analysis")
     if configuration is None:
         st.stop()
@@ -42,8 +48,6 @@ try:
     st.caption(f"{profile.region} · {profile.climate} · {profile.ecosystem}. Usage : {profile.usage}. "
                f"Version : {profile.version}.")
     st.caption(f"Prototype local V0.2 · Sentinel-2 L2A · AOI {profile.aoi_id}")
-    st.info(f"AOI : carré d’acquisition de 12 × 12 km autour de {TERRITORY_LABELS[aoi_id]}. "
-            "Ce carré n’est pas une limite administrative.")
     observations = list_local_observations(DATA_DIR)
     if len(observations) < 2:
         st.error("Deux acquisitions locales vérifiées au minimum sont nécessaires.")
