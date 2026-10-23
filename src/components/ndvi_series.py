@@ -133,6 +133,11 @@ def show_ndvi_series(data_dir):
     except LocalPreviewError as error:
         st.error(str(error))
         return
+    from src.components.resource_panel import assess_aoi_file, show_assessment
+
+    if not show_assessment(assess_aoi_file(Path(data_dir) / "aoi" / f"{aoi_id}.geojson"),
+                           operation="Calcul de la série"):
+        return
     if st.button("Calculer la série", key="series_compute"):
         st.session_state["series_key"] = key
     if st.session_state.get("series_key") != key:

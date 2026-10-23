@@ -77,11 +77,20 @@ def test_osm_volume_over_the_ceiling_is_refused():
     assert assessment.get("osm_bytes").status == REFUSED and not assessment.allowed
 
 
-def test_memory_ceiling_follows_available_memory():
-    assessment = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_wanted=False, available_bytes=600 * MIB)
-    memory = assessment.get("memory")
-    assert memory.refuse_at == pytest.approx(300) and memory.status == REFUSED
-    assert "mémoire libre" in memory.reason
+def test_memory_thresholds_follow_available_memory():
+    # Akanda-like raster estimate ≈ 374 MiB: warning above half the free memory, refusal above 90 %.
+    warned = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_wanted=False, available_bytes=600 * MIB).get("memory")
+    assert (warned.warn_at, warned.refuse_at) == (pytest.approx(300), pytest.approx(540))
+    assert warned.status == WARNING and "mémoire libre" in warned.reason
+    refused = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_wanted=False, available_bytes=400 * MIB).get("memory")
+    assert refused.status == REFUSED and refused.refuse_at == pytest.approx(360)
+
+
+def test_akanda_multisource_stays_allowed_on_a_loaded_host():
+    # Regression (23/10/2026): 1.08 GiB free on the development host must not block the existing analysis.
+    memory = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_estimated_bytes=24_267_051,
+                         available_bytes=int(1.08 * 1024 * MIB)).get("memory")
+    assert memory.status != REFUSED
 
 
 def test_tiles_across_utm_zones_hemispheres_and_100km_lines():

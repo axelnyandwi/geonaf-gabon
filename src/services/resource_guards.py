@@ -5,7 +5,8 @@ reason. Thresholds are **provisional**: taken from the 23/10/2026 diagnostic
 and calibrated on one machine (``scripts/benchmark_resource_memory.py``), not
 validated scientifically or operationally. They are configurable
 (``ResourceLimits``, environment variables ``GEONAF_LIMIT_*``) and the memory
-ceiling also follows the memory available on the host.
+thresholds also follow the memory available on the host (warning above
+half of it, refusal above 90 %).
 
 What is estimated:
 
@@ -41,7 +42,8 @@ class ResourceLimits:
     max_cells: int = 16_000_000
     warn_memory_bytes: int = 1024 * MIB
     max_memory_bytes: int = 2048 * MIB
-    available_memory_fraction: float = 0.5       # Never plan more than this share of the host's free memory.
+    available_memory_fraction: float = 0.5       # Warn above this share of the host's free memory.
+    available_memory_refuse_fraction: float = 0.9   # Refuse above this share (the estimate is already an upper bound).
     warn_s2_tiles: int = 1                       # Warn above.
     max_s2_tiles: int = 4
     warn_osm_bytes: int = 32 * MIB
@@ -61,8 +63,8 @@ class ResourceLimits:
             value = getattr(self, item.name)
             if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
                 raise ValueError(f"Limite {item.name} invalide.")
-        if self.available_memory_fraction > 1:
-            raise ValueError("Limite available_memory_fraction invalide.")
+        if not self.available_memory_fraction <= self.available_memory_refuse_fraction <= 1:
+            raise ValueError("Limites available_memory_fraction / available_memory_refuse_fraction invalides.")
         for warn, refuse in (("warn_cells", "max_cells"), ("warn_memory_bytes", "max_memory_bytes"),
                              ("warn_s2_tiles", "max_s2_tiles"), ("warn_osm_bytes", "max_osm_bytes")):
             if getattr(self, warn) > getattr(self, refuse):
@@ -212,20 +214,23 @@ def assess_zone(geometry_wgs84, *, limits: ResourceLimits | None = None, osm_est
         limits.baseline_bytes + cells * limits.bytes_per_cell + osm_bytes * limits.osm_expansion)
     available = available_memory_bytes() if available_bytes == -1 else available_bytes
     ceiling = limits.max_memory_bytes if available is None else min(
-        limits.max_memory_bytes, int(available * limits.available_memory_fraction))
+        limits.max_memory_bytes, int(available * limits.available_memory_refuse_fraction))
+    warn_at = limits.warn_memory_bytes if available is None else min(
+        limits.warn_memory_bytes, int(available * limits.available_memory_fraction))
     raster_only = int(limits.baseline_bytes + cells * limits.bytes_per_cell)
     if memory is None:
-        check = _threshold("memory", "Mémoire estimée", raster_only / MIB, "Mio", limits.warn_memory_bytes / MIB,
+        check = _threshold("memory", "Mémoire estimée", raster_only / MIB, "Mio", min(warn_at, ceiling) / MIB,
                            ceiling / MIB, "Besoin en mémoire (hors OSM)")
         if check.status == OK:
             check = replace(check, status=UNKNOWN, reason="Mémoire raster dans les limites ; part OSM inconnue "
                                                           "(volume non estimé).")
     else:
-        check = _threshold("memory", "Mémoire estimée", memory / MIB, "Mio", min(limits.warn_memory_bytes, ceiling) / MIB,
+        check = _threshold("memory", "Mémoire estimée", memory / MIB, "Mio", min(warn_at, ceiling) / MIB,
                            ceiling / MIB, "Besoin en mémoire")
-    if ceiling < limits.max_memory_bytes:
-        check = replace(check, reason=check.reason + f" Plafond réduit à {ceiling / MIB:,.0f} Mio "
-                                                     f"({limits.available_memory_fraction:.0%} de la mémoire libre).")
+    if ceiling < limits.max_memory_bytes or warn_at < limits.warn_memory_bytes:
+        check = replace(check, reason=check.reason + f" Seuils adaptés à la mémoire libre de l'hôte "
+                        f"({available / MIB:,.0f} Mio) : avertissement {warn_at / MIB:,.0f} Mio, refus "
+                        f"{ceiling / MIB:,.0f} Mio.".replace(",", " "))
     checks.append(check)
     tiles = estimate_s2_tiles(geometry_wgs84)
     checks.append(_threshold("s2_tiles", "Tuiles Sentinel-2 (carrés MGRS 100 km)", len(tiles), "tuiles",

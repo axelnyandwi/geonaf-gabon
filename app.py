@@ -14,6 +14,7 @@ from src.services.local_preview import (
 )
 from src.services.observation_selection import observation_label
 from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
+from src.components.resource_panel import assess_aoi_file, show_assessment
 from src.components.territorial_indicators import show_key_figures
 
 def _brand_asset(name):
@@ -31,6 +32,7 @@ st.markdown(TAGLINE)
 st.page_link("pages/1_Acquisitions_Sentinel2.py", label="Catalogue des acquisitions Sentinel-2")
 st.page_link("pages/2_Series_NDVI.py", label="Série temporelle NDVI")
 st.page_link("pages/3_Multisource.py", label="Démonstrateur multisource")
+st.page_link("pages/4_Territoires.py", label="Territoires et frontières")
 
 try:
     aoi_id = choose_territory(DATA_DIR, "territory")
@@ -61,6 +63,8 @@ try:
         st.info('Sélection modifiée : cliquer sur « Afficher les dates sélectionnées » pour appliquer ces acquisitions.')
         st.stop()
     key = local_preview_key(earlier, later, DATA_DIR, scientific_profile=profile)
+    if not show_assessment(assess_aoi_file(DATA_DIR / "aoi" / f"{aoi_id}.geojson"), operation="Analyse de la paire"):
+        st.stop()
     if st.session_state.get("pair") != key:
         with st.spinner("Vérification des fichiers locaux et calcul du NDVI calibré…"):
             result = analyze_local_akanda(earlier, later, DATA_DIR, scientific_profile=profile)

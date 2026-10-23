@@ -12,7 +12,7 @@ poste Windows. Ils ne sont validés ni scientifiquement ni opérationnellement.
 | Contrôle | Méthode | Prudence |
 |---|---|---|
 | Cellules raster | grille UTM à 10 m couvrant l'**emprise** de la zone, par zone UTM et hémisphère | les traitements allouent l'emprise, pas seulement le polygone |
-| Mémoire | base après imports + cellules × octets par cellule + octets JSON OSM × facteur d'expansion | facteurs majorés (voir calibration) ; plafond réduit à 50 % de la mémoire libre de l'hôte |
+| Mémoire | base après imports + cellules × octets par cellule + octets JSON OSM × facteur d'expansion | facteurs majorés (voir calibration) ; avertissement au-delà de 50 % et refus au-delà de 90 % de la mémoire libre de l'hôte |
 | Tuiles Sentinel-2 | carrés MGRS de 100 km touchés, par zone UTM et hémisphère (`EPSG:326xx/327xx`) | majorant : les tuiles se recouvrent de 9,8 km |
 | OSM | emprise ≤ 0,5° (requête Overpass unique) ; volume estimé (`out count`) quand il est connu | volume inconnu ⇒ statut « inconnu », jamais supposé faible |
 | Import GeoJSON | taille du fichier **avant lecture**, puis validation stricte, sommets, parties | fichier trop gros refusé sans être analysé |
@@ -25,7 +25,7 @@ contrôle n'est en refus ; les avertissements et inconnues sont à afficher.
 | Ressource | Avertissement | Refus |
 |---|---|---|
 | Cellules (10 m, emprise) | > 4 000 000 | > 16 000 000 |
-| Mémoire estimée | > 1 Gio | > 2 Gio, ou > 50 % de la mémoire libre |
+| Mémoire estimée | > 1 Gio, ou > 50 % de la mémoire libre | > 2 Gio, ou > 90 % de la mémoire libre |
 | Tuiles Sentinel-2 | > 1 | > 4 |
 | Volume OSM estimé | > 32 Mio | > 64 Mio |
 | Emprise OSM | — | > 0,5° (découpage en tuiles non disponible) |

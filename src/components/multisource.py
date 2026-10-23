@@ -185,6 +185,15 @@ def show_multisource(data_dir):
     month = date(group[0].acquired_at.year, group[0].acquired_at.month, 1)
     _retrieval_panel(Path(data_dir), identity, month)
 
+    from src.components.resource_panel import assess_aoi_file, show_assessment
+
+    osm_stored = latest_osm(open_store(Path(data_dir))[1], bounds)
+    osm_bytes = None
+    if osm_stored is not None and str(osm_stored.descriptor.provenance.get("response_bytes", "")).isdigit():
+        osm_bytes = int(osm_stored.descriptor.provenance["response_bytes"])   # Volume of the stored snapshot.
+    if not show_assessment(assess_aoi_file(aoi_path, osm_wanted=True, osm_estimated_bytes=osm_bytes),
+                           operation="Analyse multisource"):
+        return
     try:
         key = local_group_key(group, data_dir, profile)
         with st.spinner("Vérification des empreintes et calcul du NDVI de la prise de vue…"):

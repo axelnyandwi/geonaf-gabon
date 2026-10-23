@@ -1,0 +1,11 @@
+.gtm-shell { color: #e5e7eb; background: #0e1117; font: 14px system-ui, sans-serif; }
+.gtm-reset { background: #263445; color: white; border: 1px solid #6b7280; border-radius: 5px; padding: 6px 10px;
+  cursor: pointer; margin: 6px 0; }
+.gtm-canvas { height: 480px; width: 100%; border: 1px solid #6b7280; box-sizing: border-box; }
+.gtm-legend { display: flex; flex-wrap: wrap; gap: 8px 22px; padding: 8px 0; font-size: 13px; }
+.gtm-legend-row { display: flex; align-items: center; gap: 6px; }
+.gtm-swatch { width: 18px; height: 12px; display: inline-block; border: 2px solid; box-sizing: border-box; }
+.gtm-dashed { border-style: dashed; }
+.gtm-fill { opacity: 0.6; }
+.gtm-coords, .gtm-status, .gtm-attribution { font-size: 12px; padding: 2px 0; }
+.gtm-attribution { color: #9ca3af; }
