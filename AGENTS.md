@@ -27,6 +27,17 @@
 - Prévoir l’ingestion quotidienne des nouvelles acquisitions Sentinel-1 et Sentinel-2 via les interfaces adaptées, avec contrôles qualité.
 - Distinguer date d’acquisition, date d’ingestion et ancienneté des observations. Ne jamais promettre une image de la veille si aucune acquisition exploitable n’existe.
 
+## Observation territoriale et incertitude administrative
+
+- GEONAF doit pouvoir observer toute zone géographique, qu’une frontière administrative officielle existe ou non.
+- Séparer rigoureusement zone observée, unité administrative et statistique officiellement attribuable à une collectivité ; une valeur calculée sur une zone n’est attribuée à une collectivité que si son périmètre est celui de cette collectivité.
+- Ne jamais présenter les zones d’acquisition historiques (carrés de 12 × 12 km d’Akanda, Libreville, Owendo) comme des communes ou d’autres unités administratives.
+- Conserver pour chaque périmètre sa provenance, sa version, sa licence, son statut juridique et son identité géométrique ; ne jamais réutiliser un résultat ou un cache associé à une autre géométrie.
+- Ne déclarer une frontière officielle qu’après vérification de l’autorité émettrice et du document justificatif ; à défaut, la qualifier de référentiel communautaire, humanitaire ou fourni par l’utilisateur.
+- Ne jamais interpréter une divergence entre référentiels, ni une nouvelle version d’un périmètre, comme un changement temporel réel du territoire.
+- Afficher les incertitudes et limites des périmètres avec les indicateurs publics.
+- Préserver la compatibilité avec les zones personnalisées, les grilles géographiques stables et l’extension à l’ensemble du continent africain.
+
 ## Tests et validation
 
 - Ajouter des tests pytest aux fonctions critiques. Distinguer les tests automatisés des scripts de diagnostic manuels, notamment ceux qui effectuent des appels réseau.
