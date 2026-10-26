@@ -1,5 +1,7 @@
 # Streamlit V0.1 : formatage et performance
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 Mesures locales du 18 octobre 2026 sur les acquisitions réelles des 15 et
 25 janvier 2025 et le carré d’acquisition Akanda. Aucun accès réseau aux données.
 Ces vérifications sont informatiques et ne constituent pas une validation scientifique.
@@ -87,7 +89,7 @@ Elle couvre les deux NDVI, le delta, les masques/classes finaux, les statistique
 les surfaces et la couverture comparable. Pour imposer cette référence au script :
 
 ```powershell
-.venv\Scripts\python.exe -B scripts/benchmark_streamlit.py --expected-digest b0356911623b4af85939f9a5bb62f0f01cdff9ffd1dae875ca84b77523cb0e41
+.venv\Scripts\python.exe -B scripts/benchmark_streamlit.py --expected-digest 995a1dbfe14c3ec6b1585411ffa59e180f23a151765dad5dff4d60fb354e073b
 ```
 
 Ce contrôle suppose les mêmes fichiers sources et versions de dépendances.

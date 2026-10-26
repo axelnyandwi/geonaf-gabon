@@ -5,3 +5,9 @@
 .geonaf-gradient { width: 160px; height: 16px; display: inline-block; }
 .geonaf-masked-key { width: 16px; height: 16px; display: inline-block; background: #d1d5db; }
 .geonaf-map-status, .geonaf-map-coordinates { padding: 4px 0; font-size: 12px; }
+
+@media (max-width: 640px) {
+  .geonaf-map-canvas { height: min(420px, 58vh); min-height: 280px; }
+  .geonaf-map-toolbar button { min-height: 40px; }
+  .geonaf-map-toolbar, .geonaf-map-legend { gap: 8px; }
+}

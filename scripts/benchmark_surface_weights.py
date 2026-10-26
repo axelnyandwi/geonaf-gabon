@@ -37,7 +37,7 @@ from src.geo import change_analysis as area
 from src.geo.temporal import RasterGrid
 from src.services.local_preview import analyze_local_akanda, list_local_observations
 
-REFERENCE = "b0356911623b4af85939f9a5bb62f0f01cdff9ffd1dae875ca84b77523cb0e41"
+REFERENCE = "995a1dbfe14c3ec6b1585411ffa59e180f23a151765dad5dff4d60fb354e073b"  # Découpage sans perte (docs/lossless_aoi_clip.md).
 REPEATS = 3
 
 

@@ -1,5 +1,7 @@
 # Carte NDVI interactive V0.2
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 ## Lancement local
 
 Streamlit 1.65 ou supérieur est requis pour Components v2. Depuis la racine du dépôt, avec les acquisitions locales vérifiées déjà disponibles :

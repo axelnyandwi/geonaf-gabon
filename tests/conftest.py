@@ -7,7 +7,12 @@ Installed packages cannot change during a pytest session, so the scan result
 is memoized for the session. Application behaviour is unchanged.
 """
 
+import os
+
 import pytest
+
+# Never download the released demo pack from tests (AppTest pages with empty data dirs).
+os.environ["GEONAF_DEMO_PACK"] = "off"
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -1,0 +1,108 @@
+name: demo-pack-linux
+
+# Linux check of the Cloud demo: pinned dependencies, real download of the released
+# pack through the GEONAF loader, scientific non-regression on the pack, full suite.
+# Test failures are also published as annotations (readable without signing in).
+on:
+  push:
+    branches: [deploy/cloud-demo-akanda]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements.txt "pytest>=8,<10" "trustme>=1.2,<2"
+      - name: Library versions
+        run: |
+          python - <<'EOF'
+          import sys, rasterio, pyproj, numpy
+          line = (f"Python {sys.version.split()[0]} | rasterio {rasterio.__version__} GDAL {rasterio.__gdal_version__} "
+                  f"PROJ {rasterio.__proj_version__} | pyproj PROJ {pyproj.proj_version_str} | numpy {numpy.__version__}")
+          print(line)
+          print(f"::notice title=Versions::{line}")
+          EOF
+      - name: Download and verify the released pack through the loader
+        run: |
+          python - <<'EOF'
+          import time
+          from pathlib import Path
+          from src.data.demo_pack import RELEASED_PACK, install_pack
+          assert RELEASED_PACK is not None, "RELEASED_PACK non renseigné"
+          start = time.perf_counter()
+          path, manifest = install_pack(RELEASED_PACK, Path.home() / ".cache" / "geonaf")
+          cold = time.perf_counter() - start
+          start = time.perf_counter()
+          install_pack(RELEASED_PACK, Path.home() / ".cache" / "geonaf")
+          warm = time.perf_counter() - start
+          print(f"::notice title=Paquet::{manifest['pack_id']} v{manifest['pack_version']} installé en "
+                f"{cold:.2f} s ; réutilisation vérifiée en {warm:.2f} s")
+          Path("pack_dir.txt").write_text(str(path))
+          EOF
+      - name: Component comparison with the Windows reference
+        if: always()
+        run: |
+          python scripts/diagnose_pack_science.py "$(cat pack_dir.txt)" --json linux.json > /dev/null
+          python - <<'EOF'
+          import json
+          ref = json.load(open("docs/benchmarks/pack_science_windows_py310.json", encoding="utf-8"))
+          cur = json.load(open("linux.json", encoding="utf-8"))
+          lines = []
+          for name, item in ref["arrays"].items():
+              same = item == cur["arrays"][name]
+              lines.append(f"{name}: {'identique' if same else 'DIFFÉRENT'}")
+          for group in ("statistics", "areas_m2"):
+              for key, value in ref[group].items():
+                  a, b = value, cur[group][key]
+                  if a == b:
+                      lines.append(f"{group}.{key}: identique")
+                  else:
+                      fa, fb = float(a), float(b)
+                      rel = abs(fa - fb) / max(abs(fa), 1e-300)
+                      lines.append(f"{group}.{key}: {a} -> {b} (écart relatif {rel:.2e})")
+          for key in ("comparable_area_m2", "denominator_area_m2", "comparable_coverage_percent"):
+              a, b = ref[key], cur[key]
+              rel = abs(float(a) - float(b)) / max(abs(float(a)), 1e-300)
+              lines.append(f"{key}: {'identique' if a == b else f'{a} -> {b} (écart relatif {rel:.2e})'}")
+          lines.append(f"class_pixel_counts: {'identique' if ref['class_pixel_counts'] == cur['class_pixel_counts'] else cur['class_pixel_counts']}")
+          lines.append(f"grid: {'identique' if ref['grid'] == cur['grid'] else cur['grid']}")
+          print("::notice title=Linux vs Windows::" + "%0A".join(lines))
+          EOF
+      - name: Scientific non-regression on the pack
+        run: >
+          GEONAF_DEMO_PACK_DIR="$(cat pack_dir.txt)"
+          python -m pytest -q -rs tests/test_demo_pack_science.py --junitxml=science.xml
+      - name: Full test suite
+        if: always()
+        run: >
+          GEONAF_DEMO_PACK_DIR="$(cat pack_dir.txt)"
+          python -m pytest -q -rs --junitxml=suite.xml
+      - name: Publish test results as annotations
+        if: always()
+        run: |
+          python - <<'EOF'
+          import xml.etree.ElementTree as ET
+          from pathlib import Path
+          for report in ("science.xml", "suite.xml"):
+              if not Path(report).is_file():
+                  print(f"::warning title={report}::rapport absent")
+                  continue
+              root = ET.parse(report).getroot()
+              suites = [root] if root.tag == "testsuite" else list(root)
+              totals = {key: sum(int(s.get(key, 0)) for s in suites) for key in ("tests", "failures", "errors", "skipped")}
+              print(f"::notice title={report}::{totals}")
+              for case in root.iter("testcase"):
+                  for problem in list(case.findall("failure")) + list(case.findall("error")):
+                      text = (problem.get("message", "") + "\n" + (problem.text or ""))[-1800:]
+                      text = text.replace("%", "%25").replace("\r", "").replace("\n", "%0A")
+                      print(f"::error title={case.get('classname')}.{case.get('name')}::{text}")
+          EOF

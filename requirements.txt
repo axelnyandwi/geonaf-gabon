@@ -1,13 +1,19 @@
-streamlit>=1.65,<2
-truststore>=0.10,<1
-numpy>=1.26,<3
-rasterio>=1.4,<2
-geopandas>=1.0,<2
-shapely>=2.0,<3
-pyproj>=3.6,<4
-matplotlib>=3.8,<4
-python-dotenv>=1.0,<2
-boto3>=1.35,<2
-botocore>=1.35,<2
-requests>=2.32.3,<3
-pystac-client>=0.9,<1
+# Versions exactes validées le 26/10/2026 (non-régression scientifique, docs/cloud_demo_pack.md).
+# Rasterio 1.5 n'est pas adopté sans validation scientifique dédiée.
+streamlit==1.65.0
+truststore==0.10.4
+numpy==2.2.6
+rasterio==1.4.4
+affine==3.0.1
+geopandas==1.1.4
+pyogrio==0.13.0
+pandas==2.3.3
+shapely==2.1.2
+pyproj==3.7.1
+matplotlib==3.10.9
+pillow==12.3.0
+python-dotenv==1.2.4
+boto3==1.43.108
+botocore==1.43.108
+requests==2.34.2
+pystac-client==0.9.0

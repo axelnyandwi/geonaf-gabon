@@ -1,5 +1,7 @@
 # Sélection territoriale, comparaison des frontières et garde-fous dans Streamlit — lot D
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 Page `pages/4_Territoires.py` (« Territoires et frontières », lien depuis l'accueil). Interface :
 `src/components/territory_explorer.py`, carte `src/components/maplibre/territory.js`, garde-fous
 `src/components/resource_panel.py`. Logique sans Streamlit : `src/services/territory_catalog.py`.

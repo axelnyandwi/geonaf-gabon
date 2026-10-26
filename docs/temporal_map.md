@@ -1,5 +1,7 @@
 # Contrat de comparaison temporelle — étapes 1 et 2
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 La préparation est indépendante de Streamlit et de JavaScript. Elle consomme
 un `TemporalVegetationChangeResult` existant, sans lecture de bandes, calcul
 NDVI, harmonisation, classification ou statistique supplémentaire.
