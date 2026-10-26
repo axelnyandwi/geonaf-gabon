@@ -1,5 +1,7 @@
 # Confiance TLS et accès réseau GEONAF — 21 octobre 2026
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 ## Correction
 
 La confiance TLS est construite explicitement avant les pools et avant l'utilisation des clients réseau. Le mode système est le défaut. Aucun `inject_into_ssl()` n'est appelé, aucune autorité n'est récupérée ou installée par GEONAF et aucune vérification TLS n'est désactivée.

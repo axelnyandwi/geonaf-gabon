@@ -1,5 +1,7 @@
 # Optimisation des surfaces — 21 octobre 2026
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 ## Résultat
 
 Sur Akanda, la médiane du calcul des surfaces passe de **17,884 s à 1,831 s** sans poids préexistants (**×9,77**). Avec les poids en cache, elle est de **24,0 ms**. L'analyse scientifique complète passe de **22,801 s à 6,783 s** (**×3,36**), ou **4,861 s** avec les poids déjà disponibles.

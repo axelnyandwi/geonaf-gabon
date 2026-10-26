@@ -1,5 +1,7 @@
 # Module MapLibre temporel autonome — étape 3
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 ## Interface et périmètre
 
 ```javascript

@@ -1,5 +1,7 @@
 # Démonstrateur multisource — lot 4 (Akanda)
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 Page Streamlit `pages/3_Multisource.py`. Le moteur ne dépend pas de Streamlit :
 `src/services/multisource_demo.py`, `multisource_map.py`, `sentinel1_layer.py`,
 `external_layers.py` et `external_retrieval.py`.
