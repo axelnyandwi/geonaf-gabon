@@ -49,6 +49,8 @@ export function mountTerritoryMap(container, payload, maplibre, onError = () => 
       style: { version: 8, sources: {}, layers: [
         { id: "background", type: "background", paint: { "background-color": "#0e1117" } }] },
       bounds, fitBoundsOptions: { padding: 30 }, attributionControl: false,
+      // Touch screens: one finger scrolls the page, two fingers move the map.
+      cooperativeGestures: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
     });
   } catch (error) {
     fail();

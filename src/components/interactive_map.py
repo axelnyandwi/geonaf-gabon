@@ -31,6 +31,6 @@ export default function(component) {
 
 
 def show_interactive_map(payload):
-    result = _renderer()(data=payload, key="geonaf_ndvi_map", height=680,
+    result = _renderer()(data=payload, key="geonaf_ndvi_map", height="content",
                          default={"error": False}, on_error_change=lambda: None)
     return not result.error

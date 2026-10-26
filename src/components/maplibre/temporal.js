@@ -235,6 +235,8 @@ export function mountTemporalMap(container, payload, maplibre, { onError = () =>
         const map = new maplibre.Map({ container: canvas, ...camera,
           style: { version: 8, sources: {}, layers: [{ id: "background", type: "background",
             paint: { "background-color": "#0e1117" } }] }, attributionControl: false,
+          // Touch screens: one finger scrolls the page, two fingers move the map.
+          cooperativeGestures: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
           // Defensive allowlist: no HTTP(S), relative URL, remote style, font or tile.
           transformRequest: url => {
             if (!url.startsWith("data:image/png;base64,")) throw new Error("External map resource forbidden");

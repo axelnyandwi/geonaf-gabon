@@ -11,3 +11,10 @@
 .gms-swatch { width: 14px; height: 14px; display: inline-block; border: 1px solid #374151; }
 .gms-info, .gms-coords, .gms-status, .gms-attribution { font-size: 12px; padding: 2px 0; }
 .gms-attribution { color: #9ca3af; }
+
+@media (max-width: 640px) {
+  .gms-toolbar { flex-wrap: wrap; }
+  .gms-canvas { height: min(420px, 58vh); min-height: 280px; }
+  .gms-reset { min-height: 40px; }
+  .gms-legend { gap: 8px 16px; }
+}

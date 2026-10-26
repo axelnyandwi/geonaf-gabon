@@ -17,3 +17,10 @@
   .temporal-controls label:first-child { display: block; }
   .temporal-canvas { height: 360px; }
 }
+
+@media (max-width: 640px) {
+  .geonaf-temporal { padding: 6px; }
+  .temporal-canvas { height: min(340px, 50vh); min-height: 260px; }
+  .temporal-controls select, .temporal-controls button { min-height: 40px; }
+  .temporal-panels h3 { min-height: 0; }
+}

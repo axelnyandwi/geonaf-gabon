@@ -51,6 +51,8 @@ export function mountMultisourceMap(container, payload, maplibre, onError = () =
         { id: "background", type: "background", paint: { "background-color": "#0e1117" } }] },
       center: [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2],
       zoom: 11, attributionControl: false,
+      // Touch screens: one finger scrolls the page, two fingers move the map.
+      cooperativeGestures: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
     });
   } catch (error) {
     fail();
