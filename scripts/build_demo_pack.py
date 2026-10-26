@@ -1,17 +1,24 @@
 """Build the reduced Akanda demonstration pack from verified local data (no network).
 
-Usage : python scripts/build_demo_pack.py [--output data/demo_pack/akanda-2025-01-v1]
+Usage : python scripts/build_demo_pack.py [--output DIR] [--allow-dirty]
 
 Reads ``data/`` without modifying it and refuses to write into an existing
 directory. The pack mirrors the ``data/`` layout (``aoi/``, ``raw/sentinel2/``,
 ``external/``) so it can later serve as ``GABON_GEOAI_DATA_DIR``. Sentinel-2
 assets are native-grid subsets around the Akanda acquisition square (see
 ``src/data/derived_subset.py``); every other file is a byte-identical copy.
+
+Provenance distinguishes the code (Git commit of the builder; building from
+uncommitted code is refused unless ``--allow-dirty``) from the source data,
+which are not versioned in Git and are identified by the digests of their
+manifests and files. A deterministic ZIP and its ``.sha256`` are written next
+to the pack directory.
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 from datetime import datetime, timezone
 import json
 from pathlib import Path
@@ -33,9 +40,10 @@ from src.data.acquisition_manifest import validate_acquisition_manifest  # noqa:
 from src.data.derived_subset import (  # noqa: E402
     aligned_subset_bounds, build_subset_manifest, sha256_file, write_json, write_raster_subset,
 )
+from src.data.demo_pack import create_archive  # noqa: E402
 
 PACK_ID = "geonaf-demo-akanda-2025-01"
-PACK_VERSION = "1"
+PACK_VERSION = "2"
 AOI_ID = "akanda"
 MARGIN_M = 200.0
 PRODUCTS = (
@@ -54,18 +62,27 @@ EXTERNAL_DESCRIPTORS = (
 SENTINEL2_ATTRIBUTION = "Contains modified Copernicus Sentinel data 2025, processed by GEONAF"
 
 
-def _git_commit() -> str | None:
+CODE_PATHS = ("src", "scripts/build_demo_pack.py", "requirements.txt")
+
+
+def _git(*args) -> str:
+    return subprocess.run(["git", *args], cwd=PROJECT_ROOT, capture_output=True, text=True, check=True).stdout
+
+
+def code_provenance() -> dict:
+    """Commit of the code that produced the pack, and uncommitted changes to that code."""
     try:
-        return subprocess.run(["git", "rev-parse", "HEAD"], cwd=PROJECT_ROOT, capture_output=True,
-                              text=True, check=True).stdout.strip()
+        commit = _git("rev-parse", "HEAD").strip()
+        dirty = sorted(line[3:] for line in _git("status", "--porcelain", "--", *CODE_PATHS).splitlines())
     except (OSError, subprocess.CalledProcessError):
-        return None
+        return {"commit": None, "uncommitted_paths": None}
+    return {"commit": commit, "uncommitted_paths": dirty}
 
 
-def software_versions() -> dict:
+def software_versions(code: dict) -> dict:
     return {"python": platform.python_version(), "rasterio": rasterio.__version__,
             "gdal": rasterio.__gdal_version__, "numpy": np.__version__, "pyproj": pyproj.__version__,
-            "geopandas": gpd.__version__, "geonaf_commit": _git_commit()}
+            "geopandas": gpd.__version__, "code_commit": code["commit"]}
 
 
 def _copy_verified(source: Path, destination: Path, expected_sha256: str | None = None) -> str:
@@ -128,7 +145,9 @@ def build_sentinel2(data_dir: Path, output: Path, aoi_path: Path, created_at: da
         write_json(manifest, target_dir / "subset_manifest.json")
         records.append({"product_id": product_id, "acquired_at_utc": parent["acquired_at_utc"],
                         "ingested_at_utc": parent["ingested_at_utc"], "subset_bounds": list(bounds),
-                        "crs": assets["b04"]["crs"]})
+                        "crs": assets["b04"]["crs"], "source_manifest_sha256": parent_sha256,
+                        "source_assets_sha256": {role: record["sha256"]
+                                                 for role, record in parent["assets"].items()}})
     if len({tuple(record["subset_bounds"]) for record in records}) != 1:
         raise ValueError("Les extraits n'ont pas la même emprise.")
     return records
@@ -183,10 +202,19 @@ def build_external(data_dir: Path, output: Path):
         _copy_verified(source, output / "external" / "catalogue" / source.name)
         _copy_verified(data_dir / "external" / key, output / "external" / key, expected)
         layers.append({"source_id": descriptor["source_id"], "product": descriptor.get("product"),
+                       "descriptor_fingerprint": fingerprint, "file_sha256": expected,
                        "version": descriptor.get("version"), "temporal": descriptor["temporal"],
                        "license": descriptor["license"], "quality_notes": descriptor["quality"].get("notes", []),
                        "storage_key": key})
     return layers
+
+
+def source_data_fingerprint(sentinel2: list[dict], external: list[dict]) -> str:
+    """Identity of the source data (not in Git): digest of their manifests and file digests."""
+    canonical = {"sentinel2": sorted([item["product_id"], item["source_manifest_sha256"],
+                                      sorted(item["source_assets_sha256"].items())] for item in sentinel2),
+                 "external": sorted([item["descriptor_fingerprint"], item["file_sha256"]] for item in external)}
+    return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
 
 
 def pack_inventory(output: Path) -> list[dict]:
@@ -198,13 +226,19 @@ def pack_inventory(output: Path) -> list[dict]:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--output", type=Path, default=DATA_DIR / "demo_pack" / f"{PACK_ID}-v{PACK_VERSION}")
+    parser.add_argument("--allow-dirty", action="store_true", help="Accepter du code non commité (tracé).")
     args = parser.parse_args()
     output = args.output.resolve()
-    if output.exists():
-        print("Le dossier de sortie existe déjà ; rien n'est écrasé.", file=sys.stderr)
+    archive = output.with_name(output.name + ".zip")
+    if output.exists() or archive.exists():
+        print("Le dossier ou l'archive de sortie existe déjà ; rien n'est écrasé.", file=sys.stderr)
+        return 1
+    code = code_provenance()
+    if code["uncommitted_paths"] and not args.allow_dirty:
+        print("Code du constructeur non commité : " + ", ".join(code["uncommitted_paths"]), file=sys.stderr)
         return 1
     created_at = datetime.now(timezone.utc)
-    software = software_versions()
+    software = software_versions(code)
     aoi_path = DATA_DIR / "aoi" / f"{AOI_ID}.geojson"
     _copy_verified(aoi_path, output / "aoi" / aoi_path.name)
     sentinel2 = build_sentinel2(DATA_DIR, output, aoi_path, created_at, software)
@@ -214,6 +248,10 @@ def main() -> int:
     write_json({
         "pack_id": PACK_ID, "pack_version": PACK_VERSION,
         "created_at_utc": created_at.isoformat().replace("+00:00", "Z"), "software": software,
+        "code": {"repository": "geonaf", **code},
+        "source_data": {"fingerprint_sha256": source_data_fingerprint(sentinel2, external),
+                        "note": "Données sources hors Git : identifiées par les empreintes de leurs "
+                                "manifestes et fichiers, vérifiées au moment de la construction."},
         "aoi": {"id": AOI_ID, "path": f"aoi/{AOI_ID}.geojson",
                 "statement": "Zone d'acquisition historique de 12 × 12 km autour d'Akanda. "
                              "Ce n'est ni la commune d'Akanda ni une autre unité administrative."},
@@ -230,7 +268,10 @@ def main() -> int:
         "files": files,
         "total_bytes": sum(item["bytes"] for item in files),
     }, output / "PACK_MANIFEST.json")
+    digest = create_archive(output, archive)
+    archive.with_name(archive.name + ".sha256").write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
     print(f"Paquet écrit : {len(files)} fichiers, {sum(item['bytes'] for item in files) / 1e6:.1f} Mo")
+    print(f"Archive : {archive.name}, {archive.stat().st_size / 1e6:.1f} Mo, SHA-256 {digest}")
     return 0
 
 

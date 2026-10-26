@@ -3,7 +3,8 @@
 import streamlit as st
 from PIL import Image
 
-from src.config import APP_TITLE, DATA_DIR, PROJECT_ROOT, TAGLINE
+from src.config import APP_TITLE, PROJECT_ROOT, TAGLINE
+from src.components.data_source import active_data_dir
 from src.components.preview_cache import cached_map_png
 from src.components.interactive_map import cached_ndvi_layer, show_interactive_map
 from src.components.temporal_map import cached_temporal_payload, show_temporal_map
@@ -33,6 +34,7 @@ st.page_link("pages/1_Acquisitions_Sentinel2.py", label="Catalogue des acquisiti
 st.page_link("pages/2_Series_NDVI.py", label="Série temporelle NDVI")
 st.page_link("pages/3_Multisource.py", label="Démonstrateur multisource")
 st.page_link("pages/4_Territoires.py", label="Territoires et frontières")
+DATA_DIR = active_data_dir()  # Local data, else the verified demonstration pack.
 
 try:
     aoi_id = choose_territory(DATA_DIR, "territory")

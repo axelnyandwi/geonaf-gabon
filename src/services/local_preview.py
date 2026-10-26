@@ -8,6 +8,7 @@ from pathlib import Path
 
 from src.data.acquisition import create_sentinel2_acquisition
 from src.data.acquisition_manifest import validate_acquisition_manifest
+from src.data.derived_subset import SUBSET_SCHEMA_VERSION, validate_subset_manifest
 from src.services.temporal_analysis import analyze_temporal_vegetation_change
 from src.geo.change_analysis import DEFAULT_CHANGE_THRESHOLD
 from src.geo.scientific_profile import ScientificProfile
@@ -22,10 +23,26 @@ class LocalObservation:
     acquired_at: datetime
     manifest_path: Path
     product_id: str = ''
+    subset: bool = False      # Native-grid extract of a verified tile (demo pack).
+
+
+def manifest_path(folder: Path) -> Path | None:
+    """Original acquisition manifest first, otherwise the subset manifest of a demo pack."""
+    for name in ("acquisition_manifest.json", "subset_manifest.json"):
+        if (folder / name).is_file():
+            return folder / name
+    return None
 
 
 def _manifest(path):
     manifest = json.loads(path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") == SUBSET_SCHEMA_VERSION:
+        # Lineage check: the parent tile had strict, verified integrity; asset
+        # digests of the subset files are verified by the caller as usual.
+        if path.name != "subset_manifest.json":
+            raise ValueError("Manifeste d'extrait mal nommé.")
+        validate_subset_manifest(manifest)
+        return manifest
     validate_acquisition_manifest(manifest)
     integrity = manifest.get("integrity", {})
     if integrity.get("mode") != "strict" or any(
@@ -40,10 +57,12 @@ def list_local_observations(data_dir: Path) -> tuple[LocalObservation, ...]:
     """Expose every verified local acquisition, retaining its exact UTC date."""
     try:
         observations = []
-        for path in sorted((data_dir / "raw" / "sentinel2").glob("*/acquisition_manifest.json")):
+        folders = sorted(path for path in (data_dir / "raw" / "sentinel2").glob("*") if path.is_dir())
+        for path in filter(None, map(manifest_path, folders)):
             manifest = _manifest(path)
             acquired = datetime.fromisoformat(manifest["acquired_at_utc"].replace("Z", "+00:00"))
-            observations.append(LocalObservation(acquired, path, manifest['product_id']))
+            observations.append(LocalObservation(acquired, path, manifest['product_id'],
+                                                 manifest["schema_version"] == SUBSET_SCHEMA_VERSION))
         return tuple(sorted(observations, key=lambda item: item.acquired_at))
     except Exception:
         raise LocalPreviewError("Catalogue local indisponible ou manifeste non vérifié.") from None

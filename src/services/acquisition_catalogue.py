@@ -12,12 +12,13 @@ import geopandas as gpd
 from src.data.catalogue import CatalogueAOI, CatalogueError, CatalogueQuery, CatalogueResult, CatalogueRepository
 from src.data.stac_catalogue import CopernicusCatalogue
 from src.geo.aoi import get_aoi_bbox
-from src.services.local_preview import _manifest
+from src.services.local_preview import _manifest, manifest_path
 
 
 LOCAL_STATE_LABELS = {
     "absent": "Absent localement",
     "manifest_present": "Présent — manifeste strict, fichiers à revérifier avant analyse",
+    "subset_present": "Extrait de démonstration — dérivé d'une tuile vérifiée, fichiers à revérifier",
     "partial": "Partiel — fichiers ou manifeste manquants",
     "unverified": "Non vérifié — manifeste ou chemins invalides",
     "ambiguous": "Ambigu — plusieurs produits locaux pour cette identité",
@@ -66,7 +67,7 @@ def _local_states(data_dir):
         try:
             if not folder.resolve().is_relative_to(root):
                 raise ValueError
-            path = folder / "acquisition_manifest.json"
+            path = manifest_path(folder) or folder / "acquisition_manifest.json"
             if path.exists():
                 if path.stat().st_size > 2 * 1024**2 or not path.resolve().is_relative_to(folder.resolve()):
                     raise ValueError
@@ -78,8 +79,10 @@ def _local_states(data_dir):
                     if not target.is_relative_to(folder.resolve()):
                         raise ValueError
                     complete &= target.is_file() and target.stat().st_size > 0
-                state = "manifest_present" if complete else "partial"
-                ingested = datetime.fromisoformat(manifest["ingested_at_utc"].replace("Z", "+00:00")).astimezone(timezone.utc)
+                subset = path.name == "subset_manifest.json"
+                state = ("subset_present" if subset else "manifest_present") if complete else "partial"
+                ingested_text = manifest["parent"]["ingested_at_utc"] if subset else manifest["ingested_at_utc"]
+                ingested = datetime.fromisoformat(ingested_text.replace("Z", "+00:00")).astimezone(timezone.utc)
         except Exception:
             state, ingested = "unverified", None
             # A rejected manifest may still declare an identity hint. This is
