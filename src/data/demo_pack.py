@@ -36,7 +36,8 @@ CHUNK = 1024 * 1024
 ALLOWED_HOSTS = frozenset({"github.com", "objects.githubusercontent.com", "release-assets.githubusercontent.com"})
 MANIFEST_NAMES = ("acquisition_manifest.json", "subset_manifest.json")
 
-# Filled in only once an archive is published with the user's approval.
+# Experimental demonstration release, published with the user's approval
+# (docs/releases/demo-akanda-2025-01-v3.md). Defined after DemoPackSpec below.
 RELEASED_PACK: "DemoPackSpec | None" = None
 
 
@@ -79,8 +80,21 @@ def _is_digest(value) -> bool:
     return isinstance(value, str) and len(value) == 64 and all(c in "0123456789abcdef" for c in value)
 
 
+RELEASED_PACK = DemoPackSpec(
+    url="https://github.com/axelnyandwi/geonaf-gabon/releases/download/demo-akanda-2025-01-v3/"
+        "geonaf-demo-akanda-2025-01-v3.zip",
+    sha256="f2228614a57906a46d3d023c1b8ee2bee343f853033b3d203f267e24e8a329df",
+    pack_id="geonaf-demo-akanda-2025-01",
+)
+
+
 def spec_from_environment(environ=os.environ) -> DemoPackSpec | None:
-    """Pinned release, or GEONAF_DEMO_PACK_URL/_SHA256/_ID together (all three or none)."""
+    """Pinned release, or GEONAF_DEMO_PACK_URL/_SHA256/_ID together (all three or none).
+
+    ``GEONAF_DEMO_PACK=off`` disables any download (tests, offline work).
+    """
+    if environ.get("GEONAF_DEMO_PACK", "").strip().lower() in {"off", "0", "false", "no"}:
+        return None
     values = [environ.get(f"GEONAF_DEMO_PACK_{name}", "").strip() for name in ("URL", "SHA256", "ID")]
     if not any(values):
         return RELEASED_PACK

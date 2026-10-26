@@ -203,6 +203,12 @@ def test_environment_configuration_is_all_or_nothing(monkeypatch):
     assert spec.sha256 == "a" * 64
 
 
+def test_released_pack_is_pinned_and_can_be_disabled():
+    assert demo_pack.RELEASED_PACK.url.startswith("https://github.com/axelnyandwi/geonaf-gabon/releases/download/")
+    assert spec_from_environment({}) == demo_pack.RELEASED_PACK
+    assert spec_from_environment({"GEONAF_DEMO_PACK": "off", "GEONAF_DEMO_PACK_URL": URL}) is None
+
+
 def test_local_data_take_precedence_over_the_pack(tmp_path):
     def installer(*args):
         raise AssertionError("aucun téléchargement attendu")
