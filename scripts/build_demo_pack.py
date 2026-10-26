@@ -43,7 +43,7 @@ from src.data.derived_subset import (  # noqa: E402
 from src.data.demo_pack import create_archive  # noqa: E402
 
 PACK_ID = "geonaf-demo-akanda-2025-01"
-PACK_VERSION = "2"
+PACK_VERSION = "3"  # v3 = v2 + geoBoundaries referentials (v2 never published).
 AOI_ID = "akanda"
 MARGIN_M = 200.0
 PRODUCTS = (
@@ -209,11 +209,54 @@ def build_external(data_dir: Path, output: Path):
     return layers
 
 
-def source_data_fingerprint(sentinel2: list[dict], external: list[dict]) -> str:
+def build_boundaries(data_dir: Path, output: Path) -> list[dict]:
+    """geoBoundaries snapshots and their registered ADM2 units, byte-identical and digest-checked.
+
+    Only ``admin_unit`` records whose source is geoBoundaries are copied; each keeps
+    its legal status (community or humanitarian referential), never « official ».
+    """
+    from src.data.territory_registry import ADMIN_UNIT, OFFICIAL_VERIFIED, TerritoryRegistry
+
+    releases = []
+    for meta_path in sorted((data_dir / "external" / "geoboundaries").glob("*/GAB/ADM2/*.meta.json")):
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        snapshot = meta_path.with_name(meta_path.name.replace(".meta.json", ".geojson"))
+        relative = meta_path.parent.relative_to(data_dir)
+        _copy_verified(snapshot, output / relative / snapshot.name, meta["sha256"])
+        _copy_verified(meta_path, output / relative / meta_path.name)
+        details = meta["metadata"]
+        releases.append({"release": relative.parts[2], "level": "ADM2", "iso3": "GAB",
+                         "snapshot_sha256": meta["sha256"], "retrieved_at_utc": meta["retrieved_at_utc"],
+                         "metadata_url": meta["metadata_url"], "license": details["boundaryLicense"],
+                         "license_source": details["licenseSource"], "source": details["boundarySource"],
+                         "year_represented": details["boundaryYearRepresented"],
+                         "build_date": details["buildDate"]})
+    registry = TerritoryRegistry(data_dir)
+    statuses = {}
+    for record in registry.territories(ADMIN_UNIT):
+        if not record.source.source_id.startswith("geoboundaries-"):
+            continue
+        geometry = registry.geometry_path(record)  # Verifies the file digest of the record.
+        _copy_verified(geometry, output / "territories" / record.storage_key, record.file_sha256)
+        for version_key in registry.store.keys(f"records/{record.territory_id}"):
+            _copy_verified(registry.store.path(version_key), output / "territories" / version_key)
+        statuses.setdefault(record.source.source_id, set()).add(record.legal_status)
+    for release in releases:
+        found = statuses.get(f"geoboundaries-{release['release'].lower()}", set())
+        if not found or OFFICIAL_VERIFIED in found:
+            raise ValueError(f"Statut juridique inattendu pour {release['release']}.")
+        release["legal_status"] = sorted(found)
+        release["units"] = sum(1 for record in registry.territories(ADMIN_UNIT)
+                               if record.source.source_id == f"geoboundaries-{release['release'].lower()}")
+    return releases
+
+
+def source_data_fingerprint(sentinel2: list[dict], external: list[dict], boundaries: list[dict]) -> str:
     """Identity of the source data (not in Git): digest of their manifests and file digests."""
     canonical = {"sentinel2": sorted([item["product_id"], item["source_manifest_sha256"],
                                       sorted(item["source_assets_sha256"].items())] for item in sentinel2),
-                 "external": sorted([item["descriptor_fingerprint"], item["file_sha256"]] for item in external)}
+                 "external": sorted([item["descriptor_fingerprint"], item["file_sha256"]] for item in external),
+                 "boundaries": sorted([item["release"], item["snapshot_sha256"]] for item in boundaries)}
     return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
 
 
@@ -244,12 +287,13 @@ def main() -> int:
     sentinel2 = build_sentinel2(DATA_DIR, output, aoi_path, created_at, software)
     measure_quality(output, sentinel2)
     external = build_external(DATA_DIR, output)
+    boundaries = build_boundaries(DATA_DIR, output)
     files = pack_inventory(output)
     write_json({
         "pack_id": PACK_ID, "pack_version": PACK_VERSION,
         "created_at_utc": created_at.isoformat().replace("+00:00", "Z"), "software": software,
         "code": {"repository": "geonaf", **code},
-        "source_data": {"fingerprint_sha256": source_data_fingerprint(sentinel2, external),
+        "source_data": {"fingerprint_sha256": source_data_fingerprint(sentinel2, external, boundaries),
                         "note": "Données sources hors Git : identifiées par les empreintes de leurs "
                                 "manifestes et fichiers, vérifiées au moment de la construction."},
         "aoi": {"id": AOI_ID, "path": f"aoi/{AOI_ID}.geojson",
@@ -259,11 +303,18 @@ def main() -> int:
                       "license": "Copernicus Sentinel data terms (accès libre, attribution requise)",
                       "subset_margin_m": MARGIN_M, "acquisitions": sentinel2},
         "external_layers": external,
+        "boundaries": {
+            "statement": "Référentiels geoBoundaries gbOpen (communautaire) et gbHumanitarian (humanitaire, "
+                         "OCHA COD-AB via SALB/HDX) : limites non officielles, non vérifiées, sans valeur "
+                         "juridique. Aucune limite administrative officielle n'est fournie.",
+            "releases": boundaries},
         "limits": [
             "Extraits spatiaux de tuiles vérifiées localement : l'intégrité de la source a été contrôlée "
             "contre STAC à l'ingestion, pas recontrôlable depuis l'extrait seul.",
             "Dates affichées = dates d'acquisition ; aucune acquisition postérieure au 25/01/2025 dans le paquet.",
             "WorldCover 2021 et l'instantané OSM ne décrivent pas l'état du territoire aux dates Sentinel-2.",
+            "Les deux référentiels de limites diffèrent (sources et années différentes) : une divergence "
+            "entre eux n'est pas un changement du territoire.",
         ],
         "files": files,
         "total_bytes": sum(item["bytes"] for item in files),

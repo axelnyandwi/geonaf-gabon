@@ -28,7 +28,7 @@ import numpy as np
 
 from src.config import DATA_DIR
 
-PACK_DIR = DATA_DIR / "demo_pack" / "geonaf-demo-akanda-2025-01-v2"
+PACK_DIR = DATA_DIR / "demo_pack" / "geonaf-demo-akanda-2025-01-v3"
 AOI_ID = "akanda"
 PRODUCTS = (
     "S2B_MSIL2A_20250115T093239_N0511_R136_T32NNF_20250115T120528",

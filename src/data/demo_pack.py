@@ -303,6 +303,13 @@ def pack_summary(manifest: dict) -> list[str]:
         license_ = layer.get("license", {})
         lines.append(f"{layer.get('product') or layer.get('source_id')} — {license_.get('attribution', '')} "
                      f"({license_.get('spdx_id', '')}).")
+    boundaries = manifest.get("boundaries", {})
+    if boundaries:
+        lines.append(boundaries.get("statement", ""))
+        for item in boundaries.get("releases", []):
+            lines.append(f"geoBoundaries {item.get('release')} {item.get('level')} — {item.get('source')}, "
+                         f"limites de {item.get('year_represented')}, {item.get('units')} unités "
+                         f"({', '.join(item.get('legal_status', []))}) — {item.get('license')}.")
     lines += list(manifest.get("limits", []))
     return lines
 

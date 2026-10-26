@@ -14,7 +14,7 @@ import pytest
 from src.config import DATA_DIR
 from src.geo.scientific_profile import GABON_EQUATORIAL_EXPERIMENTAL as PROFILE
 
-PACK = Path(os.environ.get("GEONAF_DEMO_PACK_DIR") or DATA_DIR / "demo_pack" / "geonaf-demo-akanda-2025-01-v2")
+PACK = Path(os.environ.get("GEONAF_DEMO_PACK_DIR") or DATA_DIR / "demo_pack" / "geonaf-demo-akanda-2025-01-v3")
 AOI = PACK / "aoi" / "akanda.geojson"
 pytestmark = pytest.mark.skipif(not (PACK / "PACK_MANIFEST.json").is_file(),
                                 reason="Paquet de démonstration absent.")
@@ -74,3 +74,15 @@ def test_series_excludes_the_low_coverage_date(observations):
     included = {item.acquired_at_utc.date().isoformat(): item.included for item in series.dates}
     assert included == {"2025-01-15": True, "2025-01-20": False, "2025-01-25": True}
     assert series.common_coverage_percent == pytest.approx(58.6125205, abs=1e-6)
+
+
+def test_boundary_referentials_are_available_and_never_official():
+    from src.data.territory_registry import COMMUNITY, HUMANITARIAN
+    from src.services.territory_catalog import admin_territories
+
+    expected = {"gbOpen": COMMUNITY, "gbHumanitarian": HUMANITARIAN}
+    for release, status in expected.items():
+        units = admin_territories(PACK, release, "ADM2")
+        assert units and {unit.legal_status for unit in units} == {status}
+        assert not any(unit.record.is_official for unit in units)
+        assert all(unit.geometry_path.is_file() for unit in units)
