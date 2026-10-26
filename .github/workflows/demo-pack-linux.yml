@@ -48,6 +48,35 @@ jobs:
                 f"{cold:.2f} s ; réutilisation vérifiée en {warm:.2f} s")
           Path("pack_dir.txt").write_text(str(path))
           EOF
+      - name: Component comparison with the Windows reference
+        if: always()
+        run: |
+          python scripts/diagnose_pack_science.py "$(cat pack_dir.txt)" --json linux.json > /dev/null
+          python - <<'EOF'
+          import json
+          ref = json.load(open("docs/benchmarks/pack_science_windows_py310.json", encoding="utf-8"))
+          cur = json.load(open("linux.json", encoding="utf-8"))
+          lines = []
+          for name, item in ref["arrays"].items():
+              same = item == cur["arrays"][name]
+              lines.append(f"{name}: {'identique' if same else 'DIFFÉRENT'}")
+          for group in ("statistics", "areas_m2"):
+              for key, value in ref[group].items():
+                  a, b = value, cur[group][key]
+                  if a == b:
+                      lines.append(f"{group}.{key}: identique")
+                  else:
+                      fa, fb = float(a), float(b)
+                      rel = abs(fa - fb) / max(abs(fa), 1e-300)
+                      lines.append(f"{group}.{key}: {a} -> {b} (écart relatif {rel:.2e})")
+          for key in ("comparable_area_m2", "denominator_area_m2", "comparable_coverage_percent"):
+              a, b = ref[key], cur[key]
+              rel = abs(float(a) - float(b)) / max(abs(float(a)), 1e-300)
+              lines.append(f"{key}: {'identique' if a == b else f'{a} -> {b} (écart relatif {rel:.2e})'}")
+          lines.append(f"class_pixel_counts: {'identique' if ref['class_pixel_counts'] == cur['class_pixel_counts'] else cur['class_pixel_counts']}")
+          lines.append(f"grid: {'identique' if ref['grid'] == cur['grid'] else cur['grid']}")
+          print("::notice title=Linux vs Windows::" + "%0A".join(lines))
+          EOF
       - name: Scientific non-regression on the pack
         run: >
           GEONAF_DEMO_PACK_DIR="$(cat pack_dir.txt)"
