@@ -4,8 +4,15 @@ Needs only the pack (no full tiles), so it can run on any platform, e.g. Linux:
 ``GEONAF_DEMO_PACK_DIR=<unpacked pack> python -m pytest tests/test_demo_pack_science.py``.
 Reference values are those validated on 26/10/2026, bit-identical on full tiles
 and subsets after the lossless clip fix (docs/lossless_aoi_clip.md).
+
+Tolerance policy across platforms (Windows reference vs Linux, 26/10/2026):
+arrays, masks, classes, grid, counts and NDVI statistics must be bit-identical;
+equal-area surfaces and coverage are float64 sums of projected cell weights whose
+last bits depend on the platform's maths library (observed relative gap ≤ 6e-15),
+so they are checked with ``AREA_RTOL`` = 1e-12.
 """
 
+import json
 import os
 from pathlib import Path
 
@@ -18,7 +25,9 @@ PACK = Path(os.environ.get("GEONAF_DEMO_PACK_DIR") or DATA_DIR / "demo_pack" / "
 AOI = PACK / "aoi" / "akanda.geojson"
 pytestmark = pytest.mark.skipif(not (PACK / "PACK_MANIFEST.json").is_file(),
                                 reason="Paquet de démonstration absent.")
-PAIR_DIGEST = "995a1dbfe14c3ec6b1585411ffa59e180f23a151765dad5dff4d60fb354e073b"
+PAIR_DIGEST = "995a1dbfe14c3ec6b1585411ffa59e180f23a151765dad5dff4d60fb354e073b"  # Windows reference.
+REFERENCE = Path(__file__).resolve().parents[1] / "docs" / "benchmarks" / "pack_science_windows_py310.json"
+AREA_RTOL = 1e-12
 
 
 @pytest.fixture(scope="module")
@@ -33,14 +42,28 @@ def observations():
     return found
 
 
-def test_pair_digest_matches_the_full_tile_reference(observations):
+def test_pair_matches_the_reference_exactly_except_float_surfaces(observations):
+    from scripts.diagnose_pack_science import fingerprint
+
+    reference = json.loads(REFERENCE.read_text(encoding="utf-8"))
+    current = fingerprint(PACK)
+    for name in ("arrays", "grid", "statistics", "class_pixel_counts", "denominator_area_m2"):
+        assert current[name] == reference[name], name
+    surfaces = [(key, reference["areas_m2"][key], current["areas_m2"][key]) for key in reference["areas_m2"]]
+    surfaces += [(key, reference[key], current[key]) for key in ("comparable_area_m2", "comparable_coverage_percent")]
+    for key, expected, value in surfaces:
+        assert float(value) == pytest.approx(float(expected), rel=AREA_RTOL, abs=0), key
+    assert current["class_pixel_counts"] and sum(current["class_pixel_counts"].values()) == 845383
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Empreinte globale exacte : plateforme de référence (Windows).")
+def test_pair_digest_on_the_reference_platform(observations):
     from scripts.benchmark_streamlit import scientific_digest
     from src.services.local_preview import analyze_local_akanda
 
     result = analyze_local_akanda(observations["2025-01-15"], observations["2025-01-25"], PACK,
                                   scientific_profile=PROFILE)
     assert scientific_digest(result) == PAIR_DIGEST
-    assert int(result.analysis.comparable_mask.sum()) == 845383
 
 
 def test_single_date_and_worldcover_join(observations):

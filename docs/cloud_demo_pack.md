@@ -78,8 +78,24 @@ Le temps de téléchargement depuis l'hébergement n'est pas mesuré (archive no
 `requirements.txt` fige les versions validées (Rasterio 1.4.4, GDAL 3.10.3 embarqué ;
 pas de Rasterio 1.5). Wheels Linux manylinux x86_64 disponibles pour Python 3.12
 et 3.13. Suite complète réussie sous Windows avec Python 3.10.11 et 3.13.3.
-La wheel Linux de Rasterio embarque PROJ 9.7.1 (9.6.0 sous Windows) : à valider
-sous Linux avec `tests/test_demo_pack_science.py`, qui n'exige que le paquet.
+La wheel Linux de Rasterio embarque PROJ 9.7.1 (9.6.0 sous Windows).
+
+Validation Linux (workflow `demo-pack-linux`, Ubuntu 24.04, Python 3.13.16,
+Rasterio 1.4.4 / GDAL 3.10.3, 26/10/2026) : téléchargement réel de la release par
+le chargeur (0,97 s), puis comparaison composant par composant avec la référence
+Windows (`docs/benchmarks/pack_science_windows_py310.json`, script
+`scripts/diagnose_pack_science.py`) :
+
+- identiques bit à bit : NDVI des deux dates, ΔNDVI, masques de validité et de
+  comparaison, carte de classes, grille, effectifs par classe, statistiques ΔNDVI ;
+- différences de dernier bit sur les surfaces pondérées en aire égale et la
+  couverture comparable (écart relatif ≤ 6·10⁻¹⁵, soit < 10⁻⁶ m² sur 84 km²) :
+  sommes flottantes dont l'arrondi dépend de la bibliothèque mathématique.
+
+Politique de tolérance (`tests/test_demo_pack_science.py`) : égalité exacte pour
+tableaux, masques, classes, grille, effectifs et statistiques ; tolérance relative
+de 1·10⁻¹² pour surfaces et couverture. L'empreinte globale exacte n'est exigée que
+sur la plateforme de référence (Windows).
 
 ## Mobile
 
