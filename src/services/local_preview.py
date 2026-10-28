@@ -267,3 +267,42 @@ def analyze_local_group(group, data_dir: Path, *, scientific_profile: Scientific
     except Exception:
         raise LocalPreviewError(
             "NDVI de l'acquisition impossible : vérifier les tuiles, leurs manifestes, l'AOI et le profil.") from None
+
+
+def analyze_local_group_with_scl(group, data_dir: Path, *, scientific_profile: ScientificProfile):
+    """(observation, SCL classes or None, provenance per tile) of one verified datatake.
+
+    A single tile returns the SCL classes read from the clipped file that built
+    the NDVI validity mask (``analyze_ndvi_observation_with_scl``). A mosaic
+    returns ``None``: its per-tile SCL classes are not merged, so no detailed
+    breakdown is claimed for it.
+    """
+    from src.services.ndvi_observation import analyze_ndvi_mosaic, analyze_ndvi_observation_with_scl
+
+    try:
+        acquisitions = [_load_observation(observation) for observation in group]
+        provenance = tuple(observation_provenance(observation) for observation in group)
+        aoi_path = _profile_aoi(data_dir, scientific_profile)
+        if len(acquisitions) == 1:
+            observation, scl = analyze_ndvi_observation_with_scl(acquisitions[0], aoi_path=aoi_path,
+                                                                 scientific_profile=scientific_profile)
+        else:
+            observation, scl = analyze_ndvi_mosaic(acquisitions, aoi_path=aoi_path,
+                                                   scientific_profile=scientific_profile), None
+        return observation, scl, provenance
+    except Exception:
+        raise LocalPreviewError(
+            "NDVI de l'acquisition impossible : vérifier les tuiles, leurs manifestes, l'AOI et le profil.") from None
+
+
+def observation_provenance(observation: LocalObservation) -> dict:
+    """Verified manifest facts of one local acquisition (no local path)."""
+    manifest = _manifest(observation.manifest_path)
+    subset = manifest["schema_version"] == SUBSET_SCHEMA_VERSION
+    ingested = manifest.get("ingested_at_utc") or (manifest.get("parent") or {}).get("ingested_at_utc")
+    return {"product_id": manifest["product_id"], "acquired_at_utc": manifest["acquired_at_utc"],
+            "ingested_at_utc": ingested, "collection": manifest.get("collection"),
+            "stac_item": (manifest.get("stac") or {}).get("item_id"),
+            "scl_sha256": manifest["assets"]["scl"]["sha256"],
+            "manifest_sha256": hashlib.sha256(observation.manifest_path.read_bytes()).hexdigest(),
+            "subset": subset}

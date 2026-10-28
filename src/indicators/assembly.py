@@ -205,3 +205,60 @@ def compute_territorial_indicators(inputs: IndicatorInputs, *, aoi_label: str | 
     return build_indicators(aoi_id=inputs.aoi_id, aoi_path=inputs.aoi_path,
                             worldcover=[(layer.path, layer.descriptor) for layer in inputs.worldcover] or None,
                             osm=osm, aoi_label=aoi_label, profile=profile, temporal_notes=inputs.temporal_notes)
+
+
+def build_s2_vegetation_indicator(estimate, inventory) -> TerritorialIndicator:
+    """Indicator of one Sentinel-2 vegetation estimate; separate from :func:`build_indicators`.
+
+    ``value`` is the observed area with NDVI ≥ threshold, ``None`` when the
+    estimate may not be published (measurements stay in ``estimate.measure``).
+    The only share is relative to the usable observed area, never to the zone.
+    """
+    import hashlib
+    import json
+
+    from src.indicators.provenance import (
+        SENTINEL2_ATTRIBUTION, SENTINEL2_NATURE, SENTINEL2_SOURCE_ID, VEGETATION_S2_LIMITS, sentinel2_dates,
+    )
+    from src.indicators.s2_inventory import BREAKDOWN_UNAVAILABLE
+
+    profile, measure, assessment = inventory.profile, estimate.measure, estimate.assessment
+    km2 = lambda m2: m2 / 1e6
+    zone_share = lambda m2: 100.0 * m2 / measure.zone_m2
+    parts = [("observed", "Surface observée exploitable", measure.observed_m2),
+             ("vegetated", f"Surface à NDVI ≥ {profile.threshold:g}", measure.vegetated_m2),
+             ("not_vegetated", f"Surface observée à NDVI < {profile.threshold:g}", measure.not_vegetated_m2),
+             ("excluded_observed", "Observée mais exclue (eau, zones sombres, non classées…)",
+              measure.excluded_observed_m2),
+             ("not_observed", "Non observée (nuages, ombres, pixels défectueux)", measure.not_observed_m2),
+             ("other_invalid", "Autres pixels invalides (réflectance ou NDVI)", measure.other_invalid_m2),
+             ("unsplit", "Non exploitable, motif non ventilé", measure.unsplit_m2),
+             ("outside_footprint", "Hors emprise de l'acquisition", measure.outside_footprint_m2)]
+    sensitivity = tuple((f"NDVI ≥ {t:g}", km2(m2)) for t, m2 in measure.sensitivity_m2)
+    breakdown = tuple(BreakdownItem(key, label, km2(m2), "km²", zone_share(m2),
+                                    sensitivity if key == "vegetated" else ())
+                      for key, label, m2 in parts if m2 is not None)
+    limits = VEGETATION_S2_LIMITS + estimate.mosaic_notes
+    if estimate.breakdown_status == BREAKDOWN_UNAVAILABLE:
+        limits += ("Ventilation non disponible : mosaïque de plusieurs tuiles, classes SCL non fusionnées ; "
+                   "seules les surfaces observée et à NDVI ≥ seuil sont publiées.",)
+    available = assessment.available
+    fingerprint = hashlib.sha256(json.dumps(
+        [estimate.fingerprint, profile.fingerprint, inventory.scientific_profile_fingerprint]).encode()).hexdigest()
+    return TerritorialIndicator(
+        "s2.vegetation_km2", f"Surface à NDVI ≥ {profile.threshold:g} (Sentinel-2, surface observée)",
+        km2(measure.vegetated_m2) if available else None, "km²", AVAILABLE if available else UNAVAILABLE,
+        inventory.aoi_id, inventory.aoi_sha256,
+        sentinel2_dates(estimate.acquired_at_utc, estimate.product_ids, estimate.ingested_at_utc),
+        IndicatorSource(SENTINEL2_SOURCE_ID, "Copernicus Sentinel-2 L2A", " + ".join(estimate.product_ids),
+                        SENTINEL2_NATURE, SENTINEL2_ATTRIBUTION.format(year=estimate.acquired_at_utc.year),
+                        fingerprint),
+        measure.observed_coverage_percent,
+        (f"Somme des surfaces exactes (aire équivalente EPSG:6933, pixels partiels compris) des pixels valides "
+         f"selon la politique SCL « {inventory.scl_policy} » du profil {inventory.scientific_profile_id} "
+         f"{inventory.scientific_profile_version}, dont le NDVI calibré est ≥ {profile.threshold:g} (comparaison "
+         f"en float32). Part rapportée à la seule surface observée exploitable ; aucune extrapolation. Profil "
+         f"{profile.profile_id} {profile.version}."),
+        assessment.reliability, assessment.reasons, limits, profile.fingerprint,
+        shares=((("surface observée exploitable", measure.vegetated_share_percent),) if available else ()),
+        breakdown=breakdown, result_kind=ESTIMATION, scientific_status=assessment.scientific_status)

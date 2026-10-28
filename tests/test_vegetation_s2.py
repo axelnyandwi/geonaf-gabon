@@ -168,7 +168,7 @@ def test_partition_is_exclusive_and_exhaustive_on_random_inputs(tmp_path, with_s
     assert set(np.unique(labels)) <= allowed and labels.shape == classes.shape   # One label per pixel.
     np.testing.assert_array_equal(np.isin(labels, (VEGETATED, NOT_VEGETATED)), valid)
     result = measure(grid, zone, ndvi, valid, scl=scl)
-    assert parts_sum(result) == pytest.approx(result.zone_m2, rel=1e-9)
+    assert parts_sum(result) == pytest.approx(result.zone_m2, rel=1e-6)    # PARTITION_RTOL.
     assert result.vegetated_m2 + result.not_vegetated_m2 == pytest.approx(result.observed_m2, rel=1e-12)
     assert result.outside_footprint_m2 > 0                                     # Zone partly off the grid.
     assert (result.unsplit_m2 is None) == with_scl and (result.not_observed_m2 is None) != with_scl

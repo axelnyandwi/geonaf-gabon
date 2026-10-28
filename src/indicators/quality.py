@@ -4,6 +4,11 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
+from src.data.cloud_mask import (
+    SCL_CLOUD_SHADOW_CLASSES, SCL_DEFECTIVE_CLASSES, SCL_MASK_POLICIES, scl_mask_from_values,
+)
 from src.indicators.model import (
     HIGH, LOW, MEDIUM, NOT_ASSESSED, UNAVAILABLE, ChangeAssessment, TerritorialIndicator,
 )
@@ -30,6 +35,30 @@ def osm_reliability():
 
 
 RELIABILITY_ORDER = (LOW, MEDIUM, HIGH)
+# A vegetation estimate must not count clouds, shadows or defective pixels as observed ground.
+FORBIDDEN_VEGETATION_SCL = SCL_DEFECTIVE_CLASSES | SCL_CLOUD_SHADOW_CLASSES
+
+
+def check_vegetation_scl_policy(policy: str) -> None:
+    """Refuse an SCL policy that accepts clouds, shadows, cirrus or defective pixels."""
+    if policy not in SCL_MASK_POLICIES:
+        raise ValueError(f"Politique SCL inconnue : {policy}.")
+    accepted = SCL_MASK_POLICIES[policy] & FORBIDDEN_VEGETATION_SCL
+    if accepted:
+        raise ValueError(f"Politique SCL « {policy} » refusée pour l'estimation de végétation : elle accepte les "
+                         f"classes {', '.join(map(str, sorted(accepted)))} (nuages, ombres ou pixels défectueux).")
+
+
+def check_scl_consistency(observation, scl) -> None:
+    """The SCL classes must be those that built ``observation.valid`` (same product, grid and policy)."""
+    shape = (observation.grid.height, observation.grid.width)
+    if scl.product_id != observation.product_id:
+        raise ValueError("SCL d'un autre produit que l'observation NDVI.")
+    if np.shape(scl.classes) != shape or np.shape(scl.valid) != shape:
+        raise ValueError("SCL sur une autre grille que l'observation NDVI.")
+    accepted = scl_mask_from_values(np.ma.array(scl.classes, mask=~scl.valid), observation.scl_policy, scl.valid)
+    if np.any(observation.valid & ~accepted):
+        raise ValueError("Pixels NDVI valides hors de la politique SCL : SCL incohérent avec l'observation.")
 
 
 @dataclass(frozen=True)

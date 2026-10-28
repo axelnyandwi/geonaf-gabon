@@ -8,7 +8,8 @@ from src.indicators.model import IndicatorDates, IndicatorSource
 
 
 def parse_utc(text):
-    return None if not text else datetime.fromisoformat(str(text)).astimezone(timezone.utc)
+    # Python 3.10 does not read the "Z" suffix written by the acquisition manifests.
+    return None if not text else datetime.fromisoformat(str(text).replace("Z", "+00:00")).astimezone(timezone.utc)
 
 
 def indicator_source(descriptor, nature):
@@ -38,6 +39,34 @@ LANDCOVER_LIMITS = (
     "Nomenclature mondiale non spécifique aux écosystèmes côtiers d'Afrique centrale.",
     "Décrit l'année de la carte, pas l'état actuel du territoire.",
 )
+SENTINEL2_SOURCE_ID = "copernicus-sentinel-2"
+SENTINEL2_NATURE = "Observation satellitaire (indice spectral seuillé)"
+# Wording taken from the pack v3 release note; not re-checked against the Copernicus legal notice (PDF).
+SENTINEL2_ATTRIBUTION = "Contains modified Copernicus Sentinel data {year}"
+
+
+def sentinel2_dates(acquired_at_utc, product_ids, ingested_at_utc):
+    """One acquisition instant; the reference is the product itself; ingestion from the verified manifest."""
+    return IndicatorDates(
+        acquired_at_utc, acquired_at_utc, "Instant d'acquisition Sentinel-2 (UTC), pas une période.",
+        "Sentinel-2 L2A " + " + ".join(product_ids), None, parse_utc(ingested_at_utc))
+
+
+VEGETATION_S2_LIMITS = (
+    "Indice spectral seuillé (NDVI ≥ seuil) : ce n'est pas une mesure directe de la végétation réelle.",
+    "Seuil non calibré pour le climat équatorial ni ces écosystèmes ; résultat très sensible au seuil.",
+    "Mangroves : marée haute ou inondation abaissent le NDVI ; le SCL peut les classer en eau ou en zone "
+    "sombre, alors exclues de la surface observée.",
+    "Zones humides herbacées : les pixels mêlant eau et végétation peuvent passer sous le seuil.",
+    "Végétation urbaine : à 10 m, jardins et alignements d'arbres sont mêlés au bâti.",
+    "Nuages fins, brumes ou ombres non détectés par le SCL abaissent le NDVI ; la classification SCL "
+    "(Sen2Cor) peut elle-même se tromper.",
+    "Saison non évaluée : le profil de référence ne contient pas de calendrier phénologique validé.",
+    "La surface non observée n'est pas estimée : aucune extrapolation à la zone d'étude.",
+    "Non comparable à la surface végétalisée WorldCover 2021 (classification, autre année, autre surface "
+    "de référence) ; deux dates ne sont comparables que sur leur surface observée commune.",
+)
+
 OSM_LIMITS = (
     "Base collaborative : complétude inconnue ; absence d'objet ≠ absence sur le terrain.",
     "Un objet présent dans la base peut avoir été cartographié longtemps après sa construction.",

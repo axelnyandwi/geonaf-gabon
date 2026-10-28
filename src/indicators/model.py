@@ -70,6 +70,7 @@ class TerritorialIndicator:
     shares: tuple[tuple[str, float], ...] = ()          # (denominator, percent)
     breakdown: tuple[BreakdownItem, ...] = ()
     result_kind: str | None = None                      # One of RESULT_KINDS; always set by the assembly.
+    scientific_status: str | None = None                # "experimental" for unvalidated methods; None otherwise.
 
 
 @dataclass(frozen=True)

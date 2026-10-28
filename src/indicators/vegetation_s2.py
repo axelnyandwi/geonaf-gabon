@@ -19,7 +19,7 @@ Without SCL classes, rules 3–6 collapse into ``unsplit`` (not usable, reason
 unknown). The part of the zone not covered by the grid is added to
 ``outside_footprint``. Areas are sums of exact equal-area weights (EPSG:6933),
 so partially covered pixels count for their part inside the zone; the labels
-add up to the zone area by construction (checked).
+add up to the zone area by construction (checked within ``PARTITION_RTOL``).
 """
 
 from __future__ import annotations
@@ -38,7 +38,9 @@ LABEL_NAMES = {VEGETATED: "vegetated", NOT_VEGETATED: "not_vegetated", OUTSIDE_F
                NOT_OBSERVED: "not_observed", EXCLUDED_OBSERVED: "excluded_observed",
                OTHER_INVALID: "other_invalid", UNSPLIT: "unsplit"}
 SCL_NOT_OBSERVED_CLASSES = SCL_DEFECTIVE_CLASSES | SCL_CLOUD_SHADOW_CLASSES
-PARTITION_RTOL = 1e-9
+# Relative gap between the zone's geodesic area and the sum of exact pixel weights that is rounding of the
+# geometric computations (measured ≤ 3e-9), far below one pixel even on a small zone: never « hors emprise ».
+PARTITION_RTOL = 1e-6
 
 
 @dataclass(frozen=True)
@@ -117,7 +119,7 @@ def measure_vegetation(ndvi, valid, weights, grid, zone: EqualAreaAOI, *, thresh
     uncovered = zone.area_m2 - float(weights.sum(dtype=np.float64))
     if uncovered < -PARTITION_RTOL * zone.area_m2:
         raise ValueError("Poids surfaciques supérieurs à l'aire de la zone : grille ou zone incohérente.")
-    uncovered = max(uncovered, 0.0)
+    uncovered = 0.0 if uncovered <= PARTITION_RTOL * zone.area_m2 else uncovered
     total = sum(part.area_m2 for part in parts.values()) + uncovered
     if abs(total - zone.area_m2) > PARTITION_RTOL * zone.area_m2:
         raise ValueError("Partition de la zone incomplète : somme des catégories différente de son aire.")
