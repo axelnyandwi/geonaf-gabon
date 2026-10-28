@@ -68,6 +68,10 @@ Un indicateur indisponible garde la nature qu'aurait sa valeur.
   comprises) » ou « de la surface terrestre (hors eaux permanentes) ». Badges : nature du résultat et
   fiabilité ; date visible (période observée, sinon état du référentiel). Valeur absente : « Non
   disponible » et son motif.
+- **Densité de bâtiments sur la surface terrestre** : la carte nomme ses deux sources avec leurs
+  propres dates, lues dans les métadonnées : numérateur OpenStreetMap (date de l'instantané de la
+  base), dénominateur WorldCover (année de la carte), et précise que ce rapport ne décrit pas une
+  même année d'observation. Formule et valeurs inchangées.
 - **Section repliable « Provenance et fiabilité »** par carte : nature, source et version, attribution
   et licence, trois dates, couverture de la source, motifs du niveau de fiabilité, méthode, limites.
 - **Attributions** vérifiées le 28/10/2026 sur les pages des producteurs et affichées sous les cartes :

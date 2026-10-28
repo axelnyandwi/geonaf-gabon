@@ -28,6 +28,8 @@ CARDS = (  # (indicator, secondary indicator shown under the value)
     ("landcover.builtup_km2", None), ("osm.roads_km", None), ("osm.buildings_count", None),
     ("osm.buildings_density_land", "osm.buildings_density_aoi"), ("osm.buildings_footprint_km2", None),
 )
+# Ratios whose denominator comes from another source: both dates are shown, never one alone.
+DENOMINATOR_OF = {"osm.buildings_density_land": "landcover.land_km2"}
 
 
 @st.cache_resource(max_entries=4, show_spinner=False)
@@ -82,7 +84,28 @@ def _kind_badge(indicator):
     return f":{KIND_COLORS.get(indicator.result_kind, 'gray')}-badge[{label}]"
 
 
-def _provenance(indicator):
+def _credit_line(source, year, prefix="Attribution"):
+    credit = attribution(source, year)
+    if credit is None:
+        return None
+    licence = f"[{credit.licence}]({credit.licence_url})" if credit.licence_url else credit.licence
+    text = f"**{prefix}** : {credit.text} · Licence {licence}"
+    if credit.citation:
+        text += f" · Citation : {credit.citation}"
+    if not credit.verified:
+        text += " · mention issue du descripteur, non revérifiée"
+    return text
+
+
+def _ratio_lines(indicator, denominator):
+    """Numerator and denominator sources with their own dates, read from the metadata."""
+    return [f"Numérateur : bâtiments OpenStreetMap — {indicator.dates.reference_label}",
+            f"Dénominateur : surface terrestre {denominator.source.product} ({denominator.source.version}) — "
+            f"carte {_year(denominator)}",
+            "Sources de dates différentes : ce rapport ne décrit pas une même année d'observation."]
+
+
+def _provenance(indicator, denominator=None):
     """Collapsed details: nature, source, licence, dates, coverage, reliability reasons, method, limits."""
     with st.expander("Provenance et fiabilité"):
         label, explanation = RESULT_KIND_TEXT.get(indicator.result_kind, ("Nature non qualifiée", ""))
@@ -90,17 +113,18 @@ def _provenance(indicator):
         if indicator.source is not None:
             lines.append(f"**Source** : {indicator.source.product} ({indicator.source.version}) — "
                          f"{indicator.source.nature}")
-        credit = attribution(indicator.source, _year(indicator))
+        credit = _credit_line(indicator.source, _year(indicator))
         if credit is not None:
-            licence = f"[{credit.licence}]({credit.licence_url})" if credit.licence_url else credit.licence
-            text = f"**Attribution** : {credit.text} · Licence {licence}"
-            if credit.citation:
-                text += f" · Citation : {credit.citation}"
-            if not credit.verified:
-                text += " · mention issue du descripteur, non revérifiée"
-            lines.append(text)
+            lines.append(credit)
         if indicator.dates is not None:
             lines.append(f"**Dates** : {_date_line(indicator)}")
+        if denominator is not None and denominator.source is not None:
+            lines.append(f"**Dénominateur** : surface terrestre, {denominator.source.product} "
+                         f"({denominator.source.version}) — {denominator.source.nature}")
+            lines.append(f"**Dates du dénominateur** : {_date_line(denominator)}")
+            credit = _credit_line(denominator.source, _year(denominator), "Attribution du dénominateur")
+            if credit is not None:
+                lines.append(credit)
         if indicator.coverage_percent is not None:
             lines.append(f"**Couverture de la zone d'étude par la source** : "
                          f"{format_percent(indicator.coverage_percent)} %")
@@ -111,7 +135,7 @@ def _provenance(indicator):
             st.caption(f"- {limit}")
 
 
-def _card(indicator, secondary=None):
+def _card(indicator, secondary=None, denominator=None):
     with st.container(border=True):
         st.caption(indicator.label)
         unit = "" if indicator.value is None else f" <span style='font-size:1rem;font-weight:400'>" \
@@ -132,9 +156,11 @@ def _card(indicator, secondary=None):
             st.caption("  \n".join(details))
         st.markdown(f"{_kind_badge(indicator)} "
                     f":{RELIABILITY_COLORS[indicator.reliability]}-badge[Fiabilité : {indicator.reliability}]")
-        if indicator.dates is not None:
+        if denominator is not None and denominator.status == AVAILABLE and indicator.dates is not None:
+            st.caption("  \n".join(_ratio_lines(indicator, denominator)))
+        elif indicator.dates is not None:
             st.caption(_short_date(indicator))
-        _provenance(indicator)
+        _provenance(indicator, denominator)
 
 
 def _breakdown_frame(indicator, unit_label, *, hectares=False, label=lambda text: text, detail=lambda key: key):
@@ -230,7 +256,8 @@ def show_key_figures(data_dir, aoi_id: str, aoi_label: str) -> None:
     for row in (CARDS[:4], CARDS[4:]):
         for column, (indicator_id, secondary_id) in zip(st.columns(4), row):
             with column:
-                _card(result.get(indicator_id), result.get(secondary_id) if secondary_id else None)
+                _card(result.get(indicator_id), result.get(secondary_id) if secondary_id else None,
+                      result.get(DENOMINATOR_OF[indicator_id]) if indicator_id in DENOMINATOR_OF else None)
     if result.missing:
         st.caption("Sources absentes localement : " + ", ".join(result.missing) + ". Elles peuvent être récupérées "
                    "depuis le démonstrateur multisource ; aucune valeur n'est estimée en leur absence.")

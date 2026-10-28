@@ -98,3 +98,24 @@ def test_unreadable_layer_degrades_to_a_warning(local_data, home):
     app, _ = home(local_data)
     assert not app.exception and not app.error and len(app.metric) == 4
     assert any("Chiffres clés indisponibles" in w.value for w in app.warning)
+
+
+@pytest.mark.parametrize("snapshot, shown", [("2026-10-22T16:57:05Z", "22/10/2026 16:57"),
+                                             ("2025-03-04T08:05:00Z", "04/03/2025 08:05")])
+def test_land_density_names_both_sources_with_their_own_dates(local_data, home, monkeypatch, snapshot, shown):
+    import tests.test_territorial_indicators as fixtures
+
+    monkeypatch.setattr(fixtures, "SNAPSHOT", snapshot)                 # Date read from the metadata.
+    store_layers(local_data, "akanda")
+    app, _ = home(local_data)
+    assert not app.exception and not app.error
+    captions = [c.value for c in app.caption]
+    ratio = next(c for c in captions if c.startswith("Numérateur"))
+    assert f"Numérateur : bâtiments OpenStreetMap — Base OpenStreetMap au {shown} UTC" in ratio
+    assert "Dénominateur : surface terrestre ESA WorldCover 10 m 2021 (v200) — carte 2021" in ratio
+    assert "ce rapport ne décrit pas une même année d'observation" in ratio
+    assert sum(c.startswith("Numérateur") for c in captions) == 1          # Only the land density card.
+    details = " ".join(app.markdown.values)
+    assert "**Dénominateur** : surface terrestre, ESA WorldCover 10 m 2021 (v200)" in details
+    assert "**Dates du dénominateur** : Observation : 2021" in details
+    assert "**Attribution du dénominateur** : © ESA WorldCover project 2021" in details
