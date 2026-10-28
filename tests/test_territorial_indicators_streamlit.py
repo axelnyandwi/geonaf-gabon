@@ -64,7 +64,31 @@ def test_missing_sources_are_stated_without_values(local_data, home):
     assert not app.exception and not app.error and len(app.metric) == 4
     texts = _texts(app)
     assert any("Sources absentes localement : ESA WorldCover, OpenStreetMap" in t for t in texts)
-    assert sum("—" in t for t in app.markdown.values) == 7   # Every card except the study zone area.
+    assert sum("Non disponible" in t for t in app.markdown.values) == 7   # Every card except the study zone area.
+    assert not any("—" in t for t in app.markdown.values if "font-size:1.7rem" in t)
+
+
+def test_cards_show_hectares_named_denominators_nature_and_provenance(local_data, home):
+    store_layers(local_data, "akanda")
+    app, _ = home(local_data)
+    assert not app.exception and not app.error
+    texts = _texts(app)
+    captions = " ".join(c.value for c in app.caption)
+    assert "ha" in captions and any(t.startswith("soit ") and " ha" in t for t in texts)
+    assert "% de la zone d'étude (eaux comprises)" in captions
+    assert "% de la surface terrestre (hors eaux permanentes)" in captions
+    markdown = " ".join(app.markdown.values)
+    for badge in ("Mesure géométrique", "Observation d'une base cartographique", "Estimation"):
+        assert f"badge[{badge}]" in markdown
+    assert "Prédiction" not in markdown.replace("« prédiction »", "")
+    assert len([e for e in app.expander if e.label == "Provenance et fiabilité"]) == 8
+    assert "Complétude OpenStreetMap non évaluée" in markdown            # Reliability reasons are shown.
+    assert "© OpenStreetMap contributors" in captions and "ODbL 1.0" in captions
+    assert "© ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021)" in captions
+    roads = next(e for e in app.expander if e.label == "Voies cartographiées par catégorie (OSM)")
+    assert "Rues de desserte locale" in roads.dataframe[0].value["Catégorie"].tolist()
+    assert any("rue résidentielle (residential)" in v for v in roads.dataframe[0].value["Valeurs OSM « highway » (km)"])
+    assert any(c.value.startswith("**Rues de desserte locale**") for c in roads.caption)
 
 
 def test_unreadable_layer_degrades_to_a_warning(local_data, home):

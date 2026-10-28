@@ -10,8 +10,8 @@ from pathlib import Path
 from src.indicators.inventory import IndicatorInputs
 from src.indicators.landcover import landcover_areas
 from src.indicators.model import (
-    AOI_NATURE, AVAILABLE, HIGH, NOT_ASSESSED, UNAVAILABLE, BreakdownItem, IndicatorSource, TerritorialIndicator,
-    TerritorialIndicators,
+    AOI_NATURE, AVAILABLE, ESTIMATION, GEOMETRIC_MEASURE, HIGH, MAPPED_OBSERVATION, NOT_ASSESSED, UNAVAILABLE,
+    BreakdownItem, IndicatorSource, TerritorialIndicator, TerritorialIndicators,
 )
 from src.indicators.osm import building_figures, road_lengths
 from src.indicators.profiles import AFRICA_DEFAULT_V1, IndicatorProfile
@@ -25,9 +25,9 @@ from src.services.multisource_demo import CLASSIFICATION, COLLABORATIVE
 ACQUISITION_ZONE_LIMITS = ("Zone d'étude (carré d'acquisition), pas une limite administrative.",)
 
 
-def _unavailable(indicator_id, label, unit, aoi_id, aoi_sha, profile, reason):
+def _unavailable(indicator_id, label, unit, aoi_id, aoi_sha, profile, reason, result_kind):
     return TerritorialIndicator(indicator_id, label, None, unit, UNAVAILABLE, aoi_id, aoi_sha, None, None, None,
-                                reason, NOT_ASSESSED, (reason,), (), profile.fingerprint)
+                                reason, NOT_ASSESSED, (reason,), (), profile.fingerprint, result_kind=result_kind)
 
 
 def _landcover_indicators(tiles, aoi_path, aoi_id, aoi_sha, profile, warnings):
@@ -44,7 +44,7 @@ def _landcover_indicators(tiles, aoi_path, aoi_id, aoi_sha, profile, warnings):
     common = dict(aoi_id=aoi_id, aoi_sha256=aoi_sha, dates=landcover_dates(descriptor),
                   source=indicator_source(descriptor, CLASSIFICATION), coverage_percent=coverage,
                   reliability=reliability, reliability_reasons=reasons, limits=LANDCOVER_LIMITS,
-                  profile_fingerprint=profile.fingerprint)
+                  profile_fingerprint=profile.fingerprint, result_kind=ESTIMATION)
     km2 = lambda codes: sum(areas.get(code, 0.0) for code in codes) / 1e6
     detail = lambda codes: tuple((labels.get(code, str(code)), areas[code] / 1e6) for code in codes if code in areas)
     water = km2(profile.water_classes)
@@ -86,7 +86,8 @@ def _osm_indicators(frame, descriptor, aoi_path, aoi_id, aoi_sha, aoi_km2, land_
     reliability, reasons = osm_reliability()
     common = dict(aoi_id=aoi_id, aoi_sha256=aoi_sha, dates=osm_dates(descriptor),
                   source=indicator_source(descriptor, COLLABORATIVE), coverage_percent=None, reliability=reliability,
-                  reliability_reasons=reasons, profile_fingerprint=profile.fingerprint)
+                  reliability_reasons=reasons, profile_fingerprint=profile.fingerprint,
+                  result_kind=MAPPED_OBSERVATION)
     road_limits = OSM_LIMITS + (
         "Longueur de tronçons cartographiés, pas longueur de réseau : une voie à chaussées séparées "
         "cartographiées par sens compte deux fois.",
@@ -126,7 +127,7 @@ def _osm_indicators(frame, descriptor, aoi_path, aoi_id, aoi_sha, aoi_km2, land_
         indicators.append(_unavailable(
             "osm.buildings_density_land", "Densité de bâtiments cartographiés (surface terrestre)",
             "bâtiments/km²", aoi_id, aoi_sha, profile,
-            "Surface terrestre indisponible (ESA WorldCover absent localement)."))
+            "Surface terrestre indisponible (ESA WorldCover absent localement).", ESTIMATION))
     else:
         indicators.append(TerritorialIndicator(
             "osm.buildings_density_land", "Densité de bâtiments cartographiés (surface terrestre)",
@@ -134,7 +135,8 @@ def _osm_indicators(frame, descriptor, aoi_path, aoi_id, aoi_sha, aoi_km2, land_
                 "Nombre de bâtiments OSM / surface terrestre WorldCover (zone d'étude hors eaux permanentes)."),
             limits=OSM_LIMITS + (
                 f"Combine deux référentiels de dates différentes : OSM {descriptor.temporal.end_utc:%Y} et "
-                f"surface terrestre {land_indicator.dates.observation_start_utc:%Y}.",), **common))
+                f"surface terrestre {land_indicator.dates.observation_start_utc:%Y}.",),
+            **{**common, "result_kind": ESTIMATION}))
     return indicators
 
 
@@ -148,7 +150,8 @@ def build_indicators(*, aoi_id: str, aoi_path, worldcover=None, osm=None, aoi_la
         "aoi.area_km2", "Surface de la zone d'étude", aoi_km2, "km²", AVAILABLE, aoi_id, aoi_sha,
         None, IndicatorSource("geonaf-aoi", "Zone d'étude GEONAF", aoi_sha[:12], AOI_NATURE, "GEONAF", aoi_sha),
         100.0, "Aire géodésique de la géométrie de la zone d'étude (aire équivalente EPSG:6933).", HIGH,
-        ("Géométrie exacte du fichier de zone d'étude.",), ACQUISITION_ZONE_LIMITS, profile.fingerprint)]
+        ("Géométrie exacte du fichier de zone d'étude.",), ACQUISITION_ZONE_LIMITS, profile.fingerprint,
+        result_kind=GEOMETRIC_MEASURE)]
     missing, warnings = [], []
     land_km2 = land_indicator = None
     tiles = list(worldcover or [])
@@ -166,22 +169,25 @@ def build_indicators(*, aoi_id: str, aoi_path, worldcover=None, osm=None, aoi_la
                                     ("landcover.vegetation_km2", "Surface végétalisée"),
                                     ("landcover.builtup_km2", "Surface bâtie (classe « Bâti »)")):
             indicators.append(_unavailable(indicator_id, label, "km²", aoi_id, aoi_sha, profile,
-                                           "ESA WorldCover absent localement pour cette zone d'étude."))
+                                           "ESA WorldCover absent localement pour cette zone d'étude.", ESTIMATION))
     if osm is not None:
         frame, descriptor = osm
         indicators += _osm_indicators(frame, descriptor, aoi_path, aoi_id, aoi_sha, aoi_km2, land_km2,
                                       land_indicator, profile)
     else:
         missing.append("OpenStreetMap")
-        for indicator_id, label, unit in (
-                ("osm.roads_km", "Voies cartographiées (OSM)", "km"),
-                ("osm.buildings_count", "Bâtiments cartographiés (OSM)", "bâtiments"),
-                ("osm.buildings_footprint_km2", "Emprise au sol des bâtiments cartographiés (OSM)", "km²"),
-                ("osm.buildings_density_aoi", "Densité de bâtiments cartographiés (zone d'étude)", "bâtiments/km²"),
+        for indicator_id, label, unit, kind in (
+                ("osm.roads_km", "Voies cartographiées (OSM)", "km", MAPPED_OBSERVATION),
+                ("osm.buildings_count", "Bâtiments cartographiés (OSM)", "bâtiments", MAPPED_OBSERVATION),
+                ("osm.buildings_footprint_km2", "Emprise au sol des bâtiments cartographiés (OSM)", "km²",
+                 MAPPED_OBSERVATION),
+                ("osm.buildings_density_aoi", "Densité de bâtiments cartographiés (zone d'étude)", "bâtiments/km²",
+                 MAPPED_OBSERVATION),
                 ("osm.buildings_density_land", "Densité de bâtiments cartographiés (surface terrestre)",
-                 "bâtiments/km²")):
+                 "bâtiments/km²", ESTIMATION)):
             indicators.append(_unavailable(indicator_id, label, unit, aoi_id, aoi_sha, profile,
-                                           "Instantané OpenStreetMap absent localement pour cette zone d'étude."))
+                                           "Instantané OpenStreetMap absent localement pour cette zone d'étude.",
+                                           kind))
     return TerritorialIndicators(aoi_id, aoi_label or aoi_id, aoi_sha, aoi_km2, profile, tuple(indicators),
                                  tuple(temporal_notes), tuple(missing), tuple(warnings))
 

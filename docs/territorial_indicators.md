@@ -47,6 +47,45 @@ zones : V1.1).
 | `shares`, `breakdown` | parts par dénominateur ; ventilation (catégories, regroupements) |
 | `profile_fingerprint` | empreinte du profil d'indicateurs |
 
+## Nature des résultats (`result_kind`)
+
+Chaque indicateur porte explicitement la nature de sa valeur, fixée par l'assemblage
+(`src/indicators/assembly.py`) et jamais déduite par l'interface :
+
+| Nature | Sens | Indicateurs |
+|---|---|---|
+| Mesure géométrique | calcul exact sur la géométrie de la zone d'étude | surface de la zone |
+| Observation d'une base cartographique | contenu d'OpenStreetMap à la date de l'instantané ; ni relevé de terrain ni total réel | voies, nombre et emprise des bâtiments, densité sur toute la zone |
+| Estimation | sortie d'un modèle ou d'une classification, exactitude non vérifiée localement | surfaces WorldCover (terres, végétation, bâti), densité sur la surface terrestre (dénominateur classifié) |
+| Prédiction | projection d'un état futur | aucune dans cette version |
+
+Un indicateur indisponible garde la nature qu'aurait sa valeur.
+
+## Présentation (`src/indicators/presentation.py`, `src/components/territorial_indicators.py`)
+
+- **Cartes** : valeur principale (km² pour les surfaces), valeur secondaire en hectares (affichage
+  seulement, 1 km² = 100 ha), puis pourcentages avec dénominateur nommé : « de la zone d'étude (eaux
+  comprises) » ou « de la surface terrestre (hors eaux permanentes) ». Badges : nature du résultat et
+  fiabilité ; date visible (période observée, sinon état du référentiel). Valeur absente : « Non
+  disponible » et son motif.
+- **Section repliable « Provenance et fiabilité »** par carte : nature, source et version, attribution
+  et licence, trois dates, couverture de la source, motifs du niveau de fiabilité, méthode, limites.
+- **Attributions** vérifiées le 28/10/2026 sur les pages des producteurs et affichées sous les cartes :
+  - ESA WorldCover : « © ESA WorldCover project [année] / Contains modified Copernicus Sentinel data
+    ([année]) processed by ESA WorldCover consortium », CC BY 4.0, DOI 10.5281/zenodo.7254221 (v200)
+    ou 10.5281/zenodo.5571936 (v100) — https://esa-worldcover.org/en/data-access. L'année vient de
+    la carte ; l'attribution enregistrée dans les descripteurs (sans année) n'est pas modifiée.
+  - OpenStreetMap : « © OpenStreetMap contributors », ODbL 1.0, lien
+    https://www.openstreetmap.org/copyright.
+  - Toute autre source : texte du descripteur, signalé « non revérifié ».
+- **Glossaire des voies** (affichage seulement ; les catégories et l'empreinte du profil sont
+  inchangées) : « Voies de desserte » s'affiche « Rues de desserte locale » (rues résidentielles,
+  zones de rencontre, voies mineures `unclassified`, type non précisé `road`) ; « Voies de service »
+  s'affiche « Voies d'accès et de service » (accès à un site, un bâtiment, un parking, une
+  installation). Le statut d'accès des voies `service` et le revêtement des pistes `track` ne sont
+  **pas** déduits : ils dépendent d'attributs OSM (`access`, `surface`, `tracktype`) non retenus par
+  l'ingestion actuelle. Les valeurs `highway` sont traduites, valeur brute entre parenthèses.
+
 ## Profil d'indicateurs versionné
 
 `AFRICA_DEFAULT_V1` (`geonaf-indicateurs-afrique` 1.0.0) contient tous les regroupements. Un

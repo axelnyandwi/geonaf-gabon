@@ -25,3 +25,11 @@ def format_surface(value):
 
 def format_percent(value):
     return _number(value, 2)
+
+
+def format_hectares_from_km2(value):
+    """Secondary display of a km² surface in hectares (1 km² = 100 ha); whole hectares from 10 ha."""
+    if value is None or not isfinite(value):
+        return "—"
+    hectares = value * 100.0
+    return _number(hectares, 0 if abs(hectares) >= 10 else 2)

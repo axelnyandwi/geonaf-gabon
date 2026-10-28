@@ -10,6 +10,12 @@ from src.indicators.profiles import IndicatorProfile
 AVAILABLE, UNAVAILABLE = "disponible", "indisponible"
 HIGH, MEDIUM, LOW, NOT_ASSESSED = "élevée", "moyenne", "faible", "non évaluée"
 AOI_NATURE = "Géométrie de référence"
+# Nature of each result, set explicitly by the assembly (never inferred by the interface).
+GEOMETRIC_MEASURE = "mesure géométrique"                       # Exact computation on the zone geometry.
+MAPPED_OBSERVATION = "observation d'une base cartographique"   # What a map database contains, not the ground.
+ESTIMATION = "estimation"                                      # Output of a model or classification.
+PREDICTION = "prédiction"                                      # Future state; none in V1.
+RESULT_KINDS = (GEOMETRIC_MEASURE, MAPPED_OBSERVATION, ESTIMATION, PREDICTION)
 
 
 @dataclass(frozen=True)
@@ -63,6 +69,7 @@ class TerritorialIndicator:
     profile_fingerprint: str
     shares: tuple[tuple[str, float], ...] = ()          # (denominator, percent)
     breakdown: tuple[BreakdownItem, ...] = ()
+    result_kind: str | None = None                      # One of RESULT_KINDS; always set by the assembly.
 
 
 @dataclass(frozen=True)
