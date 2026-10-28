@@ -113,3 +113,68 @@ S2_NDVI_VEGETATION_V0 = VegetationIndexProfile(
               "calibration locale. Non validé scientifiquement ; la couverture minimale de 30 % ne garantit pas "
               "la représentativité spatiale de la surface observée.",
 )
+
+
+@dataclass(frozen=True)
+class TransitionProfile:
+    """Versioned rules to compare two acquisitions on their strictly common observed surface.
+
+    The NDVI class threshold and its sensitivity come from ``vegetation`` (nested,
+    so it enters this fingerprint). It is a **class** threshold on NDVI, distinct
+    from the ΔNDVI **variation** threshold of the scientific profiles (0.10).
+    """
+
+    profile_id: str
+    version: str
+    vegetation: VegetationIndexProfile
+    min_common_coverage_percent: float       # Below it: « Non disponible » (not a scientific validation).
+    short_interval_days: float               # Below it: warning only.
+    block_size_m: float                      # Spatial diagnostic blocks (information, never blocking).
+    block_crs: str                           # Fixed metric equal-area reference, independent of any image grid.
+    block_min_zone_share: float              # A block counts when the zone covers at least this share of it.
+    block_common_min_share: float            # « Covered » block: common surface at least this share of its zone.
+    scientific_status: str
+    reliability_cap: str
+    rationale: str
+
+    def __post_init__(self):
+        if not isinstance(self.vegetation, VegetationIndexProfile):
+            raise ValueError("Profil de végétation requis.")
+        for name in ("profile_id", "version", "block_crs", "rationale"):
+            if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
+                raise ValueError(f"Le profil de transition doit renseigner {name}.")
+        checks = (("min_common_coverage_percent", 0, 100), ("block_min_zone_share", 0, 1),
+                  ("block_common_min_share", 0, 1))
+        for name, low, high in checks:
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not low <= value <= high:
+                raise ValueError(f"{name} hors de [{low}, {high}].")
+        for name in ("short_interval_days", "block_size_m"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value) \
+                    or value <= 0:
+                raise ValueError(f"{name} doit être strictement positif.")
+        if self.scientific_status not in (EXPERIMENTAL, VALIDATED):
+            raise ValueError("Statut scientifique inconnu.")
+        if self.reliability_cap not in RELIABILITY_CAPS:
+            raise ValueError("Plafond de fiabilité inconnu.")
+
+    @property
+    def threshold(self) -> float:
+        return self.vegetation.threshold
+
+    @property
+    def fingerprint(self) -> str:
+        return hashlib.sha256(json.dumps(asdict(self), sort_keys=True, ensure_ascii=False).encode()).hexdigest()
+
+
+S2_NDVI_TRANSITION_V0 = TransitionProfile(
+    profile_id="geonaf-transition-ndvi-s2", version="0.1.0-experimental", vegetation=S2_NDVI_VEGETATION_V0,
+    min_common_coverage_percent=30.0, short_interval_days=30.0, block_size_m=1000.0, block_crs="EPSG:6933",
+    block_min_zone_share=0.5, block_common_min_share=0.10, scientific_status=EXPERIMENTAL,
+    reliability_cap="faible",
+    rationale="Règles de travail (décision projet du 28/10/2026), non validées : couverture commune minimale "
+              "30 % ; blocs de 1 km² en aire équivalente EPSG:6933 (origine 0, 0) pour un diagnostic spatial "
+              "non bloquant ; intervalle de moins de 30 jours signalé ; aucune transition sur grilles non "
+              "alignées.",
+)

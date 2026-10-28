@@ -94,6 +94,63 @@ def vegetation_estimate_assessment(measure, profile) -> VegetationEstimateAssess
     return VegetationEstimateAssessment(True, level, tuple(reasons), status)
 
 
+@dataclass(frozen=True)
+class PairAssessment:
+    """Whether class transitions between two acquisitions may be published, and how reliable they are."""
+
+    available: bool
+    reliability: str
+    reasons: tuple[str, ...]
+    warnings: tuple[str, ...]          # Never blocking (short interval, spatial diagnostic).
+    scientific_status: str
+
+
+def same_lattice_pair(asset_1, asset_2, grid) -> bool:
+    """Both acquisitions on the common grid's lattice (same CRS, resolution, cell alignment): no resampling."""
+    from src.geo.mosaic import same_lattice
+
+    return all(same_lattice(asset.transform, grid, asset.crs) for asset in (asset_1, asset_2))
+
+
+def pair_assessment(measure, profile, *, interval_days: float, aligned: bool) -> PairAssessment:
+    """Gates: chronological order, aligned grids, minimum common coverage; reliability capped by the profile."""
+    status = profile.scientific_status
+    warnings = []
+    if interval_days < profile.short_interval_days:
+        warnings.append(f"Intervalle court ({fr(interval_days, 1)} jours < {fr(profile.short_interval_days)}) : "
+                        "les transitions reflètent surtout les conditions d'acquisition (atmosphère, humidité, "
+                        "marée, géométrie de visée).")
+    blocks = measure.blocks
+    if blocks.eligible_blocks:
+        warnings.append(f"Diagnostic spatial (information) : {fr(100 * blocks.covered_share, 0)} % des "
+                        f"{blocks.eligible_blocks} blocs de {fr(blocks.size_m / 1000)} km² ont au moins "
+                        f"{fr(100 * blocks.common_min_share, 0)} % de surface commune ; "
+                        f"{fr(100 * blocks.empty_share, 0)} % n'en ont aucune.")
+    else:
+        warnings.append("Diagnostic spatial non calculable : zone plus petite qu'un bloc de référence.")
+    refusal = None
+    if interval_days <= 0:
+        refusal = "Acquisitions non ordonnées dans le temps ou identiques : comparaison impossible."
+    elif not aligned:
+        refusal = ("Grilles des deux acquisitions non alignées : transitions de classe non calculées "
+                   "(aucun rééchantillonnage).")
+    elif measure.common_m2 <= 0:
+        refusal = "Aucune surface observée commune aux deux acquisitions."
+    elif measure.common_coverage_percent < profile.min_common_coverage_percent:
+        refusal = (f"Couverture commune {fr(measure.common_coverage_percent, 1)} % < "
+                   f"{fr(profile.min_common_coverage_percent)} % (profil {profile.profile_id} {profile.version}) : "
+                   "transitions non publiées.")
+    if refusal:
+        return PairAssessment(False, NOT_ASSESSED, (refusal,), tuple(warnings), status)
+    reasons = [f"Couverture commune {fr(measure.common_coverage_percent, 1)} % de la zone d'étude ; la surface "
+               "non commune n'est pas estimée et le seuil de couverture ne garantit pas la représentativité."]
+    if status != VALIDATED:
+        reasons.insert(0, f"Méthode expérimentale non validée : transitions de classe spectrale autour de "
+                          f"NDVI {fr(profile.threshold)}, sans attribution de cause.")
+    level = RELIABILITY_ORDER[min(RELIABILITY_ORDER.index(MEDIUM), RELIABILITY_ORDER.index(profile.reliability_cap))]
+    return PairAssessment(True, level, tuple(reasons), tuple(warnings), status)
+
+
 def _reference_instant(indicator):
     dates = indicator.dates
     return dates.reference_at_utc or dates.observation_end_utc
