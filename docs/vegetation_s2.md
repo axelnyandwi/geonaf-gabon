@@ -1,7 +1,7 @@
 # Végétation observée par Sentinel-2 — estimation expérimentale
 
 **Statut : expérimental, non validé scientifiquement.** Les valeurs ci-dessous démontrent la
-reproductibilité numérique du calcul, pas sa justesse. Interface Streamlit : non branchée (lot L3c).
+reproductibilité numérique du calcul, pas sa justesse.
 
 ## Définition
 
@@ -27,15 +27,15 @@ Chaque pixel reçoit une seule étiquette (première règle satisfaite) :
 |---|---|---|
 | 1 | NDVI ≥ seuil | valide et NDVI ≥ seuil |
 | 2 | observée, NDVI < seuil | valide et NDVI < seuil |
-| 3 | hors emprise | SCL absent (NoData, classe 0, hors raster) ; plus la partie de la zone hors grille |
-| 4 | non observée | SCL 1, 3, 8, 9, 10 |
+| 3 | sans donnée | SCL absent (NoData, classe 0, hors raster) ou partie de la zone hors de la grille analysée ; cause (bord de trace, donnée manquante…) non déterminée |
+| 4 | non observée | selon le SCL : 1, 3, 8, 9, 10 (défectueux, ombres, nuages, cirrus) |
 | 5 | observée mais exclue | classe observée hors politique (eau 6, zone sombre 2, non classée 7, neige 11…) |
 | 6 | autre invalide | classe acceptée, réflectance ou NDVI invalide |
 | — | non ventilée | règles 3–6 confondues quand les classes SCL ne sont pas disponibles (mosaïque) |
 
 La somme des catégories égale l'aire de la zone à 10⁻⁶ près (relatif) ; un écart de cet ordre entre
 l'aire géodésique de la zone et la somme des poids exacts est un arrondi géométrique (mesuré
-≤ 3·10⁻⁹), jamais compté « hors emprise ». La part végétalisée est rapportée à la seule surface
+≤ 3·10⁻⁹), jamais compté « sans donnée ». La part végétalisée est rapportée à la seule surface
 observée exploitable ; **aucune valeur n'est rapportée à la zone entière** (pas d'extrapolation).
 
 ## Acquisitions réelles (`src/indicators/s2_inventory.py`)
@@ -87,6 +87,46 @@ Un processus par cas ; trois acquisitions vérifiées par zone. Détail :
 « Chaud » = même inventaire relancé dans le processus (poids surfaciques en cache, fichiers en cache
 système) ; la vérification SHA-256 et le NDVI sont toujours recalculés. Non mesuré sur Streamlit
 Cloud.
+
+## Interface (`src/components/s2_vegetation.py`)
+
+Section « Végétation observée par Sentinel-2 », sous les chiffres clés, avec les badges
+« Estimation expérimentale » et « Non validée scientifiquement » et un avertissement permanent :
+résultats non comparables à WorldCover 2021 ni entre acquisitions aux masques d'observation
+différents.
+
+- **Aucun calcul au chargement** : bouton « Calculer l'estimation Sentinel-2 » (une fois par
+  session et par zone), garde-fous de ressources vérifiés juste avant (mémoire libre de l'hôte
+  comprise, hors cache).
+- **Cache** (`st.cache_resource`, 4 entrées) de l'inventaire agrégé, sans tableau raster ; clé :
+  zone (SHA-256), année, profils scientifique et expérimental (empreintes), et pour chaque prise de
+  vue l'identité des fichiers et l'empreinte du manifeste (`s2_inventory_key`). Changer de date ne
+  recalcule rien ; toute modification d'un fichier change la clé, et l'intégrité SHA-256 complète
+  est revérifiée à chaque calcul.
+- **Date par défaut** : la plus récente atteignant la couverture minimale (25/01/2025 dans le paquet
+  v3). Les autres restent sélectionnables ; une acquisition sous 30 % (20/01/2025) affiche
+  « Non disponible », le motif, le badge « Non publiable » et ses mesures dans une section séparée
+  « Données de diagnostic (non publiables) ».
+- **Carte** : surface à NDVI ≥ 0,4 (km², ha), part de la surface observée exploitable, surface et
+  part exploitables, surfaces observée mais exclue / non observée / sans donnée, fiabilité, date,
+  source, seuil.
+- **Détails repliables** : ventilation et définitions, sensibilité 0,3 / 0,4 / 0,5 (pour une date
+  non publiable, uniquement dans ses données de diagnostic), provenance
+  (produits, dates, profils et empreintes, politique SCL, méthode, motifs de fiabilité, limites,
+  empreintes des manifestes). L'attribution Copernicus est affichée comme **non revérifiée**.
+
+### Temps de la page d'accueil (`scripts/benchmark_s2_vegetation_streamlit.py`, paquet v3)
+
+AppTest, un processus par mode (caches froids), trois séries le 28/10/2026 :
+
+| Mesure | Avant L3c | Après L3c |
+|---|---|---|
+| Chargement initial (chiffres clés et analyse de la paire compris) | 11,0 – 13,5 s | 10,9 – 11,7 s |
+| Premier calcul Sentinel-2 (clic) | — | 2,9 – 3,1 s |
+| Changement d'acquisition (rerun, agrégat en cache) | — | 0,30 – 0,33 s |
+| Autre session, même processus (cache partagé) | — | 0,33 – 0,36 s |
+
+L'écart de chargement initial est dans le bruit de mesure : la section n'affiche qu'un bouton.
 
 ## Limites
 

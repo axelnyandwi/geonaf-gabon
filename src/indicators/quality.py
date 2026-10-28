@@ -12,6 +12,7 @@ from src.data.cloud_mask import (
 from src.indicators.model import (
     HIGH, LOW, MEDIUM, NOT_ASSESSED, UNAVAILABLE, ChangeAssessment, TerritorialIndicator,
 )
+from src.indicators.presentation import fr
 from src.indicators.profiles import VALIDATED
 from src.services.multisource_demo import CLASSIFICATION, COLLABORATIVE
 
@@ -80,13 +81,13 @@ def vegetation_estimate_assessment(measure, profile) -> VegetationEstimateAssess
             "Aucune surface observée exploitable sur la zone d'étude.",), status)
     if coverage < profile.min_observed_coverage_percent:
         return VegetationEstimateAssessment(False, NOT_ASSESSED, (
-            f"Couverture exploitable {coverage:.1f} % < {profile.min_observed_coverage_percent:g} % "
+            f"Couverture exploitable {fr(coverage, 1)} % < {fr(profile.min_observed_coverage_percent)} % "
             f"(profil {profile.profile_id} {profile.version}) : estimation territoriale non publiée, "
             "acquisition consultable pour diagnostic.",), status)
-    reasons = [f"Couverture exploitable {coverage:.1f} % de la zone d'étude ; la surface non observée n'est pas "
+    reasons = [f"Couverture exploitable {fr(coverage, 1)} % de la zone d'étude ; la surface non observée n'est pas "
                "estimée et le seuil de couverture ne garantit pas la représentativité spatiale."]
     if status != VALIDATED:
-        reasons.insert(0, f"Méthode expérimentale non validée scientifiquement (NDVI ≥ {profile.threshold:g}, "
+        reasons.insert(0, f"Méthode expérimentale non validée scientifiquement (NDVI ≥ {fr(profile.threshold)}, "
                           "seuil non calibré localement).")
     # Never above « moyenne »: even a validated threshold describes only the observed part of the zone.
     level = RELIABILITY_ORDER[min(RELIABILITY_ORDER.index(MEDIUM), RELIABILITY_ORDER.index(profile.reliability_cap))]

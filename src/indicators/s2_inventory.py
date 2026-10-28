@@ -68,6 +68,27 @@ class S2VegetationInventory:
         return next((e for e in reversed(self.estimates) if e.assessment.available), None)
 
 
+def s2_inventory_key(data_dir, aoi_id: str, *, year: int = 2025, scientific_profile=None,
+                     profile: VegetationIndexProfile = S2_NDVI_VEGETATION_V0,
+                     max_acquisitions: int = MAX_ACQUISITIONS) -> tuple:
+    """Cheap cache key: zone digest, profiles and, per datatake, file identities and manifest digests.
+
+    Not an integrity check: every asset SHA-256 is still verified when the
+    inventory is computed (cache miss). Any edited, added or removed file of
+    the year changes the key.
+    """
+    from src.geo.scientific_profile import REFERENCE_PROFILES
+    from src.services.local_preview import group_local_observations, list_local_observations, local_group_key
+
+    data_dir = Path(data_dir)
+    scientific_profile = scientific_profile or REFERENCE_PROFILES[aoi_id]
+    aoi_path = data_dir / "aoi" / f"{aoi_id}.geojson"
+    groups = group_local_observations([o for o in list_local_observations(data_dir) if o.acquired_at.year == year])
+    return ("s2-vegetation-v1", aoi_id, hashlib.sha256(aoi_path.read_bytes()).hexdigest(), year, max_acquisitions,
+            scientific_profile.fingerprint, profile.fingerprint,
+            tuple(local_group_key(group, data_dir, scientific_profile) for group in groups))
+
+
 def _label(group) -> str:
     return f"{group[0].acquired_at:%d/%m/%Y %H:%M} UTC ({' + '.join(o.product_id for o in group)})"
 

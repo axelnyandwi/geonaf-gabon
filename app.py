@@ -17,6 +17,7 @@ from src.services.observation_selection import observation_label
 from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
 from src.components.resource_panel import assess_aoi_file, show_assessment
 from src.components.territorial_indicators import show_key_figures
+from src.components.s2_vegetation import show_s2_vegetation
 
 def _brand_asset(name):
     try:
@@ -43,6 +44,7 @@ try:
     st.info(f"Zone d'étude {TERRITORY_LABELS[aoi_id]} : carré d’acquisition de 12 × 12 km autour de "
             f"{TERRITORY_LABELS[aoi_id]}. Ce carré n’est pas une limite administrative.")
     show_key_figures(DATA_DIR, aoi_id, TERRITORY_LABELS[aoi_id])
+    show_s2_vegetation(DATA_DIR, aoi_id)
     st.divider()
     st.header("Analyses scientifiques")
     configuration = choose_analysis(aoi_id, "analysis")

@@ -20,7 +20,7 @@ from src.indicators.profiles import (
 )
 from src.indicators.quality import vegetation_estimate_assessment
 from src.indicators.vegetation_s2 import (
-    EXCLUDED_OBSERVED, LABEL_NAMES, NOT_OBSERVED, NOT_VEGETATED, OTHER_INVALID, OUTSIDE_FOOTPRINT, UNSPLIT,
+    EXCLUDED_OBSERVED, LABEL_NAMES, NOT_OBSERVED, NOT_VEGETATED, OTHER_INVALID, NO_DATA, UNSPLIT,
     VEGETATED, measure_observed_vegetation, measure_vegetation, partition_labels,
 )
 from tests.test_indicators_modules import AFRICA_DEFAULT_V1_FINGERPRINT
@@ -53,7 +53,7 @@ def measure(grid, zone, ndvi, valid=None, *, scl=None, threshold=0.4, policy="us
 
 
 def parts_sum(result):
-    parts = (result.vegetated_m2, result.not_vegetated_m2, result.outside_footprint_m2, result.not_observed_m2,
+    parts = (result.vegetated_m2, result.not_vegetated_m2, result.no_data_m2, result.not_observed_m2,
              result.excluded_observed_m2, result.other_invalid_m2, result.unsplit_m2)
     return sum(part for part in parts if part is not None)
 
@@ -145,9 +145,9 @@ def test_each_scl_class_gets_its_category():
     valid = scl_mask_from_values(np.ma.array(classes, mask=~scl_valid), "usable_land", scl_valid) & raster_ok
     labels = partition_labels(ndvi, valid, 0.4, "usable_land", (classes, scl_valid))
     assert labels[0].tolist() == [
-        OUTSIDE_FOOTPRINT, NOT_OBSERVED, EXCLUDED_OBSERVED, NOT_OBSERVED, VEGETATED, NOT_VEGETATED,
+        NO_DATA, NOT_OBSERVED, EXCLUDED_OBSERVED, NOT_OBSERVED, VEGETATED, NOT_VEGETATED,
         EXCLUDED_OBSERVED, EXCLUDED_OBSERVED, NOT_OBSERVED, NOT_OBSERVED, NOT_OBSERVED, EXCLUDED_OBSERVED,
-        OUTSIDE_FOOTPRINT, OTHER_INVALID]
+        NO_DATA, OTHER_INVALID]
 
 
 @pytest.mark.parametrize("with_scl", [True, False], ids=["SCL fourni", "SCL absent"])
@@ -163,14 +163,14 @@ def test_partition_is_exclusive_and_exhaustive_on_random_inputs(tmp_path, with_s
              & np.isfinite(ndvi))
     scl = (classes, scl_valid) if with_scl else None
     labels = partition_labels(ndvi, valid, 0.4, "usable_land", scl)
-    allowed = set(LABEL_NAMES) - ({UNSPLIT} if with_scl else {OUTSIDE_FOOTPRINT, NOT_OBSERVED, EXCLUDED_OBSERVED,
+    allowed = set(LABEL_NAMES) - ({UNSPLIT} if with_scl else {NO_DATA, NOT_OBSERVED, EXCLUDED_OBSERVED,
                                                               OTHER_INVALID})
     assert set(np.unique(labels)) <= allowed and labels.shape == classes.shape   # One label per pixel.
     np.testing.assert_array_equal(np.isin(labels, (VEGETATED, NOT_VEGETATED)), valid)
     result = measure(grid, zone, ndvi, valid, scl=scl)
     assert parts_sum(result) == pytest.approx(result.zone_m2, rel=1e-6)    # PARTITION_RTOL.
     assert result.vegetated_m2 + result.not_vegetated_m2 == pytest.approx(result.observed_m2, rel=1e-12)
-    assert result.outside_footprint_m2 > 0                                     # Zone partly off the grid.
+    assert result.no_data_m2 > 0                                     # Zone partly off the grid.
     assert (result.unsplit_m2 is None) == with_scl and (result.not_observed_m2 is None) != with_scl
 
 
@@ -204,7 +204,7 @@ def test_zone_beyond_the_grid_is_outside_the_footprint(tmp_path):
     grid = make_grid(2, 2)
     zone = zone_for(tmp_path, box(X0, Y0, X0 + 40, Y0 + 20))          # Grid covers half the zone.
     result = measure(grid, zone, np.full((2, 2), 0.9, np.float32))
-    assert result.outside_footprint_m2 == pytest.approx(400.0, rel=2e-3)
+    assert result.no_data_m2 == pytest.approx(400.0, rel=2e-3)
     assert result.observed_coverage_percent == pytest.approx(50.0, rel=1e-6)
     assert result.vegetated_share_percent == pytest.approx(100.0)
 

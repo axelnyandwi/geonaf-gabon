@@ -220,21 +220,23 @@ def build_s2_vegetation_indicator(estimate, inventory) -> TerritorialIndicator:
     from src.indicators.provenance import (
         SENTINEL2_ATTRIBUTION, SENTINEL2_NATURE, SENTINEL2_SOURCE_ID, VEGETATION_S2_LIMITS, sentinel2_dates,
     )
+    from src.indicators.presentation import fr
     from src.indicators.s2_inventory import BREAKDOWN_UNAVAILABLE
 
     profile, measure, assessment = inventory.profile, estimate.measure, estimate.assessment
     km2 = lambda m2: m2 / 1e6
     zone_share = lambda m2: 100.0 * m2 / measure.zone_m2
     parts = [("observed", "Surface observée exploitable", measure.observed_m2),
-             ("vegetated", f"Surface à NDVI ≥ {profile.threshold:g}", measure.vegetated_m2),
-             ("not_vegetated", f"Surface observée à NDVI < {profile.threshold:g}", measure.not_vegetated_m2),
-             ("excluded_observed", "Observée mais exclue (eau, zones sombres, non classées…)",
+             ("vegetated", f"Surface à NDVI ≥ {fr(profile.threshold)}", measure.vegetated_m2),
+             ("not_vegetated", f"Surface observée à NDVI < {fr(profile.threshold)}", measure.not_vegetated_m2),
+             ("excluded_observed", "Observée mais exclue par la politique SCL (eau, zones sombres, non classées…)",
               measure.excluded_observed_m2),
-             ("not_observed", "Non observée (nuages, ombres, pixels défectueux)", measure.not_observed_m2),
+             ("not_observed", "Non observée selon le SCL (nuages, ombres, cirrus, pixels défectueux)",
+              measure.not_observed_m2),
              ("other_invalid", "Autres pixels invalides (réflectance ou NDVI)", measure.other_invalid_m2),
              ("unsplit", "Non exploitable, motif non ventilé", measure.unsplit_m2),
-             ("outside_footprint", "Hors emprise de l'acquisition", measure.outside_footprint_m2)]
-    sensitivity = tuple((f"NDVI ≥ {t:g}", km2(m2)) for t, m2 in measure.sensitivity_m2)
+             ("no_data", "Sans donnée (SCL absent ou hors de la grille analysée)", measure.no_data_m2)]
+    sensitivity = tuple((f"NDVI ≥ {fr(t)}", km2(m2)) for t, m2 in measure.sensitivity_m2)
     breakdown = tuple(BreakdownItem(key, label, km2(m2), "km²", zone_share(m2),
                                     sensitivity if key == "vegetated" else ())
                       for key, label, m2 in parts if m2 is not None)
@@ -246,7 +248,7 @@ def build_s2_vegetation_indicator(estimate, inventory) -> TerritorialIndicator:
     fingerprint = hashlib.sha256(json.dumps(
         [estimate.fingerprint, profile.fingerprint, inventory.scientific_profile_fingerprint]).encode()).hexdigest()
     return TerritorialIndicator(
-        "s2.vegetation_km2", f"Surface à NDVI ≥ {profile.threshold:g} (Sentinel-2, surface observée)",
+        "s2.vegetation_km2", f"Surface à NDVI ≥ {fr(profile.threshold)} (Sentinel-2, surface observée)",
         km2(measure.vegetated_m2) if available else None, "km²", AVAILABLE if available else UNAVAILABLE,
         inventory.aoi_id, inventory.aoi_sha256,
         sentinel2_dates(estimate.acquired_at_utc, estimate.product_ids, estimate.ingested_at_utc),
@@ -256,7 +258,7 @@ def build_s2_vegetation_indicator(estimate, inventory) -> TerritorialIndicator:
         measure.observed_coverage_percent,
         (f"Somme des surfaces exactes (aire équivalente EPSG:6933, pixels partiels compris) des pixels valides "
          f"selon la politique SCL « {inventory.scl_policy} » du profil {inventory.scientific_profile_id} "
-         f"{inventory.scientific_profile_version}, dont le NDVI calibré est ≥ {profile.threshold:g} (comparaison "
+         f"{inventory.scientific_profile_version}, dont le NDVI calibré est ≥ {fr(profile.threshold)} (comparaison "
          f"en float32). Part rapportée à la seule surface observée exploitable ; aucune extrapolation. Profil "
          f"{profile.profile_id} {profile.version}."),
         assessment.reliability, assessment.reasons, limits, profile.fingerprint,

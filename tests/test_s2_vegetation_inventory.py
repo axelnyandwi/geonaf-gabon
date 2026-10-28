@@ -117,7 +117,7 @@ def test_inventory_measures_each_acquisition_and_keeps_no_raster(local_data):
         assert m.observed_coverage_percent == pytest.approx(50.0, rel=1e-3)   # SCL 4 and 5 of [[2, 4], [5, 7]].
         assert m.vegetated_share_percent == pytest.approx(100.0)              # NDVI 0.6 everywhere.
         assert m.excluded_observed_m2 == pytest.approx(m.observed_m2, rel=1e-3)   # Classes 2 and 7.
-        assert m.not_observed_m2 == 0 and m.outside_footprint_m2 == 0
+        assert m.not_observed_m2 == 0 and m.no_data_m2 == 0
         assert parse_utc(estimate.ingested_at_utc) == datetime(2026, 1, 1, tzinfo=timezone.utc)
     assert result.default_estimate() is result.estimates[-1]
     assert not holds_arrays(result)
@@ -133,7 +133,7 @@ def test_indicator_carries_the_full_provenance(local_data):
     assert indicator.dates.ingested_at_utc == datetime(2026, 1, 1, tzinfo=timezone.utc)
     assert indicator.source.version == "S2B_TEST_25" and "Copernicus Sentinel data 2025" in indicator.source.attribution
     for fragment in ("usable_land", AKANDA.profile_id, AKANDA.version, S2_NDVI_VEGETATION_V0.profile_id,
-                     S2_NDVI_VEGETATION_V0.version, "≥ 0.4", "aucune extrapolation"):
+                     S2_NDVI_VEGETATION_V0.version, "≥ 0,4", "aucune extrapolation"):
         assert fragment in indicator.method
     assert indicator.coverage_percent == pytest.approx(50.0, rel=1e-3)
     assert indicator.shares == (("surface observée exploitable", pytest.approx(100.0)),)
@@ -141,8 +141,8 @@ def test_indicator_carries_the_full_provenance(local_data):
     assert indicator.profile_fingerprint == S2_NDVI_VEGETATION_V0.fingerprint
     keys = [item.key for item in indicator.breakdown]
     assert keys == ["observed", "vegetated", "not_vegetated", "excluded_observed", "not_observed", "other_invalid",
-                    "outside_footprint"]
-    assert [label for label, _ in indicator.breakdown[1].detail] == ["NDVI ≥ 0.3", "NDVI ≥ 0.4", "NDVI ≥ 0.5"]
+                    "no_data"]
+    assert [label for label, _ in indicator.breakdown[1].detail] == ["NDVI ≥ 0,3", "NDVI ≥ 0,4", "NDVI ≥ 0,5"]
 
 
 def test_missing_acquisitions_give_no_estimate(local_data, tmp_path_factory):
@@ -280,7 +280,7 @@ def test_pack_v3_three_acquisitions_are_reproduced(pack_inventory):
         assert [t for t, _ in m.sensitivity_m2] == [0.3, 0.4, 0.5]
         for (_, area), reference in zip(m.sensitivity_m2, expected["sensitivity"]):
             assert area == pytest.approx(reference, rel=AREA_RTOL, abs=0), day
-        assert m.other_invalid_m2 == 0 and m.outside_footprint_m2 == 0
+        assert m.other_invalid_m2 == 0 and m.no_data_m2 == 0
     assert pack_inventory.default_estimate() is found["2025-01-25"]          # 20/01 below 30 %: not the default.
     assert not holds_arrays(pack_inventory)
 

@@ -9,15 +9,16 @@ order (first matching rule wins, so labels never overlap):
 
 1. ``vegetated``          valid and NDVI ≥ threshold (float32 comparison);
 2. ``not_vegetated``      valid and NDVI < threshold;
-3. ``outside_footprint``  SCL absent there (source NoData, class 0, outside the SCL raster);
+3. ``no_data``            no SCL data there (source NoData, class 0, outside the SCL raster): the cause
+                          (swath edge, missing data…) is not determined;
 4. ``not_observed``       SCL defective, cloud, cloud shadow or cirrus (1, 3, 8, 9, 10);
 5. ``excluded_observed``  observed class outside the SCL policy (e.g. water 6, dark 2, unclassified 7);
 6. ``other_invalid``      class accepted by the policy but invalid reflectance/NDVI (raster NoData, non
                           finite or out of [-1, 1]).
 
 Without SCL classes, rules 3–6 collapse into ``unsplit`` (not usable, reason
-unknown). The part of the zone not covered by the grid is added to
-``outside_footprint``. Areas are sums of exact equal-area weights (EPSG:6933),
+unknown). The part of the zone not covered by the analysed grid is added to
+``no_data``. Areas are sums of exact equal-area weights (EPSG:6933),
 so partially covered pixels count for their part inside the zone; the labels
 add up to the zone area by construction (checked within ``PARTITION_RTOL``).
 """
@@ -33,13 +34,13 @@ from src.data.cloud_mask import (
 )
 from src.geo.change_analysis import EqualAreaAOI, measure_mask_coverage
 
-VEGETATED, NOT_VEGETATED, OUTSIDE_FOOTPRINT, NOT_OBSERVED, EXCLUDED_OBSERVED, OTHER_INVALID, UNSPLIT = range(1, 8)
-LABEL_NAMES = {VEGETATED: "vegetated", NOT_VEGETATED: "not_vegetated", OUTSIDE_FOOTPRINT: "outside_footprint",
+VEGETATED, NOT_VEGETATED, NO_DATA, NOT_OBSERVED, EXCLUDED_OBSERVED, OTHER_INVALID, UNSPLIT = range(1, 8)
+LABEL_NAMES = {VEGETATED: "vegetated", NOT_VEGETATED: "not_vegetated", NO_DATA: "no_data",
                NOT_OBSERVED: "not_observed", EXCLUDED_OBSERVED: "excluded_observed",
                OTHER_INVALID: "other_invalid", UNSPLIT: "unsplit"}
 SCL_NOT_OBSERVED_CLASSES = SCL_DEFECTIVE_CLASSES | SCL_CLOUD_SHADOW_CLASSES
 # Relative gap between the zone's geodesic area and the sum of exact pixel weights that is rounding of the
-# geometric computations (measured ≤ 3e-9), far below one pixel even on a small zone: never « hors emprise ».
+# geometric computations (measured ≤ 3e-9), far below one pixel even on a small zone: never counted as « sans donnée ».
 PARTITION_RTOL = 1e-6
 
 
@@ -51,7 +52,7 @@ class VegetationMeasure:
     observed_m2: float                  # Usable observed area (validity mask of the scientific profile).
     vegetated_m2: float                 # Observed area with NDVI ≥ threshold.
     not_vegetated_m2: float
-    outside_footprint_m2: float | None
+    no_data_m2: float | None           # No SCL data, or part of the zone outside the analysed grid.
     not_observed_m2: float | None
     excluded_observed_m2: float | None
     other_invalid_m2: float | None
@@ -102,7 +103,7 @@ def partition_labels(ndvi, valid, threshold: float, policy: str, scl=None) -> np
         known = scl_valid & ~np.isin(classes, tuple(SCL_NO_DATA_CLASSES))
         conditions += [~known, np.isin(classes, tuple(SCL_NOT_OBSERVED_CLASSES)),
                        ~np.isin(classes, tuple(SCL_MASK_POLICIES[policy]))]
-        labels += [OUTSIDE_FOOTPRINT, NOT_OBSERVED, EXCLUDED_OBSERVED]
+        labels += [NO_DATA, NOT_OBSERVED, EXCLUDED_OBSERVED]
         default = OTHER_INVALID
     return np.select(conditions, labels, default=default).astype(np.uint8)
 
@@ -132,7 +133,7 @@ def measure_vegetation(ndvi, valid, weights, grid, zone: EqualAreaAOI, *, thresh
     return VegetationMeasure(
         zone_m2=zone.area_m2, observed_m2=observed.area_m2, vegetated_m2=m2(VEGETATED),
         not_vegetated_m2=m2(NOT_VEGETATED),
-        outside_footprint_m2=(m2(OUTSIDE_FOOTPRINT) if split else 0.0) + uncovered,
+        no_data_m2=(m2(NO_DATA) if split else 0.0) + uncovered,
         not_observed_m2=m2(NOT_OBSERVED) if split else None,
         excluded_observed_m2=m2(EXCLUDED_OBSERVED) if split else None,
         other_invalid_m2=m2(OTHER_INVALID) if split else None,

@@ -57,6 +57,12 @@ HIGHWAY_TEXT = {
 }
 
 
+def fr(value: float, decimals: int | None = None) -> str:
+    """French decimal comma for wording (``0.4`` → « 0,4 »); ``decimals`` fixes the digits."""
+    text = f"{value:g}" if decimals is None else f"{value:.{decimals}f}"
+    return text.replace(".", ",")
+
+
 def road_category_label(label: str) -> str:
     return ROAD_GLOSSARY.get(label, (label, ""))[0]
 

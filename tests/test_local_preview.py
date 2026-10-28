@@ -17,6 +17,11 @@ from src.services.local_preview import (
 )
 
 
+def submit_dates(app):
+    """Click the pair submit button by its label (other buttons, e.g. Sentinel-2, precede it on the page)."""
+    return next(b for b in app.button if b.label == "Afficher les dates sélectionnées").click()
+
+
 @pytest.fixture
 def local_data(tmp_path):
     for day in (15, 25):
@@ -118,7 +123,7 @@ def test_streamlit_renders_local_results_without_private_paths(local_data, monke
     for kind in (app.caption, app.info, app.warning):
         assert all(str(local_data) not in element.value for element in kind)
     app.date_input[0].set_value(date(2025, 1, 25))
-    app.button[0].click().run()
+    submit_dates(app).run()
     assert app.error
     assert "chronologique" in app.error[0].value
 
@@ -157,7 +162,7 @@ def test_same_pair_submit_reuses_result_and_invalidates_changed_aoi(local_data, 
     app.session_state["temporal_comparison"] = False
     app.run(timeout=30)
     original = app.session_state["result"].analysis.delta_ndvi.copy()
-    app.button[0].click().run()
+    submit_dates(app).run()
     assert not app.exception and not app.error
     assert analyze.call_count == 1
     assert encode.call_count == 1
@@ -276,7 +281,7 @@ def test_interactive_layer_cache_reuses_science_and_never_sends_paths(local_data
     app.run(timeout=30)
     assert not app.exception and not app.error
     assert not any("Carte interactive indisponible" in warning.value for warning in app.warning)
-    app.button[0].click().run()
+    submit_dates(app).run()
     assert analyze.call_count == prepare.call_count == 1
     original = app.session_state["result"].comparison.ndvi_date_2.copy()
     app.checkbox(key="interactive_map").uncheck().run()
