@@ -365,15 +365,12 @@ def _read_ndvi_on_grid(
     return values, valid
 
 
-def scl_policy_mask_on_grid(
-    path: str | Path,
-    grid: RasterGrid,
-    policy: str,
-) -> np.ndarray:
-    """Read, nearest-neighbour align, and classify SCL on a reference grid.
+def scl_values_on_grid(path: str | Path, grid: RasterGrid) -> tuple[np.ndarray, np.ndarray]:
+    """Read and nearest-neighbour align SCL classes on a reference grid.
 
-    Source NoData and pixels outside the source footprint stay invalid. This
-    helper is shared by temporal NDVI comparison and pre-analysis pair scoring.
+    Returns ``(classes uint8, valid bool)``. Source NoData and pixels outside
+    the source footprint are invalid (class 0). Shared by
+    :func:`scl_policy_mask_on_grid` and by indicators that need the classes.
     """
     with rasterio.open(path) as source:
         if source.crs is None:
@@ -384,11 +381,7 @@ def scl_policy_mask_on_grid(
             source_scl = source.read(1, masked=True)
             source_values = np.asarray(np.ma.getdata(source_scl), dtype=np.uint8)
             source_valid = ~np.ma.getmaskarray(source_scl)
-            return scl_mask_from_values(
-                np.ma.array(source_values, mask=~source_valid),
-                policy=policy,
-                valid_mask=source_valid,
-            )
+            return source_values, source_valid
 
         exact_window = _aligned_integer_window(source, grid)
         if exact_window is not None:
@@ -397,11 +390,7 @@ def scl_policy_mask_on_grid(
             source_scl = source.read(1, window=window, masked=True)
             source_values = np.asarray(np.ma.getdata(source_scl), dtype=np.uint8)
             source_valid = ~np.ma.getmaskarray(source_scl)
-            return scl_mask_from_values(
-                np.ma.array(source_values, mask=~source_valid),
-                policy=policy,
-                valid_mask=source_valid,
-            )
+            return source_values, source_valid
 
         # For a warp, read only the source window intersecting the target
         # bounds, with a one-cell margin for nearest-neighbour edge sampling.
@@ -427,7 +416,8 @@ def scl_policy_mask_on_grid(
                 source.height, int(ceil(raw_window.row_off + raw_window.height)) + 1
             )
             if col_stop <= col_start or row_stop <= row_start:
-                return np.zeros((grid.height, grid.width), dtype=bool)
+                return (np.zeros((grid.height, grid.width), dtype=np.uint8),
+                        np.zeros((grid.height, grid.width), dtype=bool))
             source_window = Window(
                 col_start, row_start, col_stop - col_start, row_stop - row_start
             )
@@ -457,11 +447,21 @@ def scl_policy_mask_on_grid(
             )
         aligned_valid = aligned_valid.astype(bool)
 
-    return scl_mask_from_values(
-        np.ma.array(aligned_scl, mask=~aligned_valid),
-        policy=policy,
-        valid_mask=aligned_valid,
-    )
+    return aligned_scl, aligned_valid
+
+
+def scl_policy_mask_on_grid(
+    path: str | Path,
+    grid: RasterGrid,
+    policy: str,
+) -> np.ndarray:
+    """Read, nearest-neighbour align, and classify SCL on a reference grid.
+
+    Source NoData and pixels outside the source footprint stay invalid. This
+    helper is shared by temporal NDVI comparison and pre-analysis pair scoring.
+    """
+    values, valid = scl_values_on_grid(path, grid)
+    return scl_mask_from_values(np.ma.array(values, mask=~valid), policy=policy, valid_mask=valid)
 
 
 def harmonize_ndvi_pair(

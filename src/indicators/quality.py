@@ -2,7 +2,12 @@
 
 from __future__ import annotations
 
-from src.indicators.model import LOW, MEDIUM, NOT_ASSESSED, UNAVAILABLE, ChangeAssessment, TerritorialIndicator
+from dataclasses import dataclass
+
+from src.indicators.model import (
+    HIGH, LOW, MEDIUM, NOT_ASSESSED, UNAVAILABLE, ChangeAssessment, TerritorialIndicator,
+)
+from src.indicators.profiles import VALIDATED
 from src.services.multisource_demo import CLASSIFICATION, COLLABORATIVE
 
 OSM_RELIABILITY_REASONS = ("Complétude OpenStreetMap non évaluée sur la zone d'étude : valeur minimale cartographiée.",)
@@ -22,6 +27,41 @@ def landcover_reliability(descriptor, coverage, profile):
 def osm_reliability():
     """OpenStreetMap completeness is unknown: the level is never assessed."""
     return NOT_ASSESSED, OSM_RELIABILITY_REASONS
+
+
+RELIABILITY_ORDER = (LOW, MEDIUM, HIGH)
+
+
+@dataclass(frozen=True)
+class VegetationEstimateAssessment:
+    """Whether a Sentinel-2 vegetation estimate may be published for the zone, and how reliable it is."""
+
+    available: bool                 # False: diagnosis only, the territorial estimate is « Non disponible ».
+    reliability: str
+    reasons: tuple[str, ...]
+    scientific_status: str          # From the vegetation profile (experimental until validated).
+
+
+def vegetation_estimate_assessment(measure, profile) -> VegetationEstimateAssessment:
+    """Availability by usable coverage, reliability capped by the profile; never claims representativeness."""
+    coverage = measure.observed_coverage_percent
+    status = profile.scientific_status
+    if measure.observed_m2 <= 0:
+        return VegetationEstimateAssessment(False, NOT_ASSESSED, (
+            "Aucune surface observée exploitable sur la zone d'étude.",), status)
+    if coverage < profile.min_observed_coverage_percent:
+        return VegetationEstimateAssessment(False, NOT_ASSESSED, (
+            f"Couverture exploitable {coverage:.1f} % < {profile.min_observed_coverage_percent:g} % "
+            f"(profil {profile.profile_id} {profile.version}) : estimation territoriale non publiée, "
+            "acquisition consultable pour diagnostic.",), status)
+    reasons = [f"Couverture exploitable {coverage:.1f} % de la zone d'étude ; la surface non observée n'est pas "
+               "estimée et le seuil de couverture ne garantit pas la représentativité spatiale."]
+    if status != VALIDATED:
+        reasons.insert(0, f"Méthode expérimentale non validée scientifiquement (NDVI ≥ {profile.threshold:g}, "
+                          "seuil non calibré localement).")
+    # Never above « moyenne »: even a validated threshold describes only the observed part of the zone.
+    level = RELIABILITY_ORDER[min(RELIABILITY_ORDER.index(MEDIUM), RELIABILITY_ORDER.index(profile.reliability_cap))]
+    return VegetationEstimateAssessment(True, level, tuple(reasons), status)
 
 
 def _reference_instant(indicator):
