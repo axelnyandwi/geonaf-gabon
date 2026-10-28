@@ -118,8 +118,8 @@ def pair_assessment(measure, profile, *, interval_days: float, aligned: bool) ->
     warnings = []
     if interval_days < profile.short_interval_days:
         warnings.append(f"Intervalle court ({fr(interval_days, 1)} jours < {fr(profile.short_interval_days)}) : "
-                        "les transitions reflètent surtout les conditions d'acquisition (atmosphère, humidité, "
-                        "marée, géométrie de visée).")
+                        "les transitions peuvent refléter surtout les conditions d'acquisition (atmosphère, "
+                        "humidité, marée, géométrie de visée) ; aucune cause n'est établie.")
     blocks = measure.blocks
     if blocks.eligible_blocks:
         warnings.append(f"Diagnostic spatial (information) : {fr(100 * blocks.covered_share, 0)} % des "

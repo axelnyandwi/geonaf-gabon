@@ -187,6 +187,9 @@ def test_quality_gates_warnings_and_reliability(tmp_path):
     ok = pair_assessment(full, S2_NDVI_TRANSITION_V0, interval_days=10.0, aligned=True)
     assert ok.available and ok.reliability == "faible" and ok.scientific_status == "experimental"
     assert any("Intervalle court (10,0 jours < 30)" in w for w in ok.warnings)        # Warning, not a gate.
+    texts = " ".join(ok.warnings + ok.reasons).lower()
+    assert "aucune cause n'est établie" in texts and "reflètent" not in texts          # No cause asserted.
+    assert not any(word in texts for word in ("déforestation", "reboisement", "perte de végétation"))
     assert any("sans attribution de cause" in r for r in ok.reasons)
     assert not any("Intervalle court" in w for w in pair_assessment(
         full, S2_NDVI_TRANSITION_V0, interval_days=45.0, aligned=True).warnings)
