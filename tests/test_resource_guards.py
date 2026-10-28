@@ -1,12 +1,14 @@
 """Resource guards: thresholds, overruns, unknown inputs, imports and calibration; offline."""
 
+import sys
+
 import geopandas as gpd
 import pytest
 from shapely.geometry import MultiPolygon, Polygon, box
 
 from src.services.resource_guards import (
-    MIB, OK, REFUSED, UNKNOWN, WARNING, ResourceLimits, assess_import, assess_zone, estimate_raster_cells,
-    estimate_s2_tiles,
+    MIB, OK, REFUSED, UNKNOWN, WARNING, ResourceLimits, assess_import, assess_zone, available_memory_bytes,
+    estimate_raster_cells, estimate_s2_tiles,
 )
 from tests.test_aoi_identity import write_geojson
 
@@ -91,6 +93,40 @@ def test_akanda_multisource_stays_allowed_on_a_loaded_host():
     memory = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_estimated_bytes=24_267_051,
                          available_bytes=int(1.08 * 1024 * MIB)).get("memory")
     assert memory.status != REFUSED
+
+
+class _UnreadableMemory:
+    @staticmethod
+    def virtual_memory():
+        raise PermissionError("/proc/meminfo")
+
+
+@pytest.mark.parametrize("module", [None, _UnreadableMemory], ids=["psutil absent", "mémoire illisible"])
+def test_unknown_free_memory_keeps_the_configured_ceilings(monkeypatch, module):
+    monkeypatch.setitem(sys.modules, "psutil", module)   # None makes ``import psutil`` raise ImportError.
+    assert available_memory_bytes() is None
+    memory = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_wanted=False).get("memory")   # Default reads the host.
+    assert (memory.warn_at, memory.refuse_at) == (pytest.approx(1024), pytest.approx(2048))
+    assert memory.status == OK and "mémoire libre" not in memory.reason
+
+
+def test_panel_verdict_follows_free_memory_instead_of_a_stale_cache(monkeypatch):
+    from src.components import resource_panel
+
+    calls, free = [], {"bytes": 8 * 1024 * MIB}
+    monkeypatch.setattr(resource_panel, "available_memory_bytes", lambda: free["bytes"])
+    monkeypatch.setattr(resource_panel, "assess_zone", lambda *a, **kw: calls.append(kw) or assess_zone(*a, **kw))
+    resource_panel._cached_assessment.clear()
+    try:
+        assess = lambda: resource_panel.assess_geometry(AKANDA_LIKE, "akanda-like").get("memory")
+        assert assess().status == OK
+        free["bytes"] = 600 * MIB          # Load rises: a new verdict, not the one cached above.
+        warned = assess()
+        assert warned.status == WARNING and calls[-1]["available_bytes"] == 576 * MIB   # Rounded down (64 MiB).
+        free["bytes"] = 630 * MIB          # Same 64 MiB step: the cached verdict is reused.
+        assert assess() == warned and len(calls) == 2
+    finally:
+        resource_panel._cached_assessment.clear()
 
 
 def test_tiles_across_utm_zones_hemispheres_and_100km_lines():

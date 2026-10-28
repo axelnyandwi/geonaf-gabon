@@ -5,9 +5,14 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.services.resource_guards import OK, REFUSED, UNKNOWN, WARNING, ResourceLimits, assess_zone
+from src.services.resource_guards import (
+    MIB, OK, REFUSED, UNKNOWN, WARNING, ResourceLimits, assess_zone, available_memory_bytes,
+)
 
 VERDICTS = {OK: "autorisé", WARNING: "avertissement", UNKNOWN: "inconnu", REFUSED: "refus"}
+# Free memory enters the cache key rounded down to this step: a verdict is reused only while the host
+# keeps about the same free memory, and rounding down keeps the thresholds prudent.
+FREE_MEMORY_STEP = 64 * MIB
 NOTE = ("Estimation prudente calibrée sur le poste de développement : ce n'est pas une garantie de fonctionnement "
         "sur un serveur public.")
 
@@ -28,9 +33,16 @@ def verdict(assessment) -> str:
 
 
 @st.cache_data(max_entries=32, show_spinner=False)
-def _cached_assessment(geometry_digest, _geometry, osm_wanted, osm_bytes, limits_fingerprint, _limits):
-    # Keyed on the geometry digest and limits; host free memory is read once per entry.
-    return assess_zone(_geometry, limits=_limits, osm_wanted=osm_wanted, osm_estimated_bytes=osm_bytes)
+def _cached_assessment(geometry_digest, _geometry, osm_wanted, osm_bytes, limits_fingerprint, available_bytes,
+                       _limits):
+    # Keyed on the geometry digest, limits and rounded free memory (None: unknown, configured ceilings).
+    return assess_zone(_geometry, limits=_limits, osm_wanted=osm_wanted, osm_estimated_bytes=osm_bytes,
+                       available_bytes=available_bytes)
+
+
+def _rounded_free_memory():
+    available = available_memory_bytes()
+    return None if available is None else available // FREE_MEMORY_STEP * FREE_MEMORY_STEP
 
 
 def assess_aoi_file(aoi_path, *, osm_wanted: bool = False, osm_estimated_bytes: int | None = None):
@@ -44,7 +56,8 @@ def assess_aoi_file(aoi_path, *, osm_wanted: bool = False, osm_estimated_bytes: 
 
 def assess_geometry(geometry, digest: str, *, osm_wanted: bool = False, osm_estimated_bytes: int | None = None):
     limits = ResourceLimits.from_environment()
-    return _cached_assessment(digest, geometry, osm_wanted, osm_estimated_bytes, limits.fingerprint, limits)
+    return _cached_assessment(digest, geometry, osm_wanted, osm_estimated_bytes, limits.fingerprint,
+                              _rounded_free_memory(), limits)
 
 
 def show_assessment(assessment, *, operation: str, prominent_warnings: bool = False) -> bool:

@@ -17,3 +17,5 @@ boto3==1.43.108
 botocore==1.43.108
 requests==2.34.2
 pystac-client==0.9.0
+# Mémoire libre de l'hôte pour les garde-fous de ressources (src/services/resource_guards.py).
+psutil==7.2.2

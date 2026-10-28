@@ -186,11 +186,13 @@ def estimate_s2_tiles(geometry_wgs84) -> tuple[tuple[int, int, int], ...]:
 
 
 def available_memory_bytes() -> int | None:
+    """Host free memory, or None when unreadable: the configured ceilings then apply alone."""
     try:
         import psutil
-    except ImportError:
+
+        return int(psutil.virtual_memory().available)
+    except (ImportError, OSError):
         return None
-    return int(psutil.virtual_memory().available)
 
 
 # --- Assessments -------------------------------------------------------------------------------------------
