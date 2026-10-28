@@ -8,6 +8,31 @@ stockées (`data/external/`, catalogue vérifié par empreinte SHA-256) sont lue
 La zone d'étude est le carré d'acquisition de 12 × 12 km (« Zone d'étude Akanda »), **pas une
 limite administrative**. Les AOI voisines se recouvrent.
 
+## Organisation du code (`src/indicators/`, depuis le 28/10/2026)
+
+`src/services/territorial_indicators.py` reste le point d'import historique et réexporte les noms
+publics. L'implémentation est répartie par responsabilité, sans changement de résultat (sorties
+complètes identiques octet pour octet avant et après l'extraction, sur les trois zones locales et le
+paquet v3) :
+
+| Module | Rôle |
+|---|---|
+| `model` | enregistrements (`TerritorialIndicator`…), statuts et niveaux de fiabilité |
+| `profiles` | profils versionnés (`AFRICA_DEFAULT_V1`, empreinte figée par test) |
+| `zone` | zone d'étude = fichier de géométrie polygonale : empreinte, projection UTM locale, aire équivalente |
+| `landcover`, `osm` | mesures (surfaces, longueurs, comptages) sur couches chargées |
+| `provenance` | dates, sources et limites tirées des descripteurs |
+| `quality` | règles de fiabilité et comparabilité temporelle (`assess_change`) |
+| `inventory` | inventaire hors ligne des couches d'une zone (`indicator_inputs`, `inputs_for_zone`) |
+| `assembly` | construction de l'ensemble d'indicateurs |
+
+`inputs_for_zone(data_dir, zone_id, chemin)` accepte un fichier de zone quelconque (par exemple une
+géométrie du registre des territoires) : seules les couches enregistrées pour cet identifiant et
+cette géométrie sont utilisées ; sinon les indicateurs sont « indisponibles ». L'interface ne
+propose encore que les zones d'acquisition ; la limite « carré d'acquisition, pas une limite
+administrative » de la surface de zone reste propre à ces zones (intégration des autres natures de
+zones : V1.1).
+
 ## Contrat de données (`TerritorialIndicator`)
 
 | Champ | Contenu |

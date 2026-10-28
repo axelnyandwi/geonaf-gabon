@@ -1,0 +1,201 @@
+"""Builds the indicator set of a zone from measurements, provenance and reliability rules.
+
+A missing source gives ``value=None`` (status ``indisponible``), never an estimate.
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+from src.indicators.inventory import IndicatorInputs
+from src.indicators.landcover import landcover_areas
+from src.indicators.model import (
+    AOI_NATURE, AVAILABLE, HIGH, NOT_ASSESSED, UNAVAILABLE, BreakdownItem, IndicatorSource, TerritorialIndicator,
+    TerritorialIndicators,
+)
+from src.indicators.osm import building_figures, road_lengths
+from src.indicators.profiles import AFRICA_DEFAULT_V1, IndicatorProfile
+from src.indicators.provenance import LANDCOVER_LIMITS, OSM_LIMITS, indicator_source, landcover_dates, osm_dates
+from src.indicators.quality import landcover_reliability, osm_reliability
+from src.indicators.zone import zone_area_km2, zone_sha256
+from src.services.multisource_demo import CLASSIFICATION, COLLABORATIVE
+
+# Limit of the zone itself. Valid for GEONAF acquisition squares, the only zones offered today; another
+# zone nature (registry territory, user import) will need its own wording (V1.1).
+ACQUISITION_ZONE_LIMITS = ("Zone d'étude (carré d'acquisition), pas une limite administrative.",)
+
+
+def _unavailable(indicator_id, label, unit, aoi_id, aoi_sha, profile, reason):
+    return TerritorialIndicator(indicator_id, label, None, unit, UNAVAILABLE, aoi_id, aoi_sha, None, None, None,
+                                reason, NOT_ASSESSED, (reason,), (), profile.fingerprint)
+
+
+def _landcover_indicators(tiles, aoi_path, aoi_id, aoi_sha, profile, warnings):
+    """Land, vegetation, built-up and water indicators from one WorldCover product."""
+    from src.data.worldcover import CLASSES
+
+    descriptor = tiles[0][1]
+    areas, classified_m2, aoi_m2 = landcover_areas(tiles, aoi_path)
+    coverage = 100.0 * classified_m2 / aoi_m2
+    labels = dict(descriptor.classes or CLASSES)
+    reliability, reasons, warning = landcover_reliability(descriptor, coverage, profile)
+    if warning:
+        warnings.append(warning)
+    common = dict(aoi_id=aoi_id, aoi_sha256=aoi_sha, dates=landcover_dates(descriptor),
+                  source=indicator_source(descriptor, CLASSIFICATION), coverage_percent=coverage,
+                  reliability=reliability, reliability_reasons=reasons, limits=LANDCOVER_LIMITS,
+                  profile_fingerprint=profile.fingerprint)
+    km2 = lambda codes: sum(areas.get(code, 0.0) for code in codes) / 1e6
+    detail = lambda codes: tuple((labels.get(code, str(code)), areas[code] / 1e6) for code in codes if code in areas)
+    water = km2(profile.water_classes)
+    land = classified_m2 / 1e6 - water
+    aoi_km2 = aoi_m2 / 1e6
+    shares = lambda value: (("zone d'étude", 100.0 * value / aoi_km2),) + (
+        (("surface terrestre", 100.0 * value / land),) if land > 0 else ())
+    weighting = ("Somme des cellules classées, pondérées par leur intersection exacte avec la zone d'étude "
+                 "(aire équivalente EPSG:6933), sur la grille native du produit ; aucun masque nuageux Sentinel-2.")
+    vegetation = km2(profile.vegetation_classes)
+    groups = tuple(BreakdownItem(label, label, km2(codes), "km²", 100.0 * km2(codes) / aoi_km2, detail(codes))
+                   for label, codes in profile.vegetation_groups)
+    builtup = km2(profile.builtup_classes)
+    return [
+        TerritorialIndicator(
+            "landcover.land_km2", "Surface terrestre", land, "km²", AVAILABLE, method=(
+                f"Surface classée hors eaux permanentes (classes {', '.join(map(str, profile.water_classes))}). "
+                + weighting), shares=(("zone d'étude", 100.0 * land / aoi_km2),),
+            breakdown=(BreakdownItem("water", "Eaux permanentes", water, "km²", 100.0 * water / aoi_km2,
+                                     detail(profile.water_classes)),), **common),
+        TerritorialIndicator(
+            "landcover.vegetation_km2", "Surface végétalisée", vegetation, "km²", AVAILABLE, method=(
+                "Classes " + " ; ".join(f"{label} : {', '.join(map(str, codes))}"
+                                        for label, codes in profile.vegetation_groups) + ". " + weighting),
+            shares=shares(vegetation), breakdown=groups, **common),
+        TerritorialIndicator(
+            "landcover.builtup_km2", "Surface bâtie (classe « Bâti »)", builtup, "km²", AVAILABLE, method=(
+                f"Classe(s) {', '.join(map(str, profile.builtup_classes))} (bâtiments, routes et surfaces "
+                "artificialisées selon la définition du producteur). " + weighting),
+            shares=shares(builtup), breakdown=(BreakdownItem("builtup", "Bâti", builtup, "km²",
+                                                             100.0 * builtup / aoi_km2,
+                                                             detail(profile.builtup_classes)),), **common),
+    ], land
+
+
+def _osm_indicators(frame, descriptor, aoi_path, aoi_id, aoi_sha, aoi_km2, land_km2, land_indicator, profile):
+    total_km, categories, excluded_km, area_highways = road_lengths(frame, aoi_path, profile)
+    count, footprint, straddling = building_figures(frame, aoi_path)
+    reliability, reasons = osm_reliability()
+    common = dict(aoi_id=aoi_id, aoi_sha256=aoi_sha, dates=osm_dates(descriptor),
+                  source=indicator_source(descriptor, COLLABORATIVE), coverage_percent=None, reliability=reliability,
+                  reliability_reasons=reasons, profile_fingerprint=profile.fingerprint)
+    road_limits = OSM_LIMITS + (
+        "Longueur de tronçons cartographiés, pas longueur de réseau : une voie à chaussées séparées "
+        "cartographiées par sens compte deux fois.",
+        "Aucune information sur l'état, le revêtement ou la praticabilité des voies.",
+    )
+    if excluded_km:
+        road_limits += (f"{excluded_km:.1f} km exclus (voies projetées, en construction ou abandonnées).",)
+    if area_highways:
+        road_limits += (f"{area_highways} objet(s) « highway » surfacique(s) non comptés en longueur.",)
+    indicators = [
+        TerritorialIndicator(
+            "osm.roads_km", "Voies cartographiées (OSM)", total_km, "km", AVAILABLE, method=(
+                "Somme des longueurs des chemins OSM « highway » découpés à la zone d'étude, en projection UTM "
+                "locale ; regroupement des valeurs « highway » selon le profil d'indicateurs."),
+            limits=road_limits, breakdown=tuple(
+                BreakdownItem(label, label, km, "km", 100.0 * km / total_km if total_km else None, detail)
+                for label, km, detail in categories), **common),
+        TerritorialIndicator(
+            "osm.buildings_count", "Bâtiments cartographiés (OSM)", float(count), "bâtiments", AVAILABLE, method=(
+                "Nombre de bâtiments OSM (chemins et multipolygones valides) dont le point représentatif est dans "
+                "la zone d'étude."), limits=OSM_LIMITS + (
+                "Ce n'est pas le nombre total réel de bâtiments.",
+                f"{straddling} bâtiment(s) à cheval sur la limite, attribué(s) selon leur point représentatif."),
+            **common),
+        TerritorialIndicator(
+            "osm.buildings_footprint_km2", "Emprise au sol des bâtiments cartographiés (OSM)", footprint, "km²",
+            AVAILABLE, method="Surface des polygones de bâtiments OSM découpés à la zone d'étude (UTM locale).",
+            shares=(("zone d'étude", 100.0 * footprint / aoi_km2),), limits=OSM_LIMITS + (
+                "Emprise des toits tracés, différente de la classe « Bâti » de WorldCover (routes, sols scellés).",),
+            **common),
+        TerritorialIndicator(
+            "osm.buildings_density_aoi", "Densité de bâtiments cartographiés (zone d'étude)", count / aoi_km2,
+            "bâtiments/km²", AVAILABLE, method="Nombre de bâtiments OSM / surface totale de la zone d'étude.",
+            limits=OSM_LIMITS + ("Dénominateur incluant les surfaces en eau.",), **common),
+    ]
+    if land_km2 is None:
+        indicators.append(_unavailable(
+            "osm.buildings_density_land", "Densité de bâtiments cartographiés (surface terrestre)",
+            "bâtiments/km²", aoi_id, aoi_sha, profile,
+            "Surface terrestre indisponible (ESA WorldCover absent localement)."))
+    else:
+        indicators.append(TerritorialIndicator(
+            "osm.buildings_density_land", "Densité de bâtiments cartographiés (surface terrestre)",
+            count / land_km2 if land_km2 > 0 else None, "bâtiments/km²", AVAILABLE, method=(
+                "Nombre de bâtiments OSM / surface terrestre WorldCover (zone d'étude hors eaux permanentes)."),
+            limits=OSM_LIMITS + (
+                f"Combine deux référentiels de dates différentes : OSM {descriptor.temporal.end_utc:%Y} et "
+                f"surface terrestre {land_indicator.dates.observation_start_utc:%Y}.",), **common))
+    return indicators
+
+
+def build_indicators(*, aoi_id: str, aoi_path, worldcover=None, osm=None, aoi_label: str | None = None,
+                     profile: IndicatorProfile = AFRICA_DEFAULT_V1, temporal_notes=()) -> TerritorialIndicators:
+    """``worldcover``: [(path, descriptor)] of one product version; ``osm``: (GeoDataFrame, descriptor)."""
+    aoi_path = Path(aoi_path)
+    aoi_sha = zone_sha256(aoi_path)
+    aoi_km2 = zone_area_km2(aoi_path)
+    indicators = [TerritorialIndicator(
+        "aoi.area_km2", "Surface de la zone d'étude", aoi_km2, "km²", AVAILABLE, aoi_id, aoi_sha,
+        None, IndicatorSource("geonaf-aoi", "Zone d'étude GEONAF", aoi_sha[:12], AOI_NATURE, "GEONAF", aoi_sha),
+        100.0, "Aire géodésique de la géométrie de la zone d'étude (aire équivalente EPSG:6933).", HIGH,
+        ("Géométrie exacte du fichier de zone d'étude.",), ACQUISITION_ZONE_LIMITS, profile.fingerprint)]
+    missing, warnings = [], []
+    land_km2 = land_indicator = None
+    tiles = list(worldcover or [])
+    if tiles:
+        if any(d.source_id != profile.landcover_source for _, d in tiles):
+            raise ValueError("Source d'occupation du sol incompatible avec le profil d'indicateurs.")
+        if len({(d.source_id, d.version) for _, d in tiles}) != 1:
+            raise ValueError("Tuiles d'occupation du sol de versions différentes : calcul refusé.")
+        landcover, land_km2 = _landcover_indicators(tiles, aoi_path, aoi_id, aoi_sha, profile, warnings)
+        land_indicator = landcover[0]
+        indicators += landcover
+    else:
+        missing.append("ESA WorldCover")
+        for indicator_id, label in (("landcover.land_km2", "Surface terrestre"),
+                                    ("landcover.vegetation_km2", "Surface végétalisée"),
+                                    ("landcover.builtup_km2", "Surface bâtie (classe « Bâti »)")):
+            indicators.append(_unavailable(indicator_id, label, "km²", aoi_id, aoi_sha, profile,
+                                           "ESA WorldCover absent localement pour cette zone d'étude."))
+    if osm is not None:
+        frame, descriptor = osm
+        indicators += _osm_indicators(frame, descriptor, aoi_path, aoi_id, aoi_sha, aoi_km2, land_km2,
+                                      land_indicator, profile)
+    else:
+        missing.append("OpenStreetMap")
+        for indicator_id, label, unit in (
+                ("osm.roads_km", "Voies cartographiées (OSM)", "km"),
+                ("osm.buildings_count", "Bâtiments cartographiés (OSM)", "bâtiments"),
+                ("osm.buildings_footprint_km2", "Emprise au sol des bâtiments cartographiés (OSM)", "km²"),
+                ("osm.buildings_density_aoi", "Densité de bâtiments cartographiés (zone d'étude)", "bâtiments/km²"),
+                ("osm.buildings_density_land", "Densité de bâtiments cartographiés (surface terrestre)",
+                 "bâtiments/km²")):
+            indicators.append(_unavailable(indicator_id, label, unit, aoi_id, aoi_sha, profile,
+                                           "Instantané OpenStreetMap absent localement pour cette zone d'étude."))
+    return TerritorialIndicators(aoi_id, aoi_label or aoi_id, aoi_sha, aoi_km2, profile, tuple(indicators),
+                                 tuple(temporal_notes), tuple(missing), tuple(warnings))
+
+
+def compute_territorial_indicators(inputs: IndicatorInputs, *, aoi_label: str | None = None,
+                                   profile: IndicatorProfile = AFRICA_DEFAULT_V1) -> TerritorialIndicators:
+    """Indicators of an inventoried zone; stored layers only, no network."""
+    from src.data.openstreetmap import load_osm_snapshot
+    from src.services.external_layers import open_store
+
+    osm = None
+    if inputs.osm is not None:
+        store, _ = open_store(inputs.data_dir)
+        osm = load_osm_snapshot(store, inputs.osm.storage_key, inputs.bounds)
+    return build_indicators(aoi_id=inputs.aoi_id, aoi_path=inputs.aoi_path,
+                            worldcover=[(layer.path, layer.descriptor) for layer in inputs.worldcover] or None,
+                            osm=osm, aoi_label=aoi_label, profile=profile, temporal_notes=inputs.temporal_notes)
