@@ -13,7 +13,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.components.formatting import format_hectares_from_km2, format_percent, format_surface
+from src.components.formatting import format_hectares_from_km2, format_percent, format_surface, french_table
 from src.components.resource_panel import assess_aoi_file, show_assessment
 from src.indicators.assembly import build_s2_vegetation_indicator
 from src.indicators.presentation import attribution, fr
@@ -21,6 +21,8 @@ from src.indicators.profiles import S2_NDVI_VEGETATION_V0
 from src.indicators.s2_inventory import BREAKDOWN_UNAVAILABLE, s2_inventory_key, s2_vegetation_inventory
 
 VEGETATION_PROFILE = S2_NDVI_VEGETATION_V0
+TABLE_DECIMALS = {"Surface (km²)": 2, "Surface (ha)": 1, "Part de la zone d'étude (%)": 2,
+                  "Part de la surface observée (%)": 2}
 YEAR = 2025
 NOT_COMPARABLE = ("Résultats Sentinel-2 non directement comparables à la surface végétalisée WorldCover 2021 "
                   "(classification, autre année, autre surface de référence), ni entre acquisitions dont les "
@@ -114,10 +116,9 @@ def _unpublished(indicator, estimate):
 
 
 def _breakdown(indicator, estimate):
-    rows = [{"Catégorie": item.label, "Surface (km²)": format_surface(item.value),
-             "Surface (ha)": format_hectares_from_km2(item.value),
-             "Part de la zone d'étude (%)": format_percent(item.share_percent)} for item in indicator.breakdown]
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    rows = [{"Catégorie": item.label, "Surface (km²)": item.value, "Surface (ha)": item.value * 100.0,
+             "Part de la zone d'étude (%)": item.share_percent} for item in indicator.breakdown]
+    st.dataframe(french_table(pd.DataFrame(rows), TABLE_DECIMALS), hide_index=True, width="stretch")
     st.caption("Ces catégories partagent la zone d'étude sans recouvrement. Les causes indiquées sont celles de "
                "la classification SCL de l'acquisition ; aucune n'est déduite de la géographie.")
     for item in indicator.breakdown:                 # Below the table: readable on a phone without scrolling.
@@ -126,11 +127,10 @@ def _breakdown(indicator, estimate):
 
 def _sensitivity(estimate):
     m = estimate.measure
-    rows = [{"Seuil": f"NDVI ≥ {fr(t)}",
-             "Surface (km²)": _km2(area), "Surface (ha)": format_hectares_from_km2(area / 1e6),
-             "Part de la surface observée (%)": "—" if m.observed_m2 <= 0
-             else format_percent(100.0 * area / m.observed_m2)} for t, area in m.sensitivity_m2]
-    st.dataframe(pd.DataFrame(rows), hide_index=True, width="stretch")
+    rows = [{"Seuil": f"NDVI ≥ {fr(t)}", "Surface (km²)": area / 1e6, "Surface (ha)": area / 1e4,
+             "Part de la surface observée (%)": None if m.observed_m2 <= 0 else 100.0 * area / m.observed_m2}
+            for t, area in m.sensitivity_m2]
+    st.dataframe(french_table(pd.DataFrame(rows), TABLE_DECIMALS), hide_index=True, width="stretch")
     st.caption("Même surface observée pour les trois seuils : l'écart mesure la dépendance au seuil, pas une "
                "incertitude statistique.")
 

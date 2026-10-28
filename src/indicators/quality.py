@@ -24,8 +24,8 @@ def landcover_reliability(descriptor, coverage, profile):
     reasons = ["Exactitude déclarée par le producteur, non vérifiée sur la zone d'étude.",
                f"Référentiel {descriptor.temporal.start_utc:%Y}, antérieur aux observations récentes."]
     if coverage < profile.min_coverage_percent:
-        reasons.append(f"Couverture {coverage:.1f} % < {profile.min_coverage_percent:g} % de la zone d'étude.")
-        return LOW, tuple(reasons), (f"WorldCover ne couvre que {coverage:.1f} % de la zone d'étude : "
+        reasons.append(f"Couverture {fr(coverage, 1)} % < {fr(profile.min_coverage_percent)} % de la zone d'étude.")
+        return LOW, tuple(reasons), (f"WorldCover ne couvre que {fr(coverage, 1)} % de la zone d'étude : "
                                      "surfaces sous-estimées.")
     return MEDIUM, tuple(reasons), None
 
@@ -125,7 +125,7 @@ def assess_change(before: TerritorialIndicator, after: TerritorialIndicator) -> 
             reasons.append("Ordre chronologique des référentiels non établi.")
     for item in (before, after):
         if item.coverage_percent is not None and item.coverage_percent < 99.0:
-            reasons.append(f"Couverture insuffisante ({item.coverage_percent:.1f} %).")
+            reasons.append(f"Couverture insuffisante ({fr(item.coverage_percent, 1)} %).")
     if reasons:
         return ChangeAssessment(after.indicator_id, False, "non comparable", None, after.unit, tuple(reasons))
     collaborative = after.source.nature == COLLABORATIVE

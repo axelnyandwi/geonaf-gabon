@@ -140,3 +140,15 @@ def test_pack_v3_defaults_to_25_january_and_shows_20_january_as_unavailable(home
     part = section_texts(app)
     assert compute.call_count == 1 and "Non disponible" in part and "2,7 % < 30 %" in part
     assert "61,61" not in part.split("Données de diagnostic")[0]
+
+
+def test_sentinel2_tables_are_numeric_with_full_precision(local_data, home):
+    app, _ = home(local_data)
+    app.button(key=START).click().run(timeout=120)
+    breakdown = next(e for e in app.expander if e.label == "Ventilation de la zone d'étude et définitions")
+    frame = breakdown.dataframe[0].value
+    assert all(str(frame[c].dtype) == "float64" for c in ("Surface (km²)", "Surface (ha)",
+                                                           "Part de la zone d'étude (%)"))
+    assert frame["Surface (ha)"].tolist() == [v * 100.0 for v in frame["Surface (km²)"]]
+    sensitivity = next(e for e in app.expander if e.label.startswith("Sensibilité"))
+    assert str(sensitivity.dataframe[0].value["Part de la surface observée (%)"].dtype) == "float64"

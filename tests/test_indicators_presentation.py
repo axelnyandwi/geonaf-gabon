@@ -96,3 +96,45 @@ def test_displayed_licences_match_the_ingestion_licences():
     names = {"CC-BY-4.0": "CC BY 4.0", "ODbL-1.0": "ODbL 1.0"}
     assert attribution(_source("esa-worldcover"), 2021).licence == names[WORLDCOVER_LICENSE.spdx_id]
     assert attribution(_source("openstreetmap"), None).licence == names[OSM_LICENSE.spdx_id]
+
+
+# --- French decimals (L3e) ----------------------------------------------------------------------------------
+
+
+def test_french_table_formats_display_only_and_keeps_numbers():
+    import pandas as pd
+
+    from src.components.formatting import french_table
+
+    frame = pd.DataFrame({"Catégorie": ["a", "b", "c"], "Surface (km²)": [1234.5678, 0.5, None],
+                          "Part (%)": [57.3, 100.0, None]})
+    styler = french_table(frame, {"Surface (km²)": 2, "Part (%)": 2, "Absente": 1})
+    text = styler.to_string()
+    assert "1 234,57" in text and "0,50" in text and "57,30" in text and "100,00" in text
+    assert text.count("—") == 2 and "." not in text.replace("Surface (km²)", "")    # No decimal point left.
+    assert styler.data is frame and frame["Surface (km²)"].iloc[0] == 1234.5678       # Numbers untouched.
+    assert str(frame["Surface (km²)"].dtype) == "float64"                             # Numeric sort preserved.
+
+
+def test_landcover_reliability_reasons_use_french_decimals():
+    from types import SimpleNamespace
+    from datetime import datetime as dt
+
+    from src.indicators.quality import landcover_reliability
+
+    descriptor = SimpleNamespace(temporal=SimpleNamespace(start_utc=dt(2021, 1, 1)))
+    level, reasons, warning = landcover_reliability(descriptor, 50.04, AFRICA_DEFAULT_V1)
+    assert level == "faible" and "Couverture 50,0 % < 99 % de la zone d'étude." in reasons
+    assert warning == "WorldCover ne couvre que 50,0 % de la zone d'étude : surfaces sous-estimées."
+
+
+def test_change_assessment_reason_uses_french_decimals(tmp_path, aoi):
+    from dataclasses import replace
+
+    from src.indicators.quality import assess_change
+
+    result = build_indicators(aoi_id="test", aoi_path=aoi, worldcover=[
+        worldcover_layer(write_landcover(tmp_path / "wc.tif", landcover_codes()))])
+    land = result.get("landcover.land_km2")
+    change = assess_change(replace(land, coverage_percent=50.04), land)
+    assert "Couverture insuffisante (50,0 %)." in change.reasons

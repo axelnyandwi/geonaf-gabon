@@ -119,3 +119,23 @@ def test_land_density_names_both_sources_with_their_own_dates(local_data, home, 
     assert "**Dénominateur** : surface terrestre, ESA WorldCover 10 m 2021 (v200)" in details
     assert "**Dates du dénominateur** : Observation : 2021" in details
     assert "**Attribution du dénominateur** : © ESA WorldCover project 2021" in details
+
+
+def test_tables_keep_full_precision_numbers_for_sorting(local_data, home):
+    store_layers(local_data, "akanda")
+    app, _ = home(local_data)
+    vegetation = next(e for e in app.expander if e.label == "Végétation par regroupement (WorldCover)")
+    frame = vegetation.dataframe[0].value
+    assert all(str(frame[c].dtype) == "float64" for c in ("Surface (km²)", "Surface (ha)",
+                                                           "Part de la zone d'étude (%)"))
+    expected = {item.label: item.value for item in _vegetation(local_data).breakdown}
+    assert dict(zip(frame["Regroupement"], frame["Surface (km²)"])) == expected        # Not rounded.
+    methods = next(e for e in app.expander if e.label == "Méthodes, dates, sources et limites")
+    assert str(methods.dataframe[0].value["Couverture (%)"].dtype) == "float64"
+    assert any(c.value == "« — » : sans objet ou non disponible." for c in methods.caption)
+
+
+def _vegetation(data_dir):
+    from src.services.territorial_indicators import compute_territorial_indicators, indicator_inputs
+
+    return compute_territorial_indicators(indicator_inputs(data_dir, "akanda")).get("landcover.vegetation_km2")

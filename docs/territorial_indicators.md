@@ -72,6 +72,10 @@ Un indicateur indisponible garde la nature qu'aurait sa valeur.
   propres dates, lues dans les métadonnées : numérateur OpenStreetMap (date de l'instantané de la
   base), dénominateur WorldCover (année de la carte), et précise que ce rapport ne décrit pas une
   même année d'observation. Formule et valeurs inchangées.
+- **Décimales** : virgule décimale et espace fine insécable pour les milliers dans les cartes, les
+  tableaux et les motifs de fiabilité. Les tableaux gardent leurs nombres en pleine précision (tri
+  numérique) ; seul l'affichage est formaté (`french_table`, `src/components/formatting.py`).
+  « — » dans un tableau : sans objet ou non disponible. Les autres pages ne sont pas modifiées.
 - **Section repliable « Provenance et fiabilité »** par carte : nature, source et version, attribution
   et licence, trois dates, couverture de la source, motifs du niveau de fiabilité, méthode, limites.
 - **Attributions** vérifiées le 28/10/2026 sur les pages des producteurs et affichées sous les cartes :

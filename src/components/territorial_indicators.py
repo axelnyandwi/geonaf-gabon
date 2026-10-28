@@ -11,7 +11,9 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
-from src.components.formatting import format_hectares_from_km2, format_percent, format_pixels, format_surface
+from src.components.formatting import (
+    format_hectares_from_km2, format_percent, format_pixels, format_surface, french_table,
+)
 from src.indicators.presentation import (
     RESULT_KIND_TEXT, ROAD_GLOSSARY, attribution, highway_label, road_category_label, share_text,
 )
@@ -44,9 +46,9 @@ def _value(indicator):
     if indicator.unit == "bâtiments":
         return format_pixels(indicator.value)
     if indicator.unit == "km":
-        return f"{indicator.value:,.0f}".replace(",", " ")
+        return f"{indicator.value:,.0f}".replace(",", " ")
     if indicator.unit == "bâtiments/km²":
-        return f"{indicator.value:,.0f}".replace(",", " ")
+        return f"{indicator.value:,.0f}".replace(",", " ")
     return format_surface(indicator.value)
 
 
@@ -166,11 +168,11 @@ def _card(indicator, secondary=None, denominator=None):
 def _breakdown_frame(indicator, unit_label, *, hectares=False, label=lambda text: text, detail=lambda key: key):
     rows = []
     for item in indicator.breakdown:
-        row = {"Regroupement": label(item.label), unit_label: round(item.value, 2)}
+        row = {"Regroupement": label(item.label), unit_label: item.value}      # Full precision; display rounds.
         if hectares:
-            row["Surface (ha)"] = round(item.value * 100.0, 1)
-        row["Part de la zone d'étude (%)"] = None if item.share_percent is None else round(item.share_percent, 2)
-        row["Détail"] = " ; ".join(f"{detail(key)} {value:.2f}" for key, value in item.detail)
+            row["Surface (ha)"] = item.value * 100.0
+        row["Part de la zone d'étude (%)"] = item.share_percent
+        row["Détail"] = " ; ".join(f"{detail(key)} {format_surface(value)}" for key, value in item.detail)
         rows.append(row)
     return pd.DataFrame(rows)
 
@@ -182,7 +184,8 @@ def _details(result):
             frame = _breakdown_frame(roads, "Longueur (km)", label=road_category_label, detail=highway_label).rename(
                 columns={"Part de la zone d'étude (%)": "Part des voies (%)", "Regroupement": "Catégorie",
                          "Détail": "Valeurs OSM « highway » (km)"})
-            st.dataframe(frame, hide_index=True, width="stretch")
+            st.dataframe(french_table(frame, {"Longueur (km)": 2, "Part des voies (%)": 2}), hide_index=True,
+                         width="stretch")
             st.markdown("**Catégories**")
             for item in roads.breakdown:
                 shown, explanation = ROAD_GLOSSARY.get(item.label, (item.label, ""))
@@ -193,13 +196,14 @@ def _details(result):
             st.caption(roads.method)
     with st.expander("Végétation par regroupement (WorldCover)"):
         if vegetation.status == AVAILABLE:
-            st.dataframe(_breakdown_frame(vegetation, "Surface (km²)", hectares=True), hide_index=True,
-                         width="stretch")
+            st.dataframe(french_table(_breakdown_frame(vegetation, "Surface (km²)", hectares=True),
+                                      {"Surface (km²)": 2, "Surface (ha)": 1, "Part de la zone d'étude (%)": 2}),
+                         hide_index=True, width="stretch")
             st.caption(vegetation.method)
         else:
             st.caption(vegetation.method)
     with st.expander("Méthodes, dates, sources et limites"):
-        st.dataframe(pd.DataFrame([{
+        st.dataframe(french_table(pd.DataFrame([{
             "Indicateur": item.label, "Valeur": _value(item), "Unité": item.unit, "Statut": item.status,
             "Nature du résultat": RESULT_KIND_TEXT.get(item.result_kind, ("Nature non qualifiée",))[0],
             "Source": None if item.source is None else f"{item.source.product} ({item.source.version})",
@@ -209,9 +213,10 @@ def _details(result):
             "Référentiel": None if item.dates is None else item.dates.reference_label,
             "Ingestion GEONAF (UTC)": None if item.dates is None or item.dates.ingested_at_utc is None
                                       else f"{item.dates.ingested_at_utc:%d/%m/%Y %H:%M}",
-            "Couverture (%)": None if item.coverage_percent is None else round(item.coverage_percent, 2),
+            "Couverture (%)": item.coverage_percent,
             "Fiabilité": item.reliability, "Méthode": item.method,
-        } for item in result.indicators]), hide_index=True, width="stretch")
+        } for item in result.indicators]), {"Couverture (%)": 2}), hide_index=True, width="stretch")
+        st.caption("« — » : sans objet ou non disponible.")
         st.caption("Nature du résultat : « mesure géométrique » = calcul exact sur la géométrie ; « observation "
                    "d'une base cartographique » = contenu d'OpenStreetMap à la date de l'instantané, pas le "
                    "terrain ; « estimation » = sortie d'un modèle ou d'une classification ; « prédiction » = "
