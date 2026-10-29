@@ -264,3 +264,86 @@ def build_s2_vegetation_indicator(estimate, inventory) -> TerritorialIndicator:
         assessment.reliability, assessment.reasons, limits, profile.fingerprint,
         shares=((("surface observée exploitable", measure.vegetated_share_percent),) if available else ()),
         breakdown=breakdown, result_kind=ESTIMATION, scientific_status=assessment.scientific_status)
+
+
+def build_s2_transition_indicators(pair, selection) -> tuple[TerritorialIndicator, ...]:
+    """Indicators of one Sentinel-2 acquisition pair; separate from :func:`build_indicators` and from L3.
+
+    Three records sharing dates, source, coverage, reliability and limits: the
+    common comparable surface, the area-weighted ΔNDVI mean and the class
+    transitions around the NDVI class threshold. Values are ``None`` when the
+    pair may not be published (measurements stay in ``pair.measure``).
+    """
+    import hashlib
+    import json
+
+    from src.indicators.presentation import fr
+    from src.indicators.provenance import (
+        SENTINEL2_ATTRIBUTION, SENTINEL2_PAIR_NATURE, SENTINEL2_SOURCE_ID, TRANSITION_S2_LIMITS,
+        sentinel2_pair_dates,
+    )
+    from src.indicators.s2_pairs import PUBLISHABLE
+
+    profile, measure, assessment = selection.profile, pair.measure, pair.assessment
+    available = pair.status == PUBLISHABLE and measure is not None
+    t = fr(profile.threshold)
+    years = sorted({pair.earlier.acquired_at_utc.year, pair.later.acquired_at_utc.year})
+    fingerprint = hashlib.sha256(json.dumps(
+        [pair.earlier.fingerprint, pair.later.fingerprint, profile.fingerprint,
+         selection.scientific_profile_fingerprint]).encode()).hexdigest()
+    limits = TRANSITION_S2_LIMITS + (pair.seasonal_notes or (
+        "Comparabilité saisonnière non évaluée par la chaîne de comparaison.",))
+    reasons = pair.reasons + (() if assessment is None else assessment.warnings)
+    common = dict(
+        status=AVAILABLE if available else UNAVAILABLE, aoi_id=selection.aoi_id, aoi_sha256=selection.aoi_sha256,
+        dates=sentinel2_pair_dates(pair.earlier, pair.later),
+        source=IndicatorSource(SENTINEL2_SOURCE_ID, "Copernicus Sentinel-2 L2A",
+                               " + ".join(pair.earlier.product_ids) + " → " + " + ".join(pair.later.product_ids),
+                               SENTINEL2_PAIR_NATURE,
+                               SENTINEL2_ATTRIBUTION.format(year="–".join(map(str, years))), fingerprint),
+        coverage_percent=None if measure is None else measure.common_coverage_percent,
+        reliability=assessment.reliability if available else NOT_ASSESSED, reliability_reasons=reasons,
+        limits=limits, profile_fingerprint=profile.fingerprint, result_kind=ESTIMATION,
+        scientific_status=profile.scientific_status if assessment is None else assessment.scientific_status)
+    method = (f"Pixels valides aux deux dates selon la politique SCL « {selection.scl_policy} » du profil "
+              f"{selection.scientific_profile_id} {selection.scientific_profile_version}, sur le masque commun de "
+              f"la chaîne de comparaison historique (grilles alignées, aucun rééchantillonnage) ; surfaces exactes "
+              f"en aire équivalente EPSG:6933, pixels partiels compris. Profil {profile.profile_id} "
+              f"{profile.version} (seuil de classe NDVI {t}, couverture commune minimale "
+              f"{fr(profile.min_common_coverage_percent)} %).")
+    km2 = lambda m2: m2 / 1e6
+    value = lambda v: v if available else None
+    indicators = [TerritorialIndicator(
+        "s2.pair.common_km2", "Surface observée commune aux deux dates (Sentinel-2)",
+        value(None if measure is None else km2(measure.common_m2)), "km²", method=method,
+        shares=((("zone d'étude", measure.common_coverage_percent),) if available else ()), **common)]
+    breakdown = ()
+    if available:
+        breakdown = tuple(BreakdownItem(key, label, v, "NDVI") for key, label, v in (
+            ("mean_1", f"NDVI moyen pondéré au {pair.earlier.acquired_at_utc:%d/%m/%Y}", measure.mean_1),
+            ("mean_2", f"NDVI moyen pondéré au {pair.later.acquired_at_utc:%d/%m/%Y}", measure.mean_2),
+            ("median_1", f"NDVI médian pondéré au {pair.earlier.acquired_at_utc:%d/%m/%Y}", measure.median_1),
+            ("median_2", f"NDVI médian pondéré au {pair.later.acquired_at_utc:%d/%m/%Y}", measure.median_2),
+            ("delta_median", "ΔNDVI médian pondéré", measure.delta_median)))
+    indicators.append(TerritorialIndicator(
+        "s2.pair.delta_ndvi_mean", "ΔNDVI moyen pondéré sur la surface commune (Sentinel-2)",
+        value(None if measure is None else measure.delta_mean), "NDVI", method=method + (
+            " Moyenne des NDVI calibrés pondérée par la surface de chaque pixel ; date 2 − date 1."),
+        breakdown=breakdown, **common))
+    breakdown = ()
+    if available:
+        tr, share = measure.transitions, lambda m2: 100.0 * m2 / measure.common_m2
+        detail = lambda name: tuple((f"Seuil {fr(s.threshold)}", km2(getattr(s, name))) for s in measure.sensitivity)
+        breakdown = tuple(BreakdownItem(key, label, km2(getattr(tr, key)), "km²", share(getattr(tr, key)),
+                                        detail(key)) for key, label in (
+            ("down_m2", f"NDVI ≥ {t} puis < {t}"), ("up_m2", f"NDVI < {t} puis ≥ {t}"),
+            ("stayed_above_m2", f"NDVI ≥ {t} aux deux dates"), ("stayed_below_m2", f"NDVI < {t} aux deux dates")))
+        breakdown += (BreakdownItem("net_m2", "Solde des transitions (vers le haut − vers le bas), pas un gain ni "
+                                    "une perte de végétation", km2(tr.net_m2), "km²"),)
+    indicators.append(TerritorialIndicator(
+        "s2.pair.class_transitions_km2", f"Surface ayant changé de classe NDVI {t} (Sentinel-2, surface commune)",
+        value(None if measure is None else km2(measure.transitions.down_m2 + measure.transitions.up_m2)), "km²",
+        method=method + f" Comparaison au seuil en float32, égalité comptée comme ≥ {t}.",
+        shares=((("surface commune", 100.0 * (measure.transitions.down_m2 + measure.transitions.up_m2)
+                  / measure.common_m2),) if available else ()), breakdown=breakdown, **common))
+    return tuple(indicators)

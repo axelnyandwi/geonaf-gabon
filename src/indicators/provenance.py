@@ -67,6 +67,34 @@ VEGETATION_S2_LIMITS = (
     "de référence) ; deux dates ne sont comparables que sur leur surface observée commune.",
 )
 
+SENTINEL2_PAIR_NATURE = "Observation satellitaire (comparaison de deux acquisitions, indice spectral seuillé)"
+
+
+def sentinel2_pair_dates(earlier, later):
+    """Two acquisition instants (never a continuous period); latest ingestion of the inputs."""
+    ingested = max((e.ingested_at_utc for e in (earlier, later) if e.ingested_at_utc), default=None)
+    return IndicatorDates(
+        earlier.acquired_at_utc, later.acquired_at_utc,
+        "Deux instants d'acquisition Sentinel-2 (UTC) comparés ; rien n'est observé entre les deux.",
+        "Sentinel-2 L2A " + " + ".join(earlier.product_ids) + " → " + " + ".join(later.product_ids), None,
+        parse_utc(ingested))
+
+
+TRANSITION_S2_LIMITS = (
+    "Transitions de classe spectrale autour d'un seuil NDVI : ni déforestation, ni reboisement, ni changement "
+    "d'occupation du sol ne sont établis.",
+    "Seuil de classe NDVI non calibré pour ce climat ni ces écosystèmes, distinct du seuil de variation ΔNDVI des "
+    "classes de changement historiques ; résultats très sensibles au seuil.",
+    "Calcul limité à la surface observée commune aux deux dates : la surface non commune n'est ni estimée ni "
+    "extrapolée, et la couverture commune ne garantit pas la représentativité spatiale.",
+    "Deux acquisitions isolées : atmosphère, humidité, marée et géométrie de visée ne sont pas neutralisées ; "
+    "aucune cause n'est attribuée.",
+    "Nuages fins, brumes ou ombres non détectés par le SCL peuvent créer de fausses transitions ; la "
+    "classification SCL (Sen2Cor) peut elle-même se tromper.",
+    "Non comparable aux indicateurs WorldCover, OpenStreetMap ni à l'estimation Sentinel-2 d'une seule date "
+    "(autres sources ou autre surface de référence).",
+)
+
 OSM_LIMITS = (
     "Base collaborative : complétude inconnue ; absence d'objet ≠ absence sur le terrain.",
     "Un objet présent dans la base peut avoir été cartographié longtemps après sa construction.",
