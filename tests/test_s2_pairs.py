@@ -454,3 +454,28 @@ def test_pack_v3_is_reproducible_and_leaves_the_historical_chain_untouched(pack_
     assert provenance["earlier"]["satellites"] == ["Sentinel-2B"] and provenance["later"]["relative_orbits"] == ["136"]
     assert str(PACK) not in json.dumps(provenance, ensure_ascii=False)
     assert not holds_arrays(result)
+
+
+# --- One pair chosen by the reader (L4c) --------------------------------------------------------------------------
+
+
+def test_only_computes_the_requested_pair_through_the_same_chain(tmp_path, chain_calls):
+    data_dir = dates(tmp_path, {10: FULL, 20: FULL, 30: FULL})
+    default = selection(data_dir)
+    assert chain_calls == [(20, 30)]
+    skipped = by_days(default)[10, 20]
+    assert skipped.status == NOT_EVALUATED and skipped.measure is None
+    chain_calls.clear()
+    (pair,) = selection(data_dir, only=skipped.pair_id).pairs
+    assert chain_calls == [(10, 20)] and pair.status == PUBLISHABLE and pair.pair_id == skipped.pair_id
+    assert pair.measure.common_m2 == pytest.approx(pair.measure.zone_m2, rel=1e-3)
+    assert s2_pairs_key(data_dir, "akanda", only=skipped.pair_id) != s2_pairs_key(data_dir, "akanda")
+    with pytest.raises(ValueError, match="absente"):
+        selection(data_dir, only=(("X",), ("Y",)))
+
+
+def test_only_keeps_a_rejected_pair_rejected(tmp_path, chain_calls):
+    data_dir = dates(tmp_path, {10: FULL, 20: np.array([[4, 9], [9, 9]], "uint8")})
+    rejected = selection(data_dir).pairs[0]
+    (pair,) = selection(data_dir, only=rejected.pair_id).pairs
+    assert pair.status == REJECTED and chain_calls == []

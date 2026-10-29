@@ -1,5 +1,6 @@
 """Resource guards: thresholds, overruns, unknown inputs, imports and calibration; offline."""
 
+from pathlib import Path
 import sys
 
 import geopandas as gpd
@@ -104,6 +105,7 @@ class _UnreadableMemory:
 @pytest.mark.parametrize("module", [None, _UnreadableMemory], ids=["psutil absent", "mémoire illisible"])
 def test_unknown_free_memory_keeps_the_configured_ceilings(monkeypatch, module):
     monkeypatch.setitem(sys.modules, "psutil", module)   # None makes ``import psutil`` raise ImportError.
+    monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", Path("/nonexistent-cgroup"))   # No container.
     assert available_memory_bytes() is None
     memory = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_wanted=False).get("memory")   # Default reads the host.
     assert (memory.warn_at, memory.refuse_at) == (pytest.approx(1024), pytest.approx(2048))
@@ -184,3 +186,53 @@ def test_import_missing_or_invalid_file(tmp_path):
     bow_tie = write_geojson(tmp_path / "bad.geojson", [Polygon([(9.3, 0.4), (9.4, 0.5), (9.4, 0.4), (9.3, 0.5)])])
     with pytest.raises(ValueError, match="invalide"):
         assess_import(bow_tie, limits=LIMITS)
+
+
+# --- Container memory (cgroup) ------------------------------------------------------------------------------
+
+
+def cgroup(tmp_path, version, limit, usage, inactive=0):
+    if version == 2:
+        (tmp_path / "memory.max").write_text(f"{limit}\n")
+        (tmp_path / "memory.current").write_text(f"{usage}\n")
+        (tmp_path / "memory.stat").write_text(f"anon 1\ninactive_file {inactive}\nactive_file 2\n")
+    else:
+        (tmp_path / "memory").mkdir()
+        (tmp_path / "memory" / "memory.limit_in_bytes").write_text(f"{limit}\n")
+        (tmp_path / "memory" / "memory.usage_in_bytes").write_text(f"{usage}\n")
+        (tmp_path / "memory" / "memory.stat").write_text(f"cache 5\ntotal_inactive_file {inactive}\n")
+    return tmp_path
+
+
+@pytest.mark.parametrize("version", [2, 1])
+def test_cgroup_limit_gives_the_memory_left_in_the_container(tmp_path, version):
+    from src.services.resource_guards import cgroup_memory_bytes
+
+    root = cgroup(tmp_path, version, 1024 * MIB, 700 * MIB, inactive=100 * MIB)
+    assert cgroup_memory_bytes(root) == (1024 - 600) * MIB             # Inactive file cache is reclaimable.
+    (tmp_path / "over").mkdir()
+    over = cgroup(tmp_path / "over", version, 512 * MIB, 900 * MIB)     # Usage above the limit.
+    assert cgroup_memory_bytes(over) == 0
+
+
+@pytest.mark.parametrize("limit", ["max", str(1 << 62), "garbage"])
+def test_no_cgroup_limit_or_unreadable_figures_are_ignored(tmp_path, limit):
+    from src.services.resource_guards import cgroup_memory_bytes
+
+    assert cgroup_memory_bytes(cgroup(tmp_path, 2, limit, 1)) is None
+    assert cgroup_memory_bytes(tmp_path / "absent") is None
+
+
+def test_free_memory_is_the_smaller_of_host_and_container(tmp_path, monkeypatch):
+    class Host:
+        @staticmethod
+        def virtual_memory():
+            return type("Memory", (), {"available": 8 * 1024 * MIB})()
+
+    monkeypatch.setitem(sys.modules, "psutil", Host)
+    monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", cgroup(tmp_path, 2, 1024 * MIB, 200 * MIB))
+    assert available_memory_bytes() == 824 * MIB                      # Container limit, not the host's 8 GiB.
+    memory = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_wanted=False).get("memory")
+    assert memory.refuse_at == pytest.approx(824 * 0.9) and "mémoire libre" in memory.reason
+    monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", tmp_path / "absent")
+    assert available_memory_bytes() == 8 * 1024 * MIB                # Outside a container: the host figure.

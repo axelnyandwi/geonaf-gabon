@@ -61,6 +61,11 @@ class PairCandidate:
         return interval_days(self.earlier.acquired_at_utc, self.later.acquired_at_utc)
 
     @property
+    def pair_id(self) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """(earlier product ids, later product ids): the ``only`` argument of :func:`s2_pair_selection`."""
+        return self.earlier.product_ids, self.later.product_ids
+
+    @property
     def label(self) -> str:
         return f"{self.earlier.acquired_at_utc:%d/%m/%Y} → {self.later.acquired_at_utc:%d/%m/%Y}"
 
@@ -112,14 +117,15 @@ def plan_pairs(inventory: S2VegetationInventory, profile: TransitionProfile = S2
 
 def s2_pairs_key(data_dir, aoi_id: str, *, year: int = 2025, scientific_profile=None,
                  profile: TransitionProfile = S2_NDVI_TRANSITION_V0, max_pairs: int = MAX_EVALUATED_PAIRS,
-                 max_acquisitions: int = MAX_ACQUISITIONS) -> tuple:
+                 max_acquisitions: int = MAX_ACQUISITIONS, only=None) -> tuple:
     """Cheap cache key: the inventory key (zone digest, acquisitions, scientific and vegetation profiles), the
-    transition profile and the evaluation limit. Not an integrity check (digests are verified on a miss)."""
+    transition profile, the evaluation limit and the requested pair. Not an integrity check (digests are
+    verified on a miss)."""
     from src.indicators.s2_inventory import s2_inventory_key
 
     return ("s2-pairs-v1", s2_inventory_key(data_dir, aoi_id, year=year, scientific_profile=scientific_profile,
                                             profile=profile.vegetation, max_acquisitions=max_acquisitions),
-            profile.fingerprint, max_pairs)
+            profile.fingerprint, max_pairs, only)
 
 
 def _observation_groups(data_dir):
@@ -165,8 +171,11 @@ def _with(pair, status, reasons):
 def s2_pair_selection(data_dir, aoi_id: str, *, inventory: S2VegetationInventory | None = None,
                       year: int = 2025, scientific_profile=None,
                       profile: TransitionProfile = S2_NDVI_TRANSITION_V0, max_pairs: int = MAX_EVALUATED_PAIRS,
-                      limits=None, available_bytes: int | None = -1) -> S2PairSelection:
+                      limits=None, available_bytes: int | None = -1, only=None) -> S2PairSelection:
     """Transition pairs of the GEONAF zone ``aoi_id`` (see module docstring).
+
+    ``only`` = (earlier product ids, later product ids) restricts the selection
+    to that pair, chosen by the reader: same checks, guard and chain.
 
     ``inventory`` is the L3 inventory of the same zone and profiles (computed
     when omitted). Refused before any computation: an SCL policy accepting
@@ -206,6 +215,11 @@ def s2_pair_selection(data_dir, aoi_id: str, *, inventory: S2VegetationInventory
                   scl_policy=scientific_profile.scl_policy, change_threshold=scientific_profile.change_threshold,
                   profile=profile, max_pairs=max_pairs)
     candidates, rejected = plan_pairs(inventory, profile)
+    if only is not None:
+        chosen = lambda p: (p.earlier.product_ids, p.later.product_ids) == tuple(map(tuple, only))
+        candidates, rejected = tuple(filter(chosen, candidates)), tuple(filter(chosen, rejected))
+        if not candidates and not rejected:
+            raise ValueError("Paire demandée absente de l'inventaire.")
     notes = list(inventory.notes)
     if inventory.failures:
         notes.append(f"{len(inventory.failures)} acquisition(s) en échec dans l'inventaire : exclue(s) des paires.")

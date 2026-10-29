@@ -17,6 +17,14 @@ poste Windows. Ils ne sont validés ni scientifiquement ni opérationnellement.
 | OSM | emprise ≤ 0,5° (requête Overpass unique) ; volume estimé (`out count`) quand il est connu | volume inconnu ⇒ statut « inconnu », jamais supposé faible |
 | Import GeoJSON | taille du fichier **avant lecture**, puis validation stricte, sommets, parties | fichier trop gros refusé sans être analysé |
 
+**Mémoire libre (L4c, 29/10/2026)** : `available_memory_bytes` retient le minimum de la mémoire
+libre de l'hôte (`psutil`) et de la mémoire restante sous la limite cgroup du conteneur
+(`/sys/fs/cgroup/memory.max` − (`memory.current` − `inactive_file`) en v2, fichiers
+`memory.limit_in_bytes` / `memory.usage_in_bytes` / `total_inactive_file` en v1). Dans un conteneur,
+la mémoire de l'hôte ignore la limite du conteneur. Sans limite (`max`, valeur v1 géante) ou sans
+fichier lisible (Windows, macOS), seule la mémoire de l'hôte compte. Non vérifié sur un conteneur
+réel (Streamlit Cloud) : testé avec des fichiers cgroup simulés.
+
 Statuts : `ok`, `avertissement`, `inconnu`, `refus`. Une analyse est autorisée tant qu'aucun
 contrôle n'est en refus ; les avertissements et inconnues sont à afficher.
 

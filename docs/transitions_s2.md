@@ -1,6 +1,6 @@
 # Transitions de classe NDVI entre deux acquisitions Sentinel-2 — L4b
 
-Statut : **expérimental, fiabilité plafonnée à « faible »**. Non branché sur l'interface (L4c).
+Statut : **expérimental, fiabilité plafonnée à « faible »**. Interface : L4c (section ci-dessous).
 Moteur de calcul : L4a (`src/indicators/transitions_s2.py`, profil `S2_NDVI_TRANSITION_V0`).
 Connexion aux acquisitions réelles : `src/indicators/s2_pairs.py` ; assemblage :
 `build_s2_transition_indicators` (`src/indicators/assembly.py`).
@@ -122,3 +122,67 @@ Voir `TRANSITION_S2_LIMITS` : transitions de classe spectrale sans attribution d
 non calibré ; surface non commune non estimée ; conditions d'acquisition non neutralisées ;
 erreurs possibles du SCL ; comparabilité saisonnière non évaluée ; non comparable aux autres
 sources. Satellites et orbite relative déduits de l'identifiant produit (convention ESA).
+
+## Interface (L4c, `src/components/s2_transitions.py`)
+
+Sous-section « Comparaison temporelle sur surface commune » de « Végétation observée par
+Sentinel-2 » (page d'accueil), indépendante de l'estimation d'une date.
+
+- **Toujours visibles** : badges « Estimation », « Expérimental », « Non validée
+  scientifiquement » ; avertissement permanent (une transition de classe spectrale ne démontre ni
+  déforestation, ni reboisement, ni modification réelle de l'occupation du sol) ; explication
+  distincte du seuil de classe NDVI 0,4 et du seuil de variation ΔNDVI 0,10 des analyses
+  historiques, qui n'intervient pas ici.
+- **États** : avant activation (bouton « Comparer deux acquisitions », aucun calcul ni inventaire
+  au chargement) ; calcul en cours (indicateur d'attente) ; résultat disponible ; résultat non
+  disponible (motif, badge « Non publiable », aucun chiffre) ; erreur de traitement (message
+  public, sans chemin ni détail d'exception) ; garde-fou en refus (aucun calcul).
+- **Sélection** : liste des paires (paire par défaut = la plus récente publiable, 15/01 → 25/01
+  sur le paquet v3) ; paires écartées avec leur motif ; tableau triable de toutes les paires. Une
+  paire non calculée par l'évaluation par défaut n'affiche **aucun chiffre** tant que le lecteur
+  ne demande pas son calcul (« Calculer cette paire », `s2_pair_selection(only=…)`, mêmes
+  contrôles et même chaîne).
+- **En priorité** : surface commune (km², ha, % de la zone d'étude), surfaces NDVI ≥ 0,4 → < 0,4 et
+  < 0,4 → ≥ 0,4, ΔNDVI moyen pondéré, fiabilité et statut ; mention « zone d'étude, pas la commune
+  administrative ».
+- **Repliables** : quatre catégories (tableau triable, surfaces restées au-dessus / au-dessous,
+  solde net présenté comme différence de surfaces, ni perte ni gain réel) ; sensibilité 0,3 / 0,4 /
+  0,5 ; diagnostic par cellules de 1 km² (projection à surfaces équivalentes, attribution par le
+  centre du pixel, sans valeur de preuve de représentativité) ; provenance et limites.
+- **Cache** : `st.cache_resource` sur `s2_pairs_key` (zone, acquisitions, manifestes, profils,
+  limite, paire demandée) ; résultats agrégés seulement. L'inventaire L3 est réutilisé (même cache).
+- **Garde-fou** : `show_assessment` avant tout calcul, avec la mémoire libre de l'hôte ou du
+  conteneur (cgroup, voir `docs/resource_guards.md`).
+
+### Performances de l'interface (29/10/2026, Windows, AppTest ; `scripts/benchmark_s2_transitions_streamlit.py`)
+
+Un processus neuf par mesure ; AppTest exécute toute la page d'accueil (chiffres clés et analyse
+scientifique de paire comprises), sans navigateur. Détail :
+`docs/benchmarks/s2_transitions_streamlit_2026-10-29.json`.
+
+| Mesure (paquet v3) | Avant L4c | Après L4c |
+|---|---|---|
+| Chargement initial (4 mesures) | 12,48 · 12,51 · 12,55 · 13,92 s | 13,15 · 13,25 · 13,50 · 13,83 s |
+| Rendu initial de la sous-section seule | — | ≈ 1 ms |
+| Premier calcul (inventaire L3 + paire) | — | 6,2 à 7,7 s |
+| Changement de paire (paire écartée) | — | 0,42 s |
+| Autre session, même processus (cache) | — | 0,42 à 0,52 s |
+| Pic mémoire du processus | ≈ 397 Mio | ≈ 471 Mio |
+
+Données locales (tuiles complètes) : chargement 14,02 s avant, 11,71 s après ; premier calcul
+8,75 s ; changement de paire 0,45 s ; autre session 0,48 s ; pic 399 → 485 Mio.
+
+L'écart de chargement initial entre médianes (≈ 12,5 s → ≈ 13,4 s) ne vient pas de la
+sous-section, dont le rendu mesuré directement prend ≈ 1 ms : il relève de la variabilité du reste
+de la page (analyse de paire scientifique, poste partagé). Le pic mémoire après calcul (+ 74 à
+86 Mio) correspond à l'inventaire et au calcul de la paire, lancés seulement à la demande.
+
+### Contrôle mobile (Playwright, 390 × 844, paquet v3)
+
+Aucun élément ne dépasse la largeur de l'écran (contrôle des boîtes englobantes de la zone
+principale, hors défilement interne des tableaux) ; tri numérique vérifié sur le tableau des
+catégories (2,79 < 6,73 < 21,75 < 53,19). Corrigé pendant le contrôle : diagnostic par cellules
+affiché en liste (la colonne des valeurs sortait de l'écran), date d'ingestion formatée, libellés
+de la liste des paires raccourcis (tronqués sur téléphone). Les colonnes au-delà de la largeur
+d'un tableau (« Part de la surface commune », « Motif ») se lisent par défilement horizontal
+interne du tableau.

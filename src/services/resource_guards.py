@@ -185,14 +185,55 @@ def estimate_s2_tiles(geometry_wgs84) -> tuple[tuple[int, int, int], ...]:
     return tuple(squares)
 
 
+CGROUP_ROOT = Path("/sys/fs/cgroup")
+CGROUP_FILES = (("memory.max", "memory.current", "memory.stat", "inactive_file"),                       # v2
+                ("memory/memory.limit_in_bytes", "memory/memory.usage_in_bytes", "memory/memory.stat",
+                 "total_inactive_file"))                                                               # v1
+CGROUP_UNLIMITED = 1 << 60     # cgroup v1 writes a huge page-aligned number when no limit is set.
+
+
+def cgroup_memory_bytes(root: Path | None = None) -> int | None:
+    """Memory left under the container's cgroup limit (v2, else v1); None without a limit or when unreadable.
+
+    Usage minus inactive file cache (reclaimable), as container runtimes count
+    the working set; never below zero.
+    """
+    root = CGROUP_ROOT if root is None else root
+    for limit_name, usage_name, stat_name, inactive_key in CGROUP_FILES:
+        try:
+            limit = (root / limit_name).read_text(encoding="ascii").strip()
+            usage = int((root / usage_name).read_text(encoding="ascii").strip())
+        except (OSError, ValueError):
+            continue
+        if not limit.isdigit() or int(limit) >= CGROUP_UNLIMITED:
+            return None
+        inactive = 0
+        try:
+            for line in (root / stat_name).read_text(encoding="ascii").splitlines():
+                name, _, value = line.partition(" ")
+                if name == inactive_key:
+                    inactive = int(value)
+        except (OSError, ValueError):
+            pass
+        return max(0, int(limit) - max(0, usage - inactive))
+    return None
+
+
 def available_memory_bytes() -> int | None:
-    """Host free memory, or None when unreadable: the configured ceilings then apply alone."""
+    """Free memory: the smaller of the host's and of the container's cgroup limit, None when both are unreadable.
+
+    In a container the host figure ignores the cgroup limit; without any figure the configured ceilings apply
+    alone.
+    """
+    host = None
     try:
         import psutil
 
-        return int(psutil.virtual_memory().available)
+        host = int(psutil.virtual_memory().available)
     except (ImportError, OSError):
-        return None
+        pass
+    figures = [value for value in (host, cgroup_memory_bytes()) if value is not None]
+    return min(figures) if figures else None
 
 
 # --- Assessments -------------------------------------------------------------------------------------------
