@@ -5,7 +5,8 @@ name: demo-pack-linux
 # Test failures are also published as annotations (readable without signing in).
 on:
   push:
-    branches: [deploy/cloud-demo-akanda]
+    # ci/** : temporary validation branches (never deployed: the Cloud app follows deploy/cloud-demo-akanda).
+    branches: [deploy/cloud-demo-akanda, "ci/**"]
   workflow_dispatch:
 
 permissions:
@@ -81,6 +82,27 @@ jobs:
         run: >
           GEONAF_DEMO_PACK_DIR="$(cat pack_dir.txt)"
           python -m pytest -q -rs tests/test_demo_pack_science.py --junitxml=science.xml
+      - name: Key figures (L2) on the pack against the reference values
+        if: always()
+        run: |
+          python - <<'EOF'
+          import sys
+          from pathlib import Path
+          from src.services.territorial_indicators import compute_territorial_indicators, indicator_inputs
+          # Same values and tolerance as tests/test_akanda_territorial_indicators.py (local full data, skipped here).
+          expected = {"aoi.area_km2": 144.109, "landcover.land_km2": 107.439, "landcover.vegetation_km2": 82.575,
+                      "landcover.builtup_km2": 23.921, "osm.roads_km": 635.285, "osm.buildings_count": 36006,
+                      "osm.buildings_footprint_km2": 4.4795}
+          result = compute_territorial_indicators(indicator_inputs(Path(open("pack_dir.txt").read().strip()), "akanda"))
+          lines, failed = [], False
+          for key, reference in expected.items():
+              value = result.get(key).value
+              ok = value is not None and abs(value - reference) <= 1e-4 * abs(reference)
+              failed |= not ok
+              lines.append(f"{key}: {value!r} (référence {reference}) {'ok' if ok else 'ÉCART'}")
+          print(("::error" if failed else "::notice") + " title=Chiffres clés L2::" + "%0A".join(lines))
+          sys.exit(1 if failed else 0)
+          EOF
       - name: Full test suite
         if: always()
         run: >
