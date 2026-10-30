@@ -15,20 +15,24 @@ permissions:
 jobs:
   linux:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
       - name: Install pinned dependencies
         run: python -m pip install -r requirements.txt "pytest>=8,<10" "trustme>=1.2,<2"
       - name: Library versions
         run: |
           python - <<'EOF'
-          import sys, rasterio, pyproj, numpy
+          import platform, sys, rasterio, pyproj, numpy, streamlit, psutil
           line = (f"Python {sys.version.split()[0]} | rasterio {rasterio.__version__} GDAL {rasterio.__gdal_version__} "
-                  f"PROJ {rasterio.__proj_version__} | pyproj PROJ {pyproj.proj_version_str} | numpy {numpy.__version__}")
+                  f"PROJ {rasterio.__proj_version__} | pyproj PROJ {pyproj.proj_version_str} | numpy {numpy.__version__} "
+                  f"| streamlit {streamlit.__version__} | psutil {psutil.__version__} | {platform.platform()}")
           print(line)
           print(f"::notice title=Versions::{line}")
           EOF
@@ -103,6 +107,113 @@ jobs:
           print(("::error" if failed else "::notice") + " title=Chiffres clés L2::" + "%0A".join(lines))
           sys.exit(1 if failed else 0)
           EOF
+      # --- C2–C5 functional checks (may fail the job) --------------------------------------------------
+      - name: C2–C5 targeted tests (errors, shared caches, slots, cgroup, UX, NDVI key proof)
+        if: always()
+        run: >
+          GEONAF_DEMO_PACK_DIR="$(cat pack_dir.txt)"
+          python -m pytest -q -rs --junitxml=targeted.xml
+          tests/test_ui_errors.py tests/test_bounded_cache.py tests/test_compute_slots.py
+          tests/test_shared_results_streamlit.py tests/test_ndvi_cache_independence.py
+          tests/test_resource_guards.py tests/test_downloads.py tests/test_ux_home.py
+          tests/test_pair_selection_cache.py tests/test_external_sources_fetch.py
+      - name: JavaScript tests (map components)
+        if: always()
+        run: |
+          status=0
+          for test in tests/frontend/test_*.mjs; do
+            node "$test" > "js-$(basename "$test" .mjs).tap" 2>&1 || status=1
+            echo "::notice title=$test::$(grep -E '^# (pass|fail)' "js-$(basename "$test" .mjs).tap" | tr '\n' ' ')"
+          done
+          exit $status
+      - name: Streamlit pages on the pack (AppTest, no blocking error)
+        if: always()
+        run: |
+          GABON_GEOAI_DATA_DIR="$(cat pack_dir.txt)" GEONAF_DEMO_PACK=off python - <<'EOF'
+          import sys
+          from streamlit.testing.v1 import AppTest
+          app = AppTest.from_file("app.py", default_timeout=600).run()
+          problems = []
+          def check(label):
+              errors = [e.value[:200] for e in app.error] + [str(e.message)[:200] for e in app.exception]
+              problems.extend(f"{label}: {e}" for e in errors)
+              print(f"::notice title={label}::titres={[t.value for t in app.title]} en-têtes={[h.value for h in app.header]} "
+                    f"métriques={len(app.metric)} erreurs={len(errors)}")
+          check("accueil")
+          app.button(key="s2_vegetation_start_akanda").click().run(); check("accueil + L3")
+          app.button(key="s2_pairs_start_akanda").click().run(); check("accueil + L4")
+          for page in ("pages/1_Acquisitions_Sentinel2.py", "pages/2_Series_NDVI.py", "pages/3_Multisource.py",
+                       "pages/4_Territoires.py"):
+              app.switch_page(page).run(); check(page)
+          for line in problems:
+              print(f"::error title=Streamlit::{line}")
+          sys.exit(1 if problems else 0)
+          EOF
+      - name: Streamlit server boot (health endpoint)
+        if: always()
+        run: |
+          GABON_GEOAI_DATA_DIR="$(cat pack_dir.txt)" GEONAF_DEMO_PACK=off \
+            python -m streamlit run app.py --server.headless true --server.port 8599 --server.address 127.0.0.1 \
+            --browser.gatherUsageStats false > streamlit.log 2>&1 &
+          server=$!
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://127.0.0.1:8599/_stcore/health > /dev/null; then
+              echo "::notice title=Serveur Streamlit::santé OK après ${attempt} s"; kill "$server"; exit 0
+            fi
+            sleep 1
+          done
+          echo "::error title=Serveur Streamlit::pas de réponse santé en 60 s"; tail -40 streamlit.log
+          kill "$server" || true; exit 1
+      # --- Diagnostics and benchmarks (never fail the job; NOT representative of Streamlit Cloud) ---------
+      - name: cgroup memory detection on this runner (diagnostic)
+        if: always()
+        continue-on-error: true
+        run: |
+          echo "--- /proc/self/cgroup"; cat /proc/self/cgroup
+          echo "--- cgroup mounts"; grep -E ' - cgroup2? ' /proc/self/mountinfo || true
+          python - <<'EOF'
+          from src.services.resource_guards import available_memory_bytes, cgroup_memory
+          figure = cgroup_memory()
+          free = available_memory_bytes()
+          print(f"::notice title=cgroup (runner GitHub, pas Streamlit Cloud)::{figure} ; mémoire libre retenue par les "
+                f"garde-fous : {None if free is None else round(free / 2**20)} Mio")
+          EOF
+      - name: Memory benchmark with several sessions (indicative only)
+        if: always()
+        continue-on-error: true
+        run: |
+          GABON_GEOAI_DATA_DIR="$(cat pack_dir.txt)" GEONAF_DEMO_PACK=off python - <<'EOF'
+          # Indicative: a GitHub runner VM, not Streamlit Cloud (other machine, limits and load).
+          import threading, time
+          from unittest.mock import patch
+          import psutil
+          from streamlit.testing.v1 import AppTest
+          from src.services.bounded_cache import shared_cache
+          patch("src.components.resource_panel.available_memory_bytes", lambda: None).start()  # Comparable runs.
+          proc, mib = psutil.Process(), 2 ** 20
+          rss = lambda: round(proc.memory_info().rss / mib, 1)
+          rows = [f"avant le chargement de l'application : {rss()} Mio"]
+          peak, stop = [0], threading.Event()
+          def sample():
+              while not stop.is_set():
+                  peak[0] = max(peak[0], proc.memory_info().rss); stop.wait(0.05)
+          threading.Thread(target=sample, daemon=True).start()
+          sessions = [AppTest.from_file("app.py", default_timeout=600) for _ in range(3)]
+          start = time.perf_counter()
+          threads = [threading.Thread(target=s.run) for s in sessions]
+          [t.start() for t in threads]; [t.join() for t in threads]
+          rows.append(f"3 sessions simultanées (caches vides) : {time.perf_counter() - start:.1f} s, "
+                      f"RSS {rss()} Mio, pic échantillonné {round(peak[0] / mib, 1)} Mio, "
+                      f"erreurs {sum(len(s.error) + len(s.exception) for s in sessions)}")
+          extra = AppTest.from_file("app.py", default_timeout=600)
+          start = time.perf_counter(); extra.run()
+          rows.append(f"4e session (cache partagé) : {time.perf_counter() - start:.1f} s, RSS {rss()} Mio")
+          stats = shared_cache().stats()
+          rows.append(f"cache partagé : {stats.entries} entrées, {round(stats.retained_bytes / mib, 1)} Mio retenus "
+                      f"(budget {round(stats.max_bytes / mib)} Mio)")
+          stop.set()
+          print("::notice title=Mesures mémoire (indicatives, runner GitHub)::" + "%0A".join(rows))
+          EOF
       - name: Full test suite
         if: always()
         run: >
@@ -114,7 +225,7 @@ jobs:
           python - <<'EOF'
           import xml.etree.ElementTree as ET
           from pathlib import Path
-          for report in ("science.xml", "suite.xml"):
+          for report in ("science.xml", "targeted.xml", "suite.xml"):
               if not Path(report).is_file():
                   print(f"::warning title={report}::rapport absent")
                   continue
