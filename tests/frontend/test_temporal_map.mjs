@@ -129,7 +129,7 @@ test('mode help tracks thresholds, exact palette strip and local switching', () 
   const f = fixture(); const view = mountTemporalMap(f.container, f.payload, f.library);
   load(view); const root = f.container.children[0];
   const summary = root.querySelector('.temporal-mode-summary');
-  assert.match(summary.textContent, /Changements par catégories.*±0\.1/);
+  assert.match(summary.textContent, /Changements par catégories.*±0,10 en ΔNDVI/);  // French decimal comma.
   const firstLegend = root.querySelector('.temporal-panels').children[0].children[2];
   assert.equal(firstLegend.children[1].src, f.payload.layers[0].legend_image);
   const oldCamera = structuredClone(view.maps[0].camera);
@@ -139,7 +139,7 @@ test('mode help tracks thresholds, exact palette strip and local switching', () 
   assert.equal(view.diagnostics.mapsCreated, 3);
   assert.deepEqual(view.maps[0].camera, oldCamera);
   root.querySelector('.temporal-change').emit('change', {target: {value: 'classes'}});
-  assert.match(summary.textContent, /±0\.1/);
+  assert.match(summary.textContent, /±0,10/);
   view.dispose();
 });
 

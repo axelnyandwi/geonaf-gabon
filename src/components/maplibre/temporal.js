@@ -156,7 +156,7 @@ export function mountTemporalMap(container, payload, maplibre, { onError = () =>
     details.replaceChildren();
     const summary = root.querySelector('.temporal-mode-summary');
     summary.textContent = changeMode === 'classes'
-      ? `Changements par catégories : baisse, sous le seuil ou hausse, avec un seuil de ±${threshold} en ΔNDVI.`
+      ? `Changements par catégories : baisse, sous le seuil ou hausse, avec un seuil de ±${Number(threshold).toLocaleString('fr-FR', {minimumFractionDigits: 2})} en ΔNDVI.`
       : 'Intensité des changements (ΔNDVI) : valeur finale moins valeur initiale, sur une échelle fixe de −2 à +2.';
     const paragraph = text => { const p = document.createElement('p'); p.textContent = text; details.append(p); };
     if (changeMode === 'classes') {

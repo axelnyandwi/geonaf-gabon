@@ -236,5 +236,5 @@ def test_summary_reports_low_coverage_dates_from_the_manifest():
                               {"acquired_at_utc": "2025-01-20T09:33:21Z", "ingested_at_utc": "2026-10-22T11:50Z",
                                "quality": {"valid_coverage_percent": 2.7188, "trend_use": "excluded_low_coverage"}}]},
                           "external_layers": [], "limits": ["Limite."]})
-    assert "2025-01-20" in lines[1] and "2.72 %" in lines[1] and "exclue des tendances" in lines[1]
+    assert "20/01/2025" in lines[1] and "2,72 %" in lines[1] and "exclue des tendances" in lines[1]
     assert lines[-1] == "Limite."

@@ -299,6 +299,13 @@ def create_archive(directory: Path, destination: Path) -> str:
     return sha256_file(destination)
 
 
+def _french_day(iso_value: str) -> str:
+    """2025-01-20… → 20/01/2025 (display only); unparsable values are kept as they are."""
+    day = str(iso_value)[:10]
+    parts = day.split("-")
+    return "/".join(reversed(parts)) if len(parts) == 3 and all(part.isdigit() for part in parts) else day
+
+
 def pack_summary(manifest: dict) -> list[str]:
     """Public provenance lines, built from the pack manifest only (no hard-coded results)."""
     lines = [f"Paquet de démonstration {manifest.get('pack_id')} v{manifest.get('pack_version')} — "
@@ -308,9 +315,9 @@ def pack_summary(manifest: dict) -> list[str]:
         quality = item.get("quality", {})
         status = ("exclue des tendances (couverture exploitable très faible)"
                   if quality.get("trend_use") == "excluded_low_coverage" else "utilisable, non validée")
-        lines.append(f"Sentinel-2 acquis le {item['acquired_at_utc'][:10]} (ingéré le "
-                     f"{item['ingested_at_utc'][:10]}) : couverture valide "
-                     f"{quality.get('valid_coverage_percent', float('nan')):.2f} % — {status}.")
+        coverage = f"{quality.get('valid_coverage_percent', float('nan')):.2f}".replace(".", ",")  # French display.
+        lines.append(f"Sentinel-2 acquis le {_french_day(item['acquired_at_utc'])} (ingéré le "
+                     f"{_french_day(item['ingested_at_utc'])}) : couverture valide {coverage} % — {status}.")
     lines.append(f"Extraits sans rééchantillonnage de tuiles {sentinel2.get('tile', '')} vérifiées. "
                  f"{sentinel2.get('attribution', '')}.")
     for layer in manifest.get("external_layers", []):

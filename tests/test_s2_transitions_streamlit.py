@@ -1,4 +1,4 @@
-"""« Comparaison temporelle sur surface commune » on the home page with AppTest; offline."""
+"""« Transitions entre classes NDVI » (two-date comparison) on the home page with AppTest; offline."""
 
 import json
 from unittest.mock import Mock
@@ -8,13 +8,15 @@ import pytest
 from streamlit.testing.v1 import AppTest
 
 from src.services.local_preview import LocalPreviewError
+from src.components.s2_transitions import TITLE as SECTION_TITLE
+from src.components.temporal_guide import VARIATION_TITLE
 from tests.test_local_preview import local_data  # noqa: F401  (fixture)
 from tests.test_s2_pairs import FULL, NORTH, SOUTH, dates
 from tests.test_s2_vegetation_inventory import PACK
 from tests.test_territorial_indicators_streamlit import APP
 
 START, PAIR, COMPUTE = "s2_pairs_start_akanda", "s2_pairs_pair_akanda", "s2_pairs_compute_akanda"
-TITLE = "#### Comparaison temporelle sur surface commune"
+TITLE = f"### {SECTION_TITLE}"
 NBSP = "\u202f"
 
 
@@ -56,7 +58,7 @@ def part(app):
             continue
         if value == TITLE:
             inside = True
-        elif value == "Analyses scientifiques":
+        elif value == VARIATION_TITLE:
             inside = False
         elif inside:
             collected.append(value)
@@ -92,8 +94,8 @@ def test_nothing_is_computed_at_the_initial_load(local_data, home):
     text = part(app)
     assert "ne démontre ni une déforestation, ni un reboisement, ni une modification réelle" in text
     assert "Seuil de classe NDVI 0,4" in text and "Seuil de variation ΔNDVI 0,10" in text
-    assert "n'intervient pas dans cette comparaison" in text and "km²" not in text
-    assert [h.value for h in app.header] == ["Chiffres clés du territoire", "Analyses scientifiques"]
+    assert "n'intervient pas dans ces transitions" in text and "km²" not in text
+    assert [h.value for h in app.header] == ["Chiffres clés du territoire", "Comparer deux dates", VARIATION_TITLE]
 
 
 def test_explicit_start_gives_the_result_and_the_button_disappears(local_data, home):

@@ -229,10 +229,11 @@ def _details(result):
                    "couverture est incomplète ; « non évaluée » pour OpenStreetMap, dont la complétude est inconnue.")
         st.caption(f"Profil d'indicateurs {result.profile.profile_id} {result.profile.version} · empreinte "
                    f"{result.profile.fingerprint[:16]}… · zone d'étude sha256 {result.aoi_sha256[:16]}….")
-    with st.expander("Évolutions temporelles"):
-        st.caption("Aucune évolution n'est affichée sans deux référentiels strictement comparables.")
-        for note in result.temporal_notes:
-            st.caption(f"- {note}")
+    # Visible, not folded: a single WorldCover map or OSM snapshot never yields an evolution.
+    st.markdown("**Évolutions temporelles** — aucune évolution n'est affichée sans deux référentiels strictement "
+                "comparables.")
+    for note in result.temporal_notes:
+        st.caption(f"- {note}")
 
 
 def _credits(result):

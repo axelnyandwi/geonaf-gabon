@@ -75,6 +75,10 @@ def show_assessment(assessment, *, operation: str, prominent_warnings: bool = Fa
                  + " ".join(check.reason for check in assessment.refusals))
     elif status in (WARNING, UNKNOWN) and prominent_warnings:
         st.warning(f"{operation} : {VERDICTS[status]} de ressources. {reasons}")
+    if status == OK:  # Nothing to act on: one short line, the details stay available in the tooltip.
+        st.caption(f"Ressources vérifiées avant calcul ({operation}) : calcul autorisé.",
+                   help=f"{summary}. {NOTE} {assessment.note}")
+        return True
     st.caption(f"Garde-fous de ressources ({operation}) — verdict : **{VERDICTS[status]}**. "
                + (f"{reasons} " if status in (WARNING, UNKNOWN) else "") + f"{summary}. {NOTE} {assessment.note}")
     return status != REFUSED

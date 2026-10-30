@@ -6,6 +6,7 @@ from unittest.mock import Mock
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from src.components.temporal_guide import VARIATION_TITLE
 from tests.test_local_preview import local_data  # noqa: F401  (fixture)
 from tests.test_territorial_indicators import store_layers
 
@@ -38,7 +39,7 @@ def test_key_figures_come_first_and_keep_the_scientific_analyses(local_data, hom
     store_layers(local_data, "akanda")
     app, compute = home(local_data)
     assert not app.exception and not app.error
-    assert [h.value for h in app.header] == ["Chiffres clés du territoire", "Analyses scientifiques"]
+    assert [h.value for h in app.header] == ["Chiffres clés du territoire", "Comparer deux dates", VARIATION_TITLE]
     assert app.info[0].value.startswith("Zone d'étude Akanda") and "limite administrative" in app.info[0].value
     texts = _texts(app)
     assert any("Bâtiments cartographiés (OSM)" == t for t in texts)

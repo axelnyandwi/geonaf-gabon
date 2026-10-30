@@ -9,6 +9,22 @@ def _number(value, decimals):
     return f"{value:,.{decimals}f}".replace(",", "\u202f").replace(".", ",")
 
 
+def format_decimal(value, decimals):
+    """French decimal comma for any displayed number (thresholds, dB…)."""
+    return _number(value, decimals)
+
+
+def format_date(instant):
+    """French day/month/year for an ISO date string or a date/datetime."""
+    from datetime import date, datetime
+
+    if isinstance(instant, str):
+        instant = datetime.fromisoformat(instant.replace("Z", "+00:00")[:10]) if len(instant) >= 10 else None
+    if isinstance(instant, (date, datetime)):
+        return instant.strftime("%d/%m/%Y")
+    return "—"
+
+
 def format_pixels(value):
     if value is None or not isfinite(value):
         return "—"

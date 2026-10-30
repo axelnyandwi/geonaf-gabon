@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 from src.components.errors import show_internal_error
+from src.components.formatting import format_decimal
 from src.geo.scientific_profile import (
     ADVANCED_BOUNDS, ADVANCED_SCL_POLICIES, REFERENCE_PROFILES, SENSITIVITY_PRESET, advanced_configuration,
     standard_configuration,
@@ -49,8 +50,8 @@ def choose_analysis(aoi_id: str, prefix: str):
     reference = REFERENCE_PROFILES[aoi_id]
     if mode == MODES[0]:
         configuration = standard_configuration(aoi_id)
-        st.caption(f"Profil de référence **{reference.label}** · seuil ΔNDVI {reference.change_threshold:g} · "
-                   f"couverture minimale {reference.min_comparable_coverage_percent:g} % · masque SCL "
+        st.caption(f"Profil de référence **{reference.label}** · seuil ΔNDVI {format_decimal(reference.change_threshold, 2)} · "
+                   f"couverture minimale {format_decimal(reference.min_comparable_coverage_percent, 0)} % · masque SCL "
                    f"« {SCL_LABELS.get(reference.scl_policy, reference.scl_policy)} ». "
                    f"Statut : expérimental, non validé. {reference.rationale}")
         return configuration
@@ -81,7 +82,7 @@ def choose_analysis(aoi_id: str, prefix: str):
                                     "valeurs autorisées.")
         return None
     if configuration.overrides:
-        changes = " ; ".join(f"{name} = {value:g}" if isinstance(value, float) else f"{name} = {value}"
+        changes = " ; ".join(f"{name} = {format_decimal(value, 2)}" if isinstance(value, float) else f"{name} = {value}"
                              for name, value in configuration.overrides)
         st.warning(f"Configuration avancée **non validée** dérivée de {reference.profile_id} : {changes}. "
                    f"Version {configuration.effective.version} · empreinte "

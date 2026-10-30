@@ -119,7 +119,7 @@ def test_streamlit_renders_local_results_without_private_paths(local_data, monke
     assert not app.error
     assert len(app.metric) == 4
     assert len(app.date_input) == 2 and [box.key for box in app.selectbox] == ["territory"]
-    assert app.metric[0].value == "50,00 %"
+    assert app.metric[1].value == "50,00 %"            # Part of the study zone observed at both dates.
     assert "limite administrative" in app.info[0].value
     for kind in (app.caption, app.info, app.warning):
         assert all(str(local_data) not in element.value for element in kind)

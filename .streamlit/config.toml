@@ -8,3 +8,11 @@
 showErrorDetails = "none"
 # No "ask Google / ChatGPT" links, which would send error text to external services.
 showErrorLinks = false
+
+[theme.light]
+# Badge text colours (light theme only): the defaults gave 3,2:1 (orange) and 3,5:1 (grey) on their
+# 10 % tinted backgrounds, below WCAG AA 4,5:1 for 14 px text. Measured 30/10/2026: orange 5,5:1,
+# grey 6,0:1, green 5,6:1. Background tints and the dark theme are unchanged.
+orangeTextColor = "#a14d06"
+grayTextColor = "#55575f"
+greenTextColor = "#13713a"

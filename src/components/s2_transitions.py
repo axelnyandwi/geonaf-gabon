@@ -23,6 +23,7 @@ from src.components.formatting import (
 )
 from src.components.resource_panel import assess_aoi_file, show_assessment
 from src.components.s2_vegetation import VEGETATION_PROFILE, YEAR, cached_inventory
+from src.components.temporal_guide import TRANSITIONS_TITLE, VARIATION_TITLE
 from src.indicators.assembly import build_s2_transition_indicators
 from src.indicators.presentation import attribution, fr
 from src.indicators.provenance import parse_utc
@@ -34,7 +35,7 @@ from src.indicators.s2_pairs import (
 from src.services.compute_slots import heavy_computation
 
 TRANSITION_PROFILE = S2_NDVI_TRANSITION_V0
-TITLE = "Comparaison temporelle sur surface commune"
+TITLE = TRANSITIONS_TITLE
 NO_CAUSE = ("Une transition de classe spectrale ne démontre ni une déforestation, ni un reboisement, ni une "
             "modification réelle de l'occupation du sol : elle indique seulement qu'un pixel observé aux deux dates "
             "est passé d'un côté à l'autre d'un seuil NDVI.")
@@ -76,9 +77,8 @@ def _thresholds(aoi_id):
         f"**Seuil de classe NDVI {fr(TRANSITION_PROFILE.threshold)}** — à chaque date, un pixel observé est classé "
         f"NDVI ≥ {fr(TRANSITION_PROFILE.threshold)} ou NDVI < {fr(TRANSITION_PROFILE.threshold)} ; une transition "
         f"est un changement de classe entre les deux dates. Hypothèse de travail non calibrée.  \n"
-        f"**Seuil de variation ΔNDVI {fr(variation, 2)}** — utilisé par les analyses scientifiques historiques "
-        f"(section « Analyses scientifiques ») pour qualifier une variation du NDVI entre deux dates ; il "
-        "n'intervient pas dans cette comparaison.")
+        f"**Seuil de variation ΔNDVI {fr(variation, 2)}** — utilisé par la section « {VARIATION_TITLE} » pour "
+        "qualifier une variation continue du NDVI entre deux dates ; il n'intervient pas dans ces transitions.")
 
 
 def _card(caption, value, unit, lines):
@@ -254,7 +254,7 @@ def _request(requested_key, pair_id):
 
 
 def show_s2_transitions(data_dir, aoi_id: str) -> None:
-    st.markdown(f"#### {TITLE}")
+    st.markdown(f"### {TITLE}")  # H3 under the H2 « Comparer deux dates » (no skipped level).
     st.markdown(":violet-badge[Estimation] :red-badge[Expérimental] :gray-badge[Non validée scientifiquement]")
     st.warning(NO_CAUSE)
     _thresholds(aoi_id)

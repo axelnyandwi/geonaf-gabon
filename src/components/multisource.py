@@ -9,7 +9,7 @@ import pandas as pd
 import streamlit as st
 
 from src.components.errors import show_error, show_internal_error
-from src.components.formatting import format_ndvi, format_percent, format_pixels
+from src.components.formatting import format_decimal, format_ndvi, format_percent, format_pixels
 from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
 from src.geo.aoi_identity import load_aoi_identity
 from src.services.bounded_cache import shared_cache
@@ -327,13 +327,19 @@ def _indicators(result):
     observation = result.observation
     metrics = st.columns(5)
     metrics[0].metric("NDVI médian (pixels valides)", format_ndvi(observation.summary.median))
-    metrics[1].metric("Couverture NDVI valide / AOI", f"{format_percent(observation.valid_coverage_percent)} %")
+    metrics[1].metric("Part de la zone d'étude observée", f"{format_percent(observation.valid_coverage_percent)} %",
+                      help="Pixels Sentinel-2 valides (ni nuage, ni ombre, ni pixel exclu) à cette date.")
     buildings = next((i for i in result.infrastructure if i.group == "Bâtiments"), None)
     roads = next((i for i in result.infrastructure if i.group == "Routes et voies"), None)
-    metrics[2].metric("Bâtiments OSM (AOI)", format_pixels(buildings.features) if buildings else "—")
-    metrics[3].metric("Voies OSM (km, AOI)", f"{roads.length_km:,.0f}".replace(",", " ") if roads else "—")
+    metrics[2].metric("Bâtiments OSM touchant la zone", format_pixels(buildings.features) if buildings else "—",
+                      help="Objets OpenStreetMap qui recoupent la zone d'étude. Les chiffres clés de l'accueil "
+                           "rattachent chaque bâtiment par son point représentatif : les deux totaux peuvent "
+                           "différer de quelques bâtiments situés en bordure.")
+    metrics[3].metric("Voies OSM (km)", format_decimal(roads.length_km, 0) if roads else "—",
+                      help="Longueur des tronçons cartographiés découpés à la zone d'étude.")
     vv = next((layer for layer in result.radar if layer.polarization == "VV"), None)
-    metrics[4].metric("VV médian (dB)", f"{vv.median_db:.1f}" if vv else "—")
+    metrics[4].metric("Radar VV médian (dB)", format_decimal(vv.median_db, 1) if vv else "—",
+                      help="Rétrodiffusion Sentinel-1 : rugosité et humidité de surface, pas la végétation.")
 
 
 def _landcover_tab(result, chosen):
