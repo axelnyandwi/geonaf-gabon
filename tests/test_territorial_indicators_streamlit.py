@@ -1,6 +1,7 @@
 """« Chiffres clés du territoire » on the home page; offline, synthetic stored layers."""
 
 from pathlib import Path
+import re
 from unittest.mock import Mock
 
 import pytest
@@ -66,7 +67,8 @@ def test_missing_sources_are_stated_without_values(local_data, home):
     texts = _texts(app)
     assert any("Sources absentes localement : ESA WorldCover, OpenStreetMap" in t for t in texts)
     assert sum("Non disponible" in t for t in app.markdown.values) == 7   # Every card except the study zone area.
-    assert not any("—" in t for t in app.markdown.values if "font-size:1.7rem" in t)
+    # No card value shown as the "-" placeholder (CSS such as "font-size" also contains hyphens).
+    assert not any(re.search(r">\s*-\s*<", t) for t in app.markdown.values if "font-size:1.7rem" in t)
 
 
 def test_cards_show_hectares_named_denominators_nature_and_provenance(local_data, home):
@@ -112,8 +114,8 @@ def test_land_density_names_both_sources_with_their_own_dates(local_data, home, 
     assert not app.exception and not app.error
     captions = [c.value for c in app.caption]
     ratio = next(c for c in captions if c.startswith("Numérateur"))
-    assert f"Numérateur : bâtiments OpenStreetMap — Base OpenStreetMap au {shown} UTC" in ratio
-    assert "Dénominateur : surface terrestre ESA WorldCover 10 m 2021 (v200) — carte 2021" in ratio
+    assert f"Numérateur : bâtiments OpenStreetMap - Base OpenStreetMap au {shown} UTC" in ratio
+    assert "Dénominateur : surface terrestre ESA WorldCover 10 m 2021 (v200) - carte 2021" in ratio
     assert "ce rapport ne décrit pas une même année d'observation" in ratio
     assert sum(c.startswith("Numérateur") for c in captions) == 1          # Only the land density card.
     details = " ".join(app.markdown.values)
@@ -133,7 +135,7 @@ def test_tables_keep_full_precision_numbers_for_sorting(local_data, home):
     assert dict(zip(frame["Regroupement"], frame["Surface (km²)"])) == expected        # Not rounded.
     methods = next(e for e in app.expander if e.label == "Méthodes, dates, sources et limites")
     assert str(methods.dataframe[0].value["Couverture (%)"].dtype) == "float64"
-    assert any(c.value == "« — » : sans objet ou non disponible." for c in methods.caption)
+    assert any(c.value == "« - » : sans objet ou non disponible." for c in methods.caption)
 
 
 def _vegetation(data_dir):

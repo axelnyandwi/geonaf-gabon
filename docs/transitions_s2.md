@@ -1,4 +1,4 @@
-# Transitions de classe NDVI entre deux acquisitions Sentinel-2 — L4b
+# Transitions de classe NDVI entre deux acquisitions Sentinel-2 - L4b
 
 Statut : **expérimental, fiabilité plafonnée à « faible »**. Interface : L4c (section ci-dessous).
 Moteur de calcul : L4a (`src/indicators/transitions_s2.py`, profil `S2_NDVI_TRANSITION_V0`).
@@ -57,7 +57,7 @@ médianes par date) et surface ayant changé de classe (`s2.pair.class_transitio
 en quatre transitions avec sensibilité 0,3 / 0,4 / 0,5 et solde, qui n'est pas un gain ni une
 perte de végétation). Limites : `TRANSITION_S2_LIMITS` (`src/indicators/provenance.py`).
 
-## Valeurs de référence — paquet v3, zone d'étude Akanda (non-régression)
+## Valeurs de référence - paquet v3, zone d'étude Akanda (non-régression)
 
 Figées dans `tests/test_s2_pairs.py` avec la tolérance relative 10⁻¹² des autres références du
 paquet (sommes float64 de poids projetés ; écart Windows/Linux observé ≤ 6·10⁻¹⁵). Calculées le
@@ -95,8 +95,8 @@ Détail : `docs/benchmarks/transitions_s2_2026-10-29.json`.
 |---|---|---|---|---|---|---|
 | Paquet v3 / Akanda | 4,53 s | 0,04 ms | 3,93 / 2,80 s | 98,8 Mio | 268,5 Mio (122,6) | 7 660 o |
 | Local / Akanda | 5,32 s | 0,03 ms | 4,91 / 3,75 s | 98,8 Mio | 282,5 Mio (122,7) | 7 660 o |
-| Local / Libreville | 5,21 s | 0,04 ms | aucune paire calculée | — | 122,8 Mio | 6 237 o |
-| Local / Owendo | 5,44 s | 0,04 ms | aucune paire calculée | — | 122,9 Mio | 6 222 o |
+| Local / Libreville | 5,21 s | 0,04 ms | aucune paire calculée | - | 122,8 Mio | 6 237 o |
+| Local / Owendo | 5,44 s | 0,04 ms | aucune paire calculée | - | 122,9 Mio | 6 222 o |
 
 Libreville (bornes 0,14 / 16,59 / 0,14 %) et Owendo (0,12 / 0,00 / 0,00 %) : aucune paire
 n'atteint 30 %, toutes sont écartées sans calcul. « Chaud » : poids surfaciques en cache et
@@ -163,10 +163,10 @@ scientifique de paire comprises), sans navigateur. Détail :
 | Mesure (paquet v3) | Avant L4c | Après L4c |
 |---|---|---|
 | Chargement initial (4 mesures) | 12,48 · 12,51 · 12,55 · 13,92 s | 13,15 · 13,25 · 13,50 · 13,83 s |
-| Rendu initial de la sous-section seule | — | ≈ 1 ms |
-| Premier calcul (inventaire L3 + paire) | — | 6,2 à 7,7 s |
-| Changement de paire (paire écartée) | — | 0,42 s |
-| Autre session, même processus (cache) | — | 0,42 à 0,52 s |
+| Rendu initial de la sous-section seule | - | ≈ 1 ms |
+| Premier calcul (inventaire L3 + paire) | - | 6,2 à 7,7 s |
+| Changement de paire (paire écartée) | - | 0,42 s |
+| Autre session, même processus (cache) | - | 0,42 à 0,52 s |
 | Pic mémoire du processus | ≈ 397 Mio | ≈ 471 Mio |
 
 Données locales (tuiles complètes) : chargement 14,02 s avant, 11,71 s après ; premier calcul

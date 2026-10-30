@@ -6,7 +6,7 @@ fingerprint identifies the **area** instead, so that layers retrieved for one
 geometry are never reused for another one under the same identifier:
 
 1. every feature must be a valid, non-empty Polygon/MultiPolygon with a CRS
-   and finite WGS84 coordinates — invalid input is refused, never repaired;
+   and finite WGS84 coordinates - invalid input is refused, never repaired;
 2. features are reprojected to EPSG:4326 and dissolved (``union_all``);
 3. the union is put in canonical form (``shapely.normalize``: ring start and
    orientation, part order) and coordinates are rounded to 1e-7° (≈ 1 cm);

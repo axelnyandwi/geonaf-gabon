@@ -1,6 +1,6 @@
 # GEONAF
 
-## Prototype Streamlit local V0.1 — Akanda
+## Prototype Streamlit local V0.1 - Akanda
 
 Depuis la racine du dépôt, avec l’environnement installé :
 

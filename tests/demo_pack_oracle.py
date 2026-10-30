@@ -1,7 +1,7 @@
 """Full-tile vs demo-pack comparison, shared by the regression test and the report script.
 
-Runs every scientific entry point twice — on the verified full Sentinel-2 tiles
-in ``data/`` and on the subsets of the demo pack — and compares the results
+Runs every scientific entry point twice - on the verified full Sentinel-2 tiles
+in ``data/`` and on the subsets of the demo pack - and compares the results
 field by field. Only fields that legitimately describe the input files are
 skipped (paths, input raster dimensions, computation timestamps).
 

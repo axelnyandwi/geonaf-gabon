@@ -5,8 +5,8 @@ Usage : python scripts/benchmark_s2_transitions_streamlit.py [data_dir ...] [--o
 
 Each mode runs in a fresh process so that every cache starts cold:
 
-* before — home page with the comparison sub-section replaced by a no-op (state before L4c);
-* after  — real home page: initial load, explicit start (first pair computation, L3 inventory
+* before - home page with the comparison sub-section replaced by a no-op (state before L4c);
+* after  - real home page: initial load, explicit start (first pair computation, L3 inventory
   included since it is not computed yet), change of pair (rerun), then a second session in the
   same process starting the comparison (cache shared by sessions).
 

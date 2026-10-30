@@ -131,7 +131,7 @@ class DownloadQueue:
         if isinstance(error, TransferAborted):
             return str(error)
         if isinstance(error, NetworkError):
-            return (f"Réseau {error.category}, HTTP {error.status_code or '—'}. "
+            return (f"Réseau {error.category}, HTTP {error.status_code or '-'}. "
                     "Vérifier TLS, accès CDSE ou réessayer après temporisation.")
         return "Validation ou accès local impossible ; fichiers conservés. Vérifier actifs, intégrité et accès CDSE."
 

@@ -30,7 +30,7 @@ EXPECTED_KINDS = {
 
 
 @pytest.mark.parametrize("km2, text", [(1.0, "100"), (82.58, "8 258"), (0.012, "1,20"), (0.0, "0,00"),
-                                       (None, "—")])
+                                       (None, "-")])
 def test_hectares_are_a_display_of_km2(km2, text):
     assert format_hectares_from_km2(km2) == text
 
@@ -111,7 +111,7 @@ def test_french_table_formats_display_only_and_keeps_numbers():
     styler = french_table(frame, {"Surface (km²)": 2, "Part (%)": 2, "Absente": 1})
     text = styler.to_string()
     assert "1 234,57" in text and "0,50" in text and "57,30" in text and "100,00" in text
-    assert text.count("—") == 2 and "." not in text.replace("Surface (km²)", "")    # No decimal point left.
+    assert text.count("-") == 2 and "." not in text.replace("Surface (km²)", "")    # No decimal point left.
     assert styler.data is frame and frame["Surface (km²)"].iloc[0] == 1234.5678       # Numbers untouched.
     assert str(frame["Surface (km²)"].dtype) == "float64"                             # Numeric sort preserved.
 

@@ -103,7 +103,7 @@ def test_authorised_resource_check_is_one_short_line_with_details_in_its_tooltip
 
 
 def test_absence_of_evolution_is_visible_without_unfolding(home):
-    assert any(t.startswith("**Évolutions temporelles** — aucune évolution") for t in _visible(home))
+    assert any(t.startswith("**Évolutions temporelles** - aucune évolution") for t in _visible(home))
 
 
 def _contrast(foreground, background):

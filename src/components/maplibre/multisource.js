@@ -69,7 +69,7 @@ export function mountMultisourceMap(container, payload, maplibre, onError = () =
     for (const raster of payload.rasters) {
       if (!state[raster.id]) continue;
       const block = el("div", "gms-legend-block");
-      block.append(el("strong", "", `${raster.label} — ${raster.nature}`));
+      block.append(el("strong", "", `${raster.label} - ${raster.nature}`));
       if (raster.legend.kind === "gradient") {
         const row = el("div", "gms-legend-row");
         const bar = el("span", "gms-gradient");
@@ -88,7 +88,7 @@ export function mountMultisourceMap(container, payload, maplibre, onError = () =
     }
     if (state.osm && payload.vector_legend.length) {
       const block = el("div", "gms-legend-block");
-      block.append(el("strong", "", "OpenStreetMap — Base collaborative"));
+      block.append(el("strong", "", "OpenStreetMap - Base collaborative"));
       for (const item of payload.vector_legend) {
         const row = el("div", "gms-legend-row");
         const swatch = el("span", "gms-swatch");

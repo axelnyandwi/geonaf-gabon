@@ -17,11 +17,11 @@ from src.services.local_preview import _manifest, manifest_path
 
 LOCAL_STATE_LABELS = {
     "absent": "Absent localement",
-    "manifest_present": "Présent — manifeste strict, fichiers à revérifier avant analyse",
-    "subset_present": "Extrait de démonstration — dérivé d'une tuile vérifiée, fichiers à revérifier",
-    "partial": "Partiel — fichiers ou manifeste manquants",
-    "unverified": "Non vérifié — manifeste ou chemins invalides",
-    "ambiguous": "Ambigu — plusieurs produits locaux pour cette identité",
+    "manifest_present": "Présent - manifeste strict, fichiers à revérifier avant analyse",
+    "subset_present": "Extrait de démonstration - dérivé d'une tuile vérifiée, fichiers à revérifier",
+    "partial": "Partiel - fichiers ou manifeste manquants",
+    "unverified": "Non vérifié - manifeste ou chemins invalides",
+    "ambiguous": "Ambigu - plusieurs produits locaux pour cette identité",
 }
 
 

@@ -60,12 +60,12 @@ def _charts(result):
     tooltip = [alt.Tooltip("Date (UTC):N"),
                alt.Tooltip("Statistique:N"), alt.Tooltip("NDVI:Q", format=".4f")]
     y = alt.Y("NDVI:Q", scale=alt.Scale(domain=[-1, 1]), title="NDVI")
-    st.markdown("**NDVI sur pixels communs** — seule courbe dont les dates portent sur les mêmes pixels.")
+    st.markdown("**NDVI sur pixels communs** - seule courbe dont les dates portent sur les mêmes pixels.")
     st.altair_chart(alt.Chart(common).mark_line(point=True).encode(
         x=x, y=y, color=alt.Color("Statistique:N", legend=legend),
         strokeDash=alt.StrokeDash("Statistique:N", legend=legend), tooltip=tooltip).interactive(),
         width="stretch")
-    st.markdown("**NDVI propre à chaque date** — points non reliés : pixels différents, non comparables entre dates.")
+    st.markdown("**NDVI propre à chaque date** - points non reliés : pixels différents, non comparables entre dates.")
     st.altair_chart(alt.Chart(own).mark_point(filled=True, size=70).encode(
         x=x, y=y, color=alt.Color("Statistique:N", legend=legend), shape=alt.Shape("Retenue:N"),
         tooltip=tooltip + [alt.Tooltip("Retenue:N")]).interactive(), width="stretch")
@@ -75,7 +75,7 @@ def _charts(result):
         color=alt.Color("Retenue:N"),
         tooltip=[alt.Tooltip("Date (UTC):N"), alt.Tooltip("coverage:Q", title="Couverture (%)", format=".2f")])
     rule = alt.Chart(pd.DataFrame({"minimum": [minimum]})).mark_rule(strokeDash=[4, 4]).encode(y="minimum:Q")
-    st.markdown(f"**Couverture valide par date** — ligne : minimum du profil ({minimum:g} %).")
+    st.markdown(f"**Couverture valide par date** - ligne : minimum du profil ({minimum:g} %).")
     st.altair_chart((bars + rule).interactive(), width="stretch")
 
 
@@ -163,7 +163,7 @@ def show_ndvi_series(data_dir):
     metrics[0].metric("Dates retenues", f"{len(retained)} / {len(result.dates)}")
     metrics[1].metric("Couverture pixels communs / AOI", f"{format_percent(result.common_coverage_percent)} %")
     metrics[2].metric("Pixels communs", format_pixels(result.common_pixel_count))
-    metrics[3].metric("Intervalle max. entre dates retenues", f"{format_percent(max(between))} j" if between else "—")
+    metrics[3].metric("Intervalle max. entre dates retenues", f"{format_percent(max(between))} j" if between else "-")
     _charts(result)
     st.dataframe([{
         "Acquisition (UTC)": f"{item.acquired_at_utc:%d/%m/%Y %H:%M:%S}", "Produit": item.product_id,

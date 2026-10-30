@@ -19,9 +19,9 @@ perte, et les pixels des extraits étaient identiques aux fenêtres des tuiles.
 
 ## Portée
 
-- Concernés : toutes les analyses calculées sur tuiles JP2 complètes —
+- Concernés : toutes les analyses calculées sur tuiles JP2 complètes -
   NDVI d'une date, paire temporelle, série NDVI, cartes interactives, exports
-  GeoTIFF, jointures WorldCover — et le contrôle qualité SCL de `src/data/quality.py`.
+  GeoTIFF, jointures WorldCover - et le contrôle qualité SCL de `src/data/quality.py`.
 - Non concernés : indicateurs territoriaux (WorldCover, OSM), Sentinel-1,
   rasters déjà en GeoTIFF.
 - Fichiers déjà écrits par l'ancien code et non modifiés : les 25 fichiers

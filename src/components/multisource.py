@@ -141,7 +141,7 @@ def show_map(payload, key):
 
 
 def _nature(label):
-    st.caption(f"**Nature : {label}** — {NATURE_HELP[label]}")
+    st.caption(f"**Nature : {label}** - {NATURE_HELP[label]}")
 
 
 def _retrieval_panel(data_dir, identity, month):
@@ -331,14 +331,14 @@ def _indicators(result):
                       help="Pixels Sentinel-2 valides (ni nuage, ni ombre, ni pixel exclu) à cette date.")
     buildings = next((i for i in result.infrastructure if i.group == "Bâtiments"), None)
     roads = next((i for i in result.infrastructure if i.group == "Routes et voies"), None)
-    metrics[2].metric("Bâtiments OSM touchant la zone", format_pixels(buildings.features) if buildings else "—",
+    metrics[2].metric("Bâtiments OSM touchant la zone", format_pixels(buildings.features) if buildings else "-",
                       help="Objets OpenStreetMap qui recoupent la zone d'étude. Les chiffres clés de l'accueil "
                            "rattachent chaque bâtiment par son point représentatif : les deux totaux peuvent "
                            "différer de quelques bâtiments situés en bordure.")
-    metrics[3].metric("Voies OSM (km)", format_decimal(roads.length_km, 0) if roads else "—",
+    metrics[3].metric("Voies OSM (km)", format_decimal(roads.length_km, 0) if roads else "-",
                       help="Longueur des tronçons cartographiés découpés à la zone d'étude.")
     vv = next((layer for layer in result.radar if layer.polarization == "VV"), None)
-    metrics[4].metric("Radar VV médian (dB)", format_decimal(vv.median_db, 1) if vv else "—",
+    metrics[4].metric("Radar VV médian (dB)", format_decimal(vv.median_db, 1) if vv else "-",
                       help="Rétrodiffusion Sentinel-1 : rugosité et humidité de surface, pas la végétation.")
 
 
@@ -406,7 +406,7 @@ def _radar_tab(result, chosen):
     from src.data.sentinel1 import RADIOMETRY
 
     st.caption(f"Radiométrie ({RADIOMETRY['version']}) : γ⁰ aplani du relief en puissance linéaire, "
-               f"{RADIOMETRY['db_formula']} — {RADIOMETRY['status']}. {RADIOMETRY['inconsistency']} "
+               f"{RADIOMETRY['db_formula']} - {RADIOMETRY['status']}. {RADIOMETRY['inconsistency']} "
                "Valeurs descriptives : aucune qualification quantitative validée.")
     with st.expander("Sources de la convention radar"):
         for source in RADIOMETRY["evidence"]:

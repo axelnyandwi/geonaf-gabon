@@ -1,4 +1,4 @@
-# Garde-fous de ressources — lot B
+# Garde-fous de ressources - lot B
 
 `src/services/resource_guards.py` estime le coût d'une analyse **avant** de la lancer (sans
 Streamlit ni réseau) et motive chaque refus. Le module n'est pas encore appelé par les pages
@@ -36,8 +36,8 @@ contrôle n'est en refus ; les avertissements et inconnues sont à afficher.
 | Mémoire estimée | > 1 Gio, ou > 50 % de la mémoire libre | > 2 Gio, ou > 90 % de la mémoire libre |
 | Tuiles Sentinel-2 | > 1 | > 4 |
 | Volume OSM estimé | > 32 Mio | > 64 Mio |
-| Emprise OSM | — | > 0,5° (découpage en tuiles non disponible) |
-| Import GeoJSON | — | > 5 Mio, > 50 000 sommets, > 1 000 parties |
+| Emprise OSM | - | > 0,5° (découpage en tuiles non disponible) |
+| Import GeoJSON | - | > 5 Mio, > 50 000 sommets, > 1 000 parties |
 
 Les limites incohérentes (avertissement > refus, valeurs négatives ou non numériques) sont
 refusées. Leur empreinte (`fingerprint`) accompagne chaque évaluation.
@@ -53,7 +53,7 @@ Libreville lus en mémoire depuis geoBoundaries (≈ 650 Ko), écrits dans un do
 | NDVI 1 date, Libreville gbOpen | 3 745 814 | 122 Mio | 292 Mio | 168 Mio | 47 |
 | NDVI 1 date, Libreville gbHumanitarian | 4 798 382 | 156 Mio | 336 Mio | 212 Mio | 46 |
 | Paire de dates, Akanda | 1 442 401 | 103 Mio | 267 Mio | 143 Mio | 104 |
-| Chiffres clés, Akanda (WorldCover + OSM 24,3 Mo) | — | 175 Mio | 526 Mio | 402 Mio | — |
+| Chiffres clés, Akanda (WorldCover + OSM 24,3 Mo) | - | 175 Mio | 526 Mio | 402 Mio | - |
 
 - `tracemalloc` ne voit qu'environ 55 % de la mémoire réelle des traitements raster (tampons
   natifs GDAL/rasterio non tracés) : seule la mémoire du processus sert à la calibration.

@@ -74,10 +74,10 @@ def _thresholds(aoi_id):
 
     variation = REFERENCE_PROFILES[aoi_id].change_threshold
     st.caption(
-        f"**Seuil de classe NDVI {fr(TRANSITION_PROFILE.threshold)}** — à chaque date, un pixel observé est classé "
+        f"**Seuil de classe NDVI {fr(TRANSITION_PROFILE.threshold)}** - à chaque date, un pixel observé est classé "
         f"NDVI ≥ {fr(TRANSITION_PROFILE.threshold)} ou NDVI < {fr(TRANSITION_PROFILE.threshold)} ; une transition "
         f"est un changement de classe entre les deux dates. Hypothèse de travail non calibrée.  \n"
-        f"**Seuil de variation ΔNDVI {fr(variation, 2)}** — utilisé par la section « {VARIATION_TITLE} » pour "
+        f"**Seuil de variation ΔNDVI {fr(variation, 2)}** - utilisé par la section « {VARIATION_TITLE} » pour "
         "qualifier une variation continue du NDVI entre deux dates ; il n'intervient pas dans ces transitions.")
 
 
@@ -150,7 +150,7 @@ def _transitions_table(pair):
     st.caption("Les quatre catégories partagent la surface commune sans recouvrement ; une valeur égale au seuil "
                "compte comme ≥ seuil.")
     for label, _, definition in rows:
-        st.caption(f"**{label}** — {definition}")
+        st.caption(f"**{label}** - {definition}")
     st.caption(f"Solde des surfaces de transitions (vers ≥ {threshold} moins vers < {threshold}) : "
                f"**{format_surface(t.net_m2 / 1e6)} km²**. Différence de surfaces de transitions : ce n'est ni une "
                "perte ni un gain réel de végétation.")
@@ -210,12 +210,12 @@ def _provenance(pair, selection, indicator):
         f"supérieure de présélection {format_percent(facts['coverage_upper_bound_percent'])} % (min des couvertures "
         "individuelles, jamais une preuve de comparabilité)",
         f"**Comparabilité saisonnière** : {facts['seasonal_comparability'] or 'non évaluée'}",
-        f"**Fiabilité : {indicator.reliability}** — " + " ".join(indicator.reliability_reasons),
+        f"**Fiabilité : {indicator.reliability}** - " + " ".join(indicator.reliability_reasons),
         f"**Méthode** : {indicator.method}"]
     st.markdown("  \n".join(lines))
     credit = attribution(indicator.source, pair.later.acquired_at_utc.year)
     if credit is not None and not credit.verified:
-        st.caption(f"Attribution non revérifiée : « {credit.text} » — mention reprise de la note de publication du "
+        st.caption(f"Attribution non revérifiée : « {credit.text} » - mention reprise de la note de publication du "
                    "paquet de démonstration v3, non contrôlée sur l'avis juridique Copernicus.")
     st.caption("Empreintes des manifestes vérifiés : " + ", ".join(
         f"{tile['product_id']} {tile['manifest_sha256'][:12]}…"
@@ -228,7 +228,7 @@ def _provenance(pair, selection, indicator):
 def _pairs_table(pairs):
     frame = pd.DataFrame([{"Paire": p.label, "Statut": STATUS_LABELS.get(p.status, p.status),
                            "Borne supérieure de couverture commune (%)": p.coverage_upper_bound_percent,
-                           "Motif": " ".join(p.reasons) or "—"} for p in pairs])
+                           "Motif": " ".join(p.reasons) or "-"} for p in pairs])
     st.dataframe(french_table(frame, TABLE_DECIMALS), hide_index=True, width="stretch")
     st.caption("La borne supérieure (minimum des couvertures individuelles) sert seulement à écarter les paires "
                "sans calcul ; seule la couverture commune réellement mesurée décide de la publication.")

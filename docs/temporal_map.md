@@ -1,4 +1,4 @@
-# Contrat de comparaison temporelle — étapes 1 et 2
+# Contrat de comparaison temporelle - étapes 1 et 2
 
 > **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
 

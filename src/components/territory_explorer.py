@@ -68,17 +68,17 @@ def _provenance(option) -> dict:
     record = option.record
     if record is None:
         return {"Nom": option.label, "Type": "Zone d'acquisition GEONAF", "Surface (km²)": format_surface(option.area_km2),
-                "Source": "GEONAF (carré de travail 12 × 12 km)", "Millésime": "—", "Licence": "—",
+                "Source": "GEONAF (carré de travail 12 × 12 km)", "Millésime": "-", "Licence": "-",
                 "Statut": option.status_text}
     source = record.source
     return {
         "Nom": record.label, "Type": "Unité administrative" if record.kind == "admin_unit" else "Zone importée",
         "Niveau (type local déclaré)": (f"{record.admin.level_code} ({record.admin.local_type})"
-                                        if record.admin else "—"),
-        "Surface (km²)": format_surface(record.area_km2), "Source": f"{source.product} — {source.attribution}",
+                                        if record.admin else "-"),
+        "Surface (km²)": format_surface(record.area_km2), "Source": f"{source.product} - {source.attribution}",
         "Version / production": source.version, "Millésime des limites": source.reference_year or "non précisé",
         "Licence": source.license_spdx + (" (partage à l'identique)" if source.share_alike else ""),
-        "Récupération": source.retrieved_at_utc or "—", "Statut": option.status_text,
+        "Récupération": source.retrieved_at_utc or "-", "Statut": option.status_text,
         "Identifiant / version": f"{record.territory_id} v{record.version}",
     }
 
@@ -92,7 +92,7 @@ def _provenance_table(option):
 
 
 def _load_button(data_dir, release, level, key):
-    if st.button(f"Charger {catalog.REFERENTIALS[release]} — {catalog.LEVELS[level]} (réseau)", key=key):
+    if st.button(f"Charger {catalog.REFERENTIALS[release]} - {catalog.LEVELS[level]} (réseau)", key=key):
         try:
             with st.spinner("Récupération bornée geoBoundaries (métadonnées, puis géométries si absentes)…"):
                 report = catalog.load_referential(Path(data_dir), release, level)
@@ -104,7 +104,7 @@ def _load_button(data_dir, release, level, key):
                    + ("instantané local réutilisé." if report.snapshot.reused else
                       f"{report.snapshot.network_bytes / 1024:,.0f} Ko téléchargés.".replace(",", " ")))
         for name, reason in report.rejected:
-            st.caption(f"Unité rejetée (non réparée) : {name} — {reason}")
+            st.caption(f"Unité rejetée (non réparée) : {name} - {reason}")
         st.rerun()
 
 
@@ -210,7 +210,7 @@ def _comparison(data_dir):
 def _import(data_dir):
     st.caption("Une zone par opération. Le fichier est vérifié (taille avant lecture, géométrie valide sans "
                "réparation, nombre de sommets et de parties) puis enregistré avec sa provenance. Statut : "
-               "« fourni par l'utilisateur » — jamais officiel automatiquement.")
+               "« fourni par l'utilisateur » - jamais officiel automatiquement.")
     upload = st.file_uploader("Fichier GeoJSON", type=["geojson", "json"], key="import_file")
     with st.form("import_form"):
         label = st.text_input("Nom de la zone")

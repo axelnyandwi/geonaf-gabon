@@ -13,8 +13,8 @@ licence, vintage) and **what it legally is** (``legal_status``), so that:
 
 Layout below ``data/territories/`` (write-once, never overwritten):
 
-* ``geometries/<geometry_sha256>.geojson`` — the registered geometry file;
-* ``records/<territory_id>/v<NNNN>.json`` — one record per version.
+* ``geometries/<geometry_sha256>.geojson`` - the registered geometry file;
+* ``records/<territory_id>/v<NNNN>.json`` - one record per version.
 
 PostGIS mapping (future): table ``territories`` with primary key
 ``(territory_id, version)``, ``geom geometry(MultiPolygon, 4326)`` and the

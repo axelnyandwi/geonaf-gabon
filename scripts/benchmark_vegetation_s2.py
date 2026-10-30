@@ -4,9 +4,9 @@ Usage : python scripts/benchmark_vegetation_s2.py [--output docs/benchmarks/vege
 
 Each case runs in a fresh Python process:
 
-* cold   — first inventory of the process (exact area weights computed, files read from disk);
-* warm   — same inventory again in the same process (area-weight cache hit, OS file cache warm);
-* traced — third run under tracemalloc, for the peak of Python allocations (numpy included);
+* cold   - first inventory of the process (exact area weights computed, files read from disk);
+* warm   - same inventory again in the same process (area-weight cache hit, OS file cache warm);
+* traced - third run under tracemalloc, for the peak of Python allocations (numpy included);
   tracemalloc slows the run, so its time is not reported.
 
 Process memory: resident set size after imports, after the runs, and the process peak

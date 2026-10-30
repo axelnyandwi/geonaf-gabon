@@ -308,7 +308,7 @@ def _french_day(iso_value: str) -> str:
 
 def pack_summary(manifest: dict) -> list[str]:
     """Public provenance lines, built from the pack manifest only (no hard-coded results)."""
-    lines = [f"Paquet de démonstration {manifest.get('pack_id')} v{manifest.get('pack_version')} — "
+    lines = [f"Paquet de démonstration {manifest.get('pack_id')} v{manifest.get('pack_version')} - "
              f"{manifest.get('aoi', {}).get('statement', '')}"]
     sentinel2 = manifest.get("sentinel2", {})
     for item in sentinel2.get("acquisitions", []):
@@ -317,20 +317,20 @@ def pack_summary(manifest: dict) -> list[str]:
                   if quality.get("trend_use") == "excluded_low_coverage" else "utilisable, non validée")
         coverage = f"{quality.get('valid_coverage_percent', float('nan')):.2f}".replace(".", ",")  # French display.
         lines.append(f"Sentinel-2 acquis le {_french_day(item['acquired_at_utc'])} (ingéré le "
-                     f"{_french_day(item['ingested_at_utc'])}) : couverture valide {coverage} % — {status}.")
+                     f"{_french_day(item['ingested_at_utc'])}) : couverture valide {coverage} % - {status}.")
     lines.append(f"Extraits sans rééchantillonnage de tuiles {sentinel2.get('tile', '')} vérifiées. "
                  f"{sentinel2.get('attribution', '')}.")
     for layer in manifest.get("external_layers", []):
         license_ = layer.get("license", {})
-        lines.append(f"{layer.get('product') or layer.get('source_id')} — {license_.get('attribution', '')} "
+        lines.append(f"{layer.get('product') or layer.get('source_id')} - {license_.get('attribution', '')} "
                      f"({license_.get('spdx_id', '')}).")
     boundaries = manifest.get("boundaries", {})
     if boundaries:
         lines.append(boundaries.get("statement", ""))
         for item in boundaries.get("releases", []):
-            lines.append(f"geoBoundaries {item.get('release')} {item.get('level')} — {item.get('source')}, "
+            lines.append(f"geoBoundaries {item.get('release')} {item.get('level')} - {item.get('source')}, "
                          f"limites de {item.get('year_represented')}, {item.get('units')} unités "
-                         f"({', '.join(item.get('legal_status', []))}) — {item.get('license')}.")
+                         f"({', '.join(item.get('legal_status', []))}) - {item.get('license')}.")
     lines += list(manifest.get("limits", []))
     return lines
 

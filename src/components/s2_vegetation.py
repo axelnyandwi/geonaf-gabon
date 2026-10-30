@@ -108,7 +108,7 @@ def _unpublished(indicator, estimate):
         m = estimate.measure
         st.caption("Mesures techniques conservées pour comprendre l'acquisition. Elles ne constituent pas une "
                    "estimation de la végétation de la zone d'étude.")
-        share = "—" if m.vegetated_share_percent is None else f"{format_percent(m.vegetated_share_percent)} %"
+        share = "-" if m.vegetated_share_percent is None else f"{format_percent(m.vegetated_share_percent)} %"
         st.table(pd.DataFrame({
             "Mesure technique": ["Surface observée exploitable", f"Pixels observés à NDVI ≥ seuil",
                                  "Part de la petite surface observée"],
@@ -125,7 +125,7 @@ def _breakdown(indicator, estimate):
     st.caption("Ces catégories partagent la zone d'étude sans recouvrement. Les causes indiquées sont celles de "
                "la classification SCL de l'acquisition ; aucune n'est déduite de la géographie.")
     for item in indicator.breakdown:                 # Below the table: readable on a phone without scrolling.
-        st.caption(f"**{item.label}** — {DEFINITIONS.get(item.key, '')}")
+        st.caption(f"**{item.label}** - {DEFINITIONS.get(item.key, '')}")
 
 
 def _sensitivity(estimate):
@@ -151,14 +151,14 @@ def _provenance(indicator, estimate, inventory):
              f"{VEGETATION_PROFILE.fingerprint[:16]}…), seuil NDVI ≥ {fr(VEGETATION_PROFILE.threshold)}, couverture "
              f"minimale {fr(VEGETATION_PROFILE.min_observed_coverage_percent)} %",
              f"**Ventilation** : {estimate.breakdown_status}",
-             f"**Fiabilité : {indicator.reliability}** — " + " ".join(indicator.reliability_reasons),
+             f"**Fiabilité : {indicator.reliability}** - " + " ".join(indicator.reliability_reasons),
              f"**Méthode** : {indicator.method}"]
     st.markdown("  \n".join(lines))
     if credit is not None:
         if credit.verified:
             st.caption(f"Attribution vérifiée : {credit.text} ({credit.licence})")
         else:
-            st.caption(f"Attribution non revérifiée : « {credit.text} » — mention reprise de la note de publication "
+            st.caption(f"Attribution non revérifiée : « {credit.text} » - mention reprise de la note de publication "
                        "du paquet de démonstration v3, non contrôlée sur l'avis juridique Copernicus.")
     st.caption("Empreintes des manifestes vérifiés : " + ", ".join(
         f"{p['product_id']} {p['manifest_sha256'][:12]}…" for p in estimate.provenance))
@@ -199,7 +199,7 @@ def show_s2_vegetation(data_dir, aoi_id: str) -> None:
     for note in inventory.notes:
         st.caption(note)
     for label, reason in inventory.failures:
-        st.caption(f"Acquisition écartée — {label} : {reason}")
+        st.caption(f"Acquisition écartée - {label} : {reason}")
     if not inventory.estimates:
         st.info("Aucune estimation Sentinel-2 : aucune acquisition exploitable pour cette zone d'étude.")
         return

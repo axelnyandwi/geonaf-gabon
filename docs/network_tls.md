@@ -1,4 +1,4 @@
-# Confiance TLS et accès réseau GEONAF — 21 octobre 2026
+# Confiance TLS et accès réseau GEONAF - 21 octobre 2026
 
 > **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
 

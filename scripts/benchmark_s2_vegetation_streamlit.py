@@ -4,8 +4,8 @@ Usage : python scripts/benchmark_s2_vegetation_streamlit.py [data_dir]   (defaul
 
 Each mode runs in a fresh process so that every cache starts cold:
 
-* before — home page with the Sentinel-2 section replaced by a no-op (state before L3c);
-* after  — real home page: initial load, explicit start (first Sentinel-2 computation),
+* before - home page with the Sentinel-2 section replaced by a no-op (state before L3c);
+* after  - real home page: initial load, explicit start (first Sentinel-2 computation),
   change of acquisition (rerun on the cached aggregate), then a second session in the
   same process starting the estimate (cache shared by sessions).
 

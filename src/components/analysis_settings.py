@@ -12,7 +12,7 @@ from src.geo.scientific_profile import (
 )
 
 TERRITORY_LABELS = {"akanda": "Akanda", "libreville": "Libreville", "owendo": "Owendo"}
-SCL_LABELS = {"usable_land": "Végétation et sols nus (SCL 4, 5) — recommandé",
+SCL_LABELS = {"usable_land": "Végétation et sols nus (SCL 4, 5) - recommandé",
               "vegetation": "Végétation seule (SCL 4)", "bare_soil": "Sols nus seuls (SCL 5)"}
 MODES = ("Analyse standard", "Analyse avancée")
 

@@ -50,10 +50,10 @@ RADIOMETRY = {
     "status": "documentée par le producteur ; non vérifiée par calibration indépendante",
     "evidence": (
         "Annonce CDSE (Sinergise, 06/08/2024) : « terrain-flattened gamma nought backscatter », "
-        "échelle linéaire, intensités — https://dataspace.copernicus.eu/node/1621",
+        "échelle linéaire, intensités - https://dataspace.copernicus.eu/node/1621",
         "Forum CDSE (G. Milčinski, Sinergise, 28/05/2025) : « Values are in linear units », conversion "
-        "dB par 10·log10 — https://forum.dataspace.copernicus.eu/t/sentinel-1-monthly-mosaics-linear-or-db/3757",
-        "Algorithme CDSE : calibration β⁰, RTC par intégration d'aires, Range-Doppler, ombres exclues — "
+        "dB par 10·log10 - https://forum.dataspace.copernicus.eu/t/sentinel-1-monthly-mosaics-linear-or-db/3757",
+        "Algorithme CDSE : calibration β⁰, RTC par intégration d'aires, Range-Doppler, ombres exclues - "
         "https://documentation.dataspace.copernicus.eu/Data/Others/Sentinel1_Mosaic_Algorithm.html",
     ),
     "inconsistency": "Les titres des actifs STAC indiquent « Amplitude » ; contredit par le producteur, "

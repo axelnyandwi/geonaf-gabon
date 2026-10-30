@@ -104,8 +104,8 @@ def _credit_line(source, year, prefix="Attribution"):
 
 def _ratio_lines(indicator, denominator):
     """Numerator and denominator sources with their own dates, read from the metadata."""
-    return [f"Numérateur : bâtiments OpenStreetMap — {indicator.dates.reference_label}",
-            f"Dénominateur : surface terrestre {denominator.source.product} ({denominator.source.version}) — "
+    return [f"Numérateur : bâtiments OpenStreetMap - {indicator.dates.reference_label}",
+            f"Dénominateur : surface terrestre {denominator.source.product} ({denominator.source.version}) - "
             f"carte {_year(denominator)}",
             "Sources de dates différentes : ce rapport ne décrit pas une même année d'observation."]
 
@@ -116,7 +116,7 @@ def _provenance(indicator, denominator=None):
         label, explanation = RESULT_KIND_TEXT.get(indicator.result_kind, ("Nature non qualifiée", ""))
         lines = [f"**Nature du résultat** : {label}. {explanation}"]
         if indicator.source is not None:
-            lines.append(f"**Source** : {indicator.source.product} ({indicator.source.version}) — "
+            lines.append(f"**Source** : {indicator.source.product} ({indicator.source.version}) - "
                          f"{indicator.source.nature}")
         credit = _credit_line(indicator.source, _year(indicator))
         if credit is not None:
@@ -125,7 +125,7 @@ def _provenance(indicator, denominator=None):
             lines.append(f"**Dates** : {_date_line(indicator)}")
         if denominator is not None and denominator.source is not None:
             lines.append(f"**Dénominateur** : surface terrestre, {denominator.source.product} "
-                         f"({denominator.source.version}) — {denominator.source.nature}")
+                         f"({denominator.source.version}) - {denominator.source.nature}")
             lines.append(f"**Dates du dénominateur** : {_date_line(denominator)}")
             credit = _credit_line(denominator.source, _year(denominator), "Attribution du dénominateur")
             if credit is not None:
@@ -133,7 +133,7 @@ def _provenance(indicator, denominator=None):
         if indicator.coverage_percent is not None:
             lines.append(f"**Couverture de la zone d'étude par la source** : "
                          f"{format_percent(indicator.coverage_percent)} %")
-        lines.append(f"**Fiabilité : {indicator.reliability}** — " + " ".join(indicator.reliability_reasons))
+        lines.append(f"**Fiabilité : {indicator.reliability}** - " + " ".join(indicator.reliability_reasons))
         lines.append(f"**Méthode** : {indicator.method}")
         st.markdown("  \n".join(lines))
         for limit in indicator.limits:
@@ -192,7 +192,7 @@ def _details(result):
             st.markdown("**Catégories**")
             for item in roads.breakdown:
                 shown, explanation = ROAD_GLOSSARY.get(item.label, (item.label, ""))
-                st.caption(f"**{shown}** — {explanation}")
+                st.caption(f"**{shown}** - {explanation}")
             for limit in roads.limits:
                 st.caption(f"- {limit}")
         else:
@@ -219,7 +219,7 @@ def _details(result):
             "Couverture (%)": item.coverage_percent,
             "Fiabilité": item.reliability, "Méthode": item.method,
         } for item in result.indicators]), {"Couverture (%)": 2}), hide_index=True, width="stretch")
-        st.caption("« — » : sans objet ou non disponible.")
+        st.caption("« - » : sans objet ou non disponible.")
         st.caption("Nature du résultat : « mesure géométrique » = calcul exact sur la géométrie ; « observation "
                    "d'une base cartographique » = contenu d'OpenStreetMap à la date de l'instantané, pas le "
                    "terrain ; « estimation » = sortie d'un modèle ou d'une classification ; « prédiction » = "
@@ -230,7 +230,7 @@ def _details(result):
         st.caption(f"Profil d'indicateurs {result.profile.profile_id} {result.profile.version} · empreinte "
                    f"{result.profile.fingerprint[:16]}… · zone d'étude sha256 {result.aoi_sha256[:16]}….")
     # Visible, not folded: a single WorldCover map or OSM snapshot never yields an evolution.
-    st.markdown("**Évolutions temporelles** — aucune évolution n'est affichée sans deux référentiels strictement "
+    st.markdown("**Évolutions temporelles** - aucune évolution n'est affichée sans deux référentiels strictement "
                 "comparables.")
     for note in result.temporal_notes:
         st.caption(f"- {note}")

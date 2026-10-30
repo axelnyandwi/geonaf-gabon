@@ -14,10 +14,10 @@ What is estimated:
   **bounding box** (what the pipelines allocate), not only the polygon area;
 * memory: post-import baseline + cells × bytes per cell (pair analysis, with a
   safety factor) + OSM JSON bytes × expansion factor (parsing dominates);
-* Sentinel-2 tiles: 100 km MGRS squares touched in each UTM zone/hemisphere —
+* Sentinel-2 tiles: 100 km MGRS squares touched in each UTM zone/hemisphere -
   an upper bound of the tiles to read (tiles overlap by 9.8 km);
 * OSM: bounding box against the bounded Overpass query, estimated volume
-  (``out count``) when known — unknown is reported, never assumed small;
+  (``out count``) when known - unknown is reported, never assumed small;
 * GeoJSON imports: file size **before parsing**, then vertices and parts.
 """
 

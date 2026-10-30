@@ -1,4 +1,4 @@
-# Chiffres clés du territoire — lot 6, module 1
+# Chiffres clés du territoire - lot 6, module 1
 
 Première section de la page d'accueil (`app.py`), avant les analyses scientifiques. Le moteur
 `src/services/territorial_indicators.py` ne dépend pas de Streamlit ; l'affichage est dans
@@ -75,13 +75,13 @@ Un indicateur indisponible garde la nature qu'aurait sa valeur.
 - **Décimales** : virgule décimale et espace fine insécable pour les milliers dans les cartes, les
   tableaux et les motifs de fiabilité. Les tableaux gardent leurs nombres en pleine précision (tri
   numérique) ; seul l'affichage est formaté (`french_table`, `src/components/formatting.py`).
-  « — » dans un tableau : sans objet ou non disponible. Les autres pages ne sont pas modifiées.
+  « - » dans un tableau : sans objet ou non disponible. Les autres pages ne sont pas modifiées.
 - **Section repliable « Provenance et fiabilité »** par carte : nature, source et version, attribution
   et licence, trois dates, couverture de la source, motifs du niveau de fiabilité, méthode, limites.
 - **Attributions** vérifiées le 28/10/2026 sur les pages des producteurs et affichées sous les cartes :
   - ESA WorldCover : « © ESA WorldCover project [année] / Contains modified Copernicus Sentinel data
     ([année]) processed by ESA WorldCover consortium », CC BY 4.0, DOI 10.5281/zenodo.7254221 (v200)
-    ou 10.5281/zenodo.5571936 (v100) — https://esa-worldcover.org/en/data-access. L'année vient de
+    ou 10.5281/zenodo.5571936 (v100) - https://esa-worldcover.org/en/data-access. L'année vient de
     la carte ; l'attribution enregistrée dans les descripteurs (sans année) n'est pas modifiée.
   - OpenStreetMap : « © OpenStreetMap contributors », ODbL 1.0, lien
     https://www.openstreetmap.org/copyright.
@@ -101,7 +101,7 @@ autre pays ou écosystème reçoit un **nouveau** profil (nouvelle empreinte), j
 modification de celui-ci. La projection métrique des vecteurs est la zone UTM de l'AOI
 (`estimate_utm_crs`), valable partout en Afrique.
 
-**Végétation (ESA WorldCover)** — classes 10, 20, 30, 40, 90, 95 :
+**Végétation (ESA WorldCover)** - classes 10, 20, 30, 40, 90, 95 :
 
 | Regroupement | Classes |
 |---|---|
@@ -162,7 +162,7 @@ refusés : algorithmes différents.
 État local au 23/10/2026 : une seule version WorldCover (v200) et un seul instantané OSM par
 zone ⇒ **aucune évolution affichée**, et l'interface le dit.
 
-## Résultats réels — Zone d'étude Akanda (23/10/2026)
+## Résultats réels - Zone d'étude Akanda (23/10/2026)
 
 Entrées : WorldCover v200 (carte 2021, ingérée le 22/10/2026), base OSM du 22/10/2026 16:57 UTC.
 
@@ -170,9 +170,9 @@ Entrées : WorldCover v200 (carte 2021, ingérée le 22/10/2026), base OSM du 22
 |---|---|
 | Surface de la zone d'étude | 144,11 km² |
 | Surface terrestre | 107,44 km² (74,55 %) ; eaux permanentes 36,56 km² |
-| Surface végétalisée | 82,58 km² — 57,30 % de la zone, 76,86 % des terres |
+| Surface végétalisée | 82,58 km² - 57,30 % de la zone, 76,86 % des terres |
 | · Végétation naturelle / Cultures / Mangroves | 63,95 / 0,012 / 18,62 km² |
-| Surface bâtie (classe Bâti) | 23,92 km² — 16,60 % de la zone, 22,26 % des terres |
+| Surface bâtie (classe Bâti) | 23,92 km² - 16,60 % de la zone, 22,26 % des terres |
 | Voies cartographiées | 635 km de tronçons (desserte 381, service 150, tertiaires 39, principaux 25, secondaires 21, pistes 14, chemins 4,5) |
 | Bâtiments cartographiés | 36 006 (point représentatif ; 36 012 intersectent la zone) |
 | Densité de bâtiments cartographiés | 335 /km² de terres ; 250 /km² de zone |

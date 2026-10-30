@@ -19,7 +19,7 @@ NOTE = ("Estimation prudente calibrée sur le poste de développement : ce n'est
 
 def _number(value) -> str:
     if value is None:
-        return "—"
+        return "-"
     text = f"{value:,.2f}" if abs(value) < 10 and value != int(value) else f"{value:,.0f}"
     return text.replace(",", " ").replace(".", ",")
 
@@ -79,6 +79,6 @@ def show_assessment(assessment, *, operation: str, prominent_warnings: bool = Fa
         st.caption(f"Ressources vérifiées avant calcul ({operation}) : calcul autorisé.",
                    help=f"{summary}. {NOTE} {assessment.note}")
         return True
-    st.caption(f"Garde-fous de ressources ({operation}) — verdict : **{VERDICTS[status]}**. "
+    st.caption(f"Garde-fous de ressources ({operation}) - verdict : **{VERDICTS[status]}**. "
                + (f"{reasons} " if status in (WARNING, UNKNOWN) else "") + f"{summary}. {NOTE} {assessment.note}")
     return status != REFUSED

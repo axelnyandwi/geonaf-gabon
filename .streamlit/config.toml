@@ -1,4 +1,4 @@
-# GEONAF — Streamlit configuration (versioned; secrets stay in .streamlit/secrets.toml, ignored).
+# GEONAF - Streamlit configuration (versioned; secrets stay in .streamlit/secrets.toml, ignored).
 
 [client]
 # Uncaught exceptions: the browser shows a generic message only. Type, message and traceback

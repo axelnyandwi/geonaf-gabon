@@ -115,8 +115,8 @@ def test_categories_name_their_cause_without_geography_and_attribution_is_flagge
     labels = frame["Catégorie"].tolist()
     assert "Sans donnée (SCL absent ou hors de la grille analysée)" in labels
     assert not any("emprise" in label.lower() for label in labels)
-    definitions = {c.value.split("** — ")[0].strip("*"): c.value.split("** — ")[1]
-                   for c in breakdown.caption if "** — " in c.value}
+    definitions = {c.value.split("** - ")[0].strip("*"): c.value.split("** - ")[1]
+                   for c in breakdown.caption if "** - " in c.value}
     assert set(definitions) == set(labels)                                            # One definition each.
     assert "n'est pas déterminée" in definitions["Sans donnée (SCL absent ou hors de la grille analysée)"]
     assert any("selon le SCL" in label for label in labels)

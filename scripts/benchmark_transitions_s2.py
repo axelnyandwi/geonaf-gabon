@@ -4,8 +4,8 @@ Usage : python scripts/benchmark_transitions_s2.py [--output docs/benchmarks/tra
 
 Two fresh Python processes per zone, so that each process peak belongs to one step:
 
-* inventory — the L3 inventory (``s2_vegetation_inventory``), pickled to a temporary file;
-* pairs     — loads that inventory, then measures separately:
+* inventory - the L3 inventory (``s2_vegetation_inventory``), pickled to a temporary file;
+* pairs     - loads that inventory, then measures separately:
   - selection: ``plan_pairs`` (pairs, upper bounds, recency order; no file read);
   - computation cold / warm: ``s2_pair_selection`` with the given inventory (resource guard, SHA-256 of the
     assets, historical pair chain, transitions); warm = same call again (area-weight cache hit, OS file cache);

@@ -1,4 +1,4 @@
-# Végétation observée par Sentinel-2 — estimation expérimentale
+# Végétation observée par Sentinel-2 - estimation expérimentale
 
 **Statut : expérimental, non validé scientifiquement.** Les valeurs ci-dessous démontrent la
 reproductibilité numérique du calcul, pas sa justesse.
@@ -31,7 +31,7 @@ Chaque pixel reçoit une seule étiquette (première règle satisfaite) :
 | 4 | non observée | selon le SCL : 1, 3, 8, 9, 10 (défectueux, ombres, nuages, cirrus) |
 | 5 | observée mais exclue | classe observée hors politique (eau 6, zone sombre 2, non classée 7, neige 11…) |
 | 6 | autre invalide | classe acceptée, réflectance ou NDVI invalide |
-| — | non ventilée | règles 3–6 confondues quand les classes SCL ne sont pas disponibles (mosaïque) |
+| - | non ventilée | règles 3–6 confondues quand les classes SCL ne sont pas disponibles (mosaïque) |
 
 La somme des catégories égale l'aire de la zone à 10⁻⁶ près (relatif) ; un écart de cet ordre entre
 l'aire géodésique de la zone et la somme des poids exacts est un arrondi géométrique (mesuré
@@ -57,7 +57,7 @@ observée exploitable ; **aucune valeur n'est rapportée à la zone entière** (
   Sentinel data 2025 », reprise de la note de publication du paquet v3, non revérifiée sur l'avis
   juridique Copernicus (PDF illisible lors de la vérification du 28/10/2026).
 
-## Valeurs de référence — paquet v3, zone d'étude Akanda (non-régression)
+## Valeurs de référence - paquet v3, zone d'étude Akanda (non-régression)
 
 Figées dans `tests/test_s2_vegetation_inventory.py` (tolérance relative 10⁻¹², comme
 `test_demo_pack_science.py`). Zone : 144,11 km².
@@ -68,7 +68,7 @@ Figées dans `tests/test_s2_vegetation_inventory.py` (tolérance relative 10⁻�
 | 20/01/2025 09:33 UTC | 3,92 km² (2,72 %) | 0,85 km² | 21,77 % | 17,83 km² | 122,36 km² | non (< 30 %) |
 | 25/01/2025 09:31 UTC | 92,97 km² (64,51 %) | 61,61 km² | 66,28 % | 17,84 km² | 33,30 km² | oui, fiabilité faible |
 
-Sensibilité (part de la surface observée) : 15/01 — 82,5 / 71,7 / 56,9 % ; 25/01 — 78,1 / 66,3 /
+Sensibilité (part de la surface observée) : 15/01 - 82,5 / 71,7 / 56,9 % ; 25/01 - 78,1 / 66,3 /
 50,7 % pour 0,3 / 0,4 / 0,5. Les deux dates publiées ne sont pas comparables entre elles : leurs
 surfaces observées diffèrent.
 
@@ -122,9 +122,9 @@ AppTest, un processus par mode (caches froids), trois séries le 28/10/2026 :
 | Mesure | Avant L3c | Après L3c |
 |---|---|---|
 | Chargement initial (chiffres clés et analyse de la paire compris) | 11,0 – 13,5 s | 10,9 – 11,7 s |
-| Premier calcul Sentinel-2 (clic) | — | 2,9 – 3,1 s |
-| Changement d'acquisition (rerun, agrégat en cache) | — | 0,30 – 0,33 s |
-| Autre session, même processus (cache partagé) | — | 0,33 – 0,36 s |
+| Premier calcul Sentinel-2 (clic) | - | 2,9 – 3,1 s |
+| Changement d'acquisition (rerun, agrégat en cache) | - | 0,30 – 0,33 s |
+| Autre session, même processus (cache partagé) | - | 0,33 – 0,36 s |
 
 L'écart de chargement initial est dans le bruit de mesure : la section n'affiche qu'un bouton.
 

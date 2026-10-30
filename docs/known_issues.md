@@ -67,7 +67,7 @@ aucun retry. Le comportement de la file est inchangé : un échec définitif d'�
 | Scénario du test sans barrière, 2 workers (acquisitions en échec) | 8 / 120 exécutions | 0 / 120 |
 | Test d'origine avec barrière, exécutions isolées | intermittent | 40 / 40 réussis |
 | 6 écrivains + 1 lecteur (pause 5 ms), écritures en échec | 256 / 900 (≈ 28 %) | 0 / 1 800 |
-| Lecteurs en boucle continue sans pause | — | échecs maintenus (refus durable signalé, voulu) |
+| Lecteurs en boucle continue sans pause | - | échecs maintenus (refus durable signalé, voulu) |
 
 **Limite.** Un handle tenu plus de ≈ 0,4 s fait toujours échouer l'écriture, donc l'acquisition. Rendre
 l'écriture de l'historique non bloquante pour le téléchargement reste une option non retenue.
