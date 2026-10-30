@@ -4,7 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from src.components.errors import show_error
+from src.components.errors import show_internal_error
 from src.geo.scientific_profile import (
     ADVANCED_BOUNDS, ADVANCED_SCL_POLICIES, REFERENCE_PROFILES, SENSITIVITY_PRESET, advanced_configuration,
     standard_configuration,
@@ -75,7 +75,10 @@ def choose_analysis(aoi_id: str, prefix: str):
         configuration = advanced_configuration(aoi_id, change_threshold=threshold,
                                                min_comparable_coverage_percent=coverage, scl_policy=policy)
     except ValueError as error:
-        show_error(error, context="analyse.configuration", prefix="Configuration refusée : ")
+        # Inputs are already bounded by the widgets: reaching this is an anomaly, logged with its cause.
+        show_internal_error(error, context="analyse.configuration",
+                            message="Configuration refusée : seuil, couverture minimale ou masque SCL hors des "
+                                    "valeurs autorisées.")
         return None
     if configuration.overrides:
         changes = " ; ".join(f"{name} = {value:g}" if isinstance(value, float) else f"{name} = {value}"

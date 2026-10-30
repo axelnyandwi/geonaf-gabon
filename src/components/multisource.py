@@ -180,7 +180,8 @@ def show_multisource(data_dir):
     try:
         identity = load_aoi_identity(aoi_path, aoi_id)
     except ValueError as error:
-        show_error(error, context="multisource.zone", prefix="Zone d'étude refusée : ")
+        show_internal_error(error, context="multisource.zone",
+                            message="Zone d'étude refusée : géométrie illisible, vide ou non surfacique.")
         return
     bounds = identity.wgs84_bounds
     month = date(group[0].acquired_at.year, group[0].acquired_at.month, 1)

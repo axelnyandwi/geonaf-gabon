@@ -34,6 +34,10 @@ STATUS_TEXT = {
 COLORS = {"a": "#f59e0b", "b": "#38bdf8", "both": "#a3a3a3", "zone": "#f8fafc"}
 
 
+class ZoneImportRefused(ValueError):
+    """Import refused by a size, field or validity check; the message is written for users."""
+
+
 @dataclass(frozen=True)
 class TerritoryOption:
     key: str                 # Unique selection key: "aoi:<id>" or "territory:<id>".
@@ -170,15 +174,16 @@ def import_custom_zone(data_dir, content: bytes, *, label: str, author: str, lic
     for value, name in ((label, "Nom de la zone"), (author, "Auteur ou organisme source"),
                         (license_spdx, "Licence ou droits de réutilisation"), (source_date, "Date de la source")):
         if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"{name} obligatoire.")
+            raise ZoneImportRefused(f"{name} obligatoire.")
     if len(content) > limits.max_import_bytes:
-        raise ValueError(f"Fichier de {len(content) / 2**20:.1f} Mio > limite {limits.max_import_bytes / 2**20:.0f} Mio.")
+        raise ZoneImportRefused(f"Fichier de {len(content) / 2**20:.1f} Mio > limite "
+                                f"{limits.max_import_bytes / 2**20:.0f} Mio.")
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "import.geojson"
         path.write_bytes(content)
         assessment = assess_import(path, limits=limits)
         if not assessment.allowed:
-            raise ValueError(" ".join(check.reason for check in assessment.refusals))
+            raise ZoneImportRefused(" ".join(check.reason for check in assessment.refusals))
         from src.geo.aoi_identity import load_aoi_identity
 
         identity = load_aoi_identity(path)

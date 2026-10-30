@@ -1,23 +1,29 @@
 """Public error display for the Streamlit interface; no Streamlit logic outside this module.
 
-Two categories, decided explicitly:
+Two categories, decided only by explicit exception types:
 
 * Expected functional errors (unavailable acquisition, insufficient coverage, pair not
-  comparable, missing data, invalid user parameter, exceeded budget): GEONAF domain
-  exceptions listed in :func:`_expected_types`, and plain ``ValueError`` raised by GEONAF
-  code itself (innermost frame under ``src/``), whose messages are written for users. They
-  are shown after a defensive masking of local paths, URLs and secret-like values.
-* Everything else (unexpected Python error, library error, file or path error, network or
-  authentication failure, programming error): a generic message with a diagnostic
-  identifier. ``str(exc)`` is never shown. The traceback is logged once on the server with
-  the same identifier, with paths shortened and URLs/secrets masked; a repeat of the same
-  failure within :data:`_REPEAT_WINDOW_S` logs one line instead of the full traceback.
+  comparable, missing data, invalid user parameter, exceeded budget): the GEONAF domain
+  exceptions listed in :func:`_expected_types`, whose messages are written for users. They
+  are shown after a defensive masking of local paths, URLs and secret-like values. When such
+  an error carries a technical cause (``raise ... from error``, or raised while handling
+  another exception, even with ``from None``), the cause is logged and the message gets a
+  diagnostic identifier.
+* Everything else, including any generic ``ValueError`` whatever its origin: a generic
+  message with a diagnostic identifier; ``str(exc)`` is never shown.
+
+Server log (logger ``geonaf.ui``): one structured JSON record per incident, built from
+exception types, ``errno``/``winerror``/``status_code`` attributes and stack locations with
+shortened roots. Exception messages, the main leak vector, appear only as a secondary,
+masked and truncated field. A repeat of the same failure within :data:`_REPEAT_WINDOW_S`
+logs a one-line record with a counter instead of a new record.
 """
 
 from __future__ import annotations
 
 from collections import OrderedDict
 from contextlib import contextmanager
+import json
 import logging
 import os
 from pathlib import Path
@@ -36,9 +42,10 @@ logger = logging.getLogger("geonaf.ui")
 
 GENERIC_MESSAGE = ("Erreur interne : l'opération n'a pas pu aboutir. Aucune donnée partielle n'est affichée. "
                    "Identifiant de diagnostic : {incident}.")
+DIAGNOSTIC_SUFFIX = " Identifiant de diagnostic : {incident}."
 
-_SRC_ROOT = (PROJECT_ROOT / "src").resolve()
 _REPEAT_WINDOW_S = 600
+_MAX_FRAMES, _MAX_CHAIN, _MAX_MESSAGE = 12, 5, 300
 _seen: OrderedDict[tuple, tuple[str, float, int]] = OrderedDict()
 _seen_lock = Lock()
 
@@ -65,32 +72,23 @@ def _expected_types() -> tuple[type[BaseException], ...]:
     from src.data.remote_window import ByteBudgetExceeded
     from src.geo.pair_selection import IncompleteSTACSearchError
     from src.services.local_preview import LocalPreviewError
+    from src.services.territory_catalog import ZoneImportRefused
 
     return (LocalPreviewError, CatalogueError, TransferAborted, GeoBoundariesError, DemoPackError,
-            ByteBudgetExceeded, IncompleteSTACSearchError)
-
-
-def _innermost_file(error: BaseException) -> Path | None:
-    tb = error.__traceback__
-    if tb is None:
-        return None
-    while tb.tb_next is not None:
-        tb = tb.tb_next
-    try:
-        return Path(tb.tb_frame.f_code.co_filename).resolve()
-    except (OSError, RuntimeError, ValueError):
-        return None
+            ByteBudgetExceeded, IncompleteSTACSearchError, ZoneImportRefused)
 
 
 def is_expected(error: BaseException) -> bool:
-    """True for a functional error whose message is written for users."""
-    if isinstance(error, _expected_types()):
-        return True
-    if type(error) is ValueError:  # Subclasses (JSON, Unicode, configuration...) are not assumed public.
-        origin = _innermost_file(error)
-        return origin is not None and origin.is_relative_to(_SRC_ROOT)
-    return False
+    """True only for an explicitly listed domain exception, whose message is written for users."""
+    return isinstance(error, _expected_types())
 
+
+def _technical_cause(error: BaseException) -> BaseException | None:
+    # ``__context__`` is kept even after ``raise ... from None``: it is the diagnosis.
+    return error.__cause__ or error.__context__
+
+
+# --- Masking -----------------------------------------------------------------------------------------
 
 def _secret_values() -> list[str]:
     return sorted((value for name, value in os.environ.items()
@@ -141,34 +139,91 @@ def log_text(text: str) -> str:
     return text
 
 
-def report_internal_error(error: BaseException, *, context: str) -> str:
-    """Log ``error`` once with a new diagnostic identifier and return that identifier."""
+# --- Structured diagnosis ------------------------------------------------------------------------------
+
+def _code_location(filename: str) -> str:
+    """Project or Python-relative location; any other file keeps only its name (no private path)."""
+    path = Path(filename)
+    for root, alias in ((PROJECT_ROOT, "<projet>"), (Path(sys.prefix), "<python>"),
+                        (Path(sys.base_prefix), "<python>")):
+        try:
+            return f"{alias}/{path.resolve().relative_to(root.resolve()).as_posix()}"
+        except (ValueError, OSError, RuntimeError):
+            continue
+    return f"<autre>/{path.name}"
+
+
+def _frames(error: BaseException) -> list[str]:
+    summary = traceback.extract_tb(error.__traceback__)[-_MAX_FRAMES:]
+    return [f"{_code_location(frame.filename)}:{frame.lineno} {frame.name}" for frame in summary]
+
+
+def _log_message(error: BaseException) -> str:
+    """Exception text for the server log: URLs reduced, secrets and any remaining local path masked."""
+    text = log_text(str(error))
+    text = _UNC_PATH.sub(_MASK_PATH, text)
+    text = _WINDOWS_PATH.sub(_MASK_PATH, text)
+    return _POSIX_PATH.sub(lambda m: m.group(0) if m.string[:m.start()].endswith(("<projet>", "<python>", "~"))
+                           else _MASK_PATH, text)
+
+
+def _describe(error: BaseException) -> dict:
+    """Type, numeric attributes and location of one exception; its message only masked and truncated."""
+    frames = _frames(error)
+    item = {"type": f"{type(error).__module__}.{type(error).__qualname__}",
+            "where": frames[-1] if frames else None}
+    for name in ("errno", "winerror", "status_code", "category"):
+        value = getattr(error, name, None)
+        if isinstance(value, (int, str)) and not isinstance(value, bool):
+            item[name] = value
+    message = _log_message(error)
+    item["message_masked"] = message[:_MAX_MESSAGE] + ("…" if len(message) > _MAX_MESSAGE else "")
+    return item
+
+
+def _diagnosis(error: BaseException, *, incident: str, context: str, category: str) -> dict:
+    record = {"incident": incident, "context": context, "category": category, **_describe(error),
+              "frames": _frames(error), "chain": []}
+    cause, seen = _technical_cause(error), {id(error)}
+    while cause is not None and id(cause) not in seen and len(record["chain"]) < _MAX_CHAIN:
+        seen.add(id(cause))
+        record["chain"].append(_describe(cause))
+        cause = _technical_cause(cause)
+    return record
+
+
+def _fingerprint(error: BaseException, context: str) -> tuple:
+    last = traceback.extract_tb(error.__traceback__)[-1:] or [None]
+    where = (last[0].filename, last[0].lineno) if last[0] is not None else None
+    return context, type(error).__module__, type(error).__qualname__, where
+
+
+def report_error(error: BaseException, *, context: str, category: str = "internal") -> str:
+    """Log ``error`` once as a structured record and return its diagnostic identifier."""
     existing = getattr(error, "_geonaf_incident", None)
     if existing:
         return existing  # Already reported by an inner handler: never log the same error twice.
-    origin = _innermost_file(error)
-    fingerprint = (context, type(error).__module__, type(error).__qualname__, str(origin),
-                   getattr(error.__traceback__, "tb_lineno", None))
+    fingerprint = _fingerprint(error, context)
     now = time.monotonic()
     with _seen_lock:
         previous = _seen.get(fingerprint)
         if previous is not None and now - previous[1] < _REPEAT_WINDOW_S:
             incident, count = previous[0], previous[2] + 1
             _seen[fingerprint] = (incident, previous[1], count)
-            repeat = True
         else:
-            incident, repeat = f"GN-{uuid4().hex[:10].upper()}", False
+            incident, count = f"GN-{uuid4().hex[:10].upper()}", 1
             _seen[fingerprint] = (incident, now, 1)
             _seen.move_to_end(fingerprint)
             while len(_seen) > 256:
                 _seen.popitem(last=False)
-    if repeat:
-        logger.error("ui_internal_error_repeat incident=%s context=%s type=%s count=%d",
-                     incident, context, type(error).__name__, count)
+    level = logging.ERROR if category == "internal" else logging.WARNING
+    if count > 1:
+        record = {"incident": incident, "context": context, "category": category,
+                  "type": f"{type(error).__module__}.{type(error).__qualname__}", "repeat": count}
+        logger.log(level, "ui_error_repeat %s", json.dumps(record, ensure_ascii=False, sort_keys=True))
     else:
-        details = log_text("".join(traceback.format_exception(type(error), error, error.__traceback__)))
-        logger.error("ui_internal_error incident=%s context=%s type=%s\n%s",
-                     incident, context, type(error).__name__, details)
+        record = _diagnosis(error, incident=incident, context=context, category=category)
+        logger.log(level, "ui_error %s", json.dumps(record, ensure_ascii=False, sort_keys=True))
     try:
         error._geonaf_incident = incident
     except AttributeError:
@@ -176,22 +231,32 @@ def report_internal_error(error: BaseException, *, context: str) -> str:
     return incident
 
 
+def report_internal_error(error: BaseException, *, context: str) -> str:
+    return report_error(error, context=context, category="internal")
+
+
+# --- Display -------------------------------------------------------------------------------------------
+
 def show_error(error: BaseException, *, context: str, prefix: str = "", suffix: str = "",
                level: str = "error") -> str | None:
-    """Display ``error`` safely. Return the diagnostic identifier for an internal error."""
+    """Display ``error`` safely. Return the diagnostic identifier when one was logged."""
     show = st.warning if level == "warning" else st.error
     if is_expected(error):
-        show(f"{prefix}{public_text(str(error))}{suffix}")
-        return None
+        incident = None
+        if _technical_cause(error) is not None:
+            incident = report_error(error, context=context, category="functional_with_cause")
+        tail = DIAGNOSTIC_SUFFIX.format(incident=incident) if incident else ""
+        show(f"{prefix}{public_text(str(error))}{suffix}{tail}")
+        return incident
     incident = report_internal_error(error, context=context)
     show(f"{prefix}{GENERIC_MESSAGE.format(incident=incident)}{suffix}")
     return incident
 
 
 def show_internal_error(error: BaseException, *, context: str, message: str, level: str = "error") -> str:
-    """Keep an existing generic message and append the diagnostic identifier."""
+    """Show a controlled message (never the exception text) with the diagnostic identifier."""
     incident = report_internal_error(error, context=context)
-    (st.warning if level == "warning" else st.error)(f"{message} Identifiant de diagnostic : {incident}.")
+    (st.warning if level == "warning" else st.error)(f"{message}{DIAGNOSTIC_SUFFIX.format(incident=incident)}")
     return incident
 
 

@@ -1,5 +1,6 @@
 """« Comparaison temporelle sur surface commune » on the home page with AppTest; offline."""
 
+import json
 from unittest.mock import Mock
 
 import numpy as np
@@ -115,12 +116,12 @@ def test_unavailable_result_shows_no_estimate(tmp_path, home):
 def _geonaf_value_error(*args, **kwargs):
     from src.geo.pair_selection import PairSelectionConfig
 
-    PairSelectionConfig(min_interval_days=-1)  # ValueError raised by GEONAF code itself (src/).
+    PairSelectionConfig(min_interval_days=-1)  # Generic ValueError, even from GEONAF code.
 
 
 @pytest.mark.parametrize("error, shown, internal", [
     (lambda: LocalPreviewError("Politique SCL « observation » refusée."), "refusée", False),
-    (lambda: _geonaf_value_error, "intervalle temporel configuré est invalide", False),
+    (lambda: _geonaf_value_error, "Identifiant de diagnostic : GN-", True),  # Generic ValueError: internal.
     (lambda: RuntimeError("C:/secret/path token=abc123456"), "Identifiant de diagnostic : GN-", True),
     (lambda: ValueError("C:/secret/path from a library"), "Identifiant de diagnostic : GN-", True),
 ])
@@ -133,13 +134,13 @@ def test_processing_error_is_public(local_data, home, caplog, error, shown, inte
     (message,) = [e.value for e in app.error]
     assert message.startswith("Erreur de traitement") and shown in message
     assert "secret" not in message and "abc123456" not in message and "Traceback" not in message
-    records = [r.getMessage() for r in caplog.records
-               if r.name == "geonaf.ui" and "context=s2_transitions." in r.getMessage()]
+    records = [json.loads(r.getMessage().partition(" ")[2]) for r in caplog.records if r.name == "geonaf.ui"]
+    records = [r for r in records if r["context"].startswith("s2_transitions.")]
     if internal:
         incident = message.split("Identifiant de diagnostic : ")[1].rstrip(".")
         (record,) = records
-        assert f"incident={incident}" in record and "context=s2_transitions.selection" in record
-        assert "Traceback" in record and "abc123456" not in record  # Server-side diagnosis, secret masked.
+        assert record["incident"] == incident and record["context"] == "s2_transitions.selection"
+        assert record["frames"] and "abc123456" not in json.dumps(record)  # Server-side diagnosis, masked.
     else:
         assert records == [] and "Identifiant" not in message
 
