@@ -16,6 +16,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from src.components.errors import show_error
 from src.components.analysis_settings import TERRITORY_LABELS
 from src.components.formatting import (
     format_hectares_from_km2, format_ndvi, format_percent, format_surface, french_table,
@@ -251,8 +252,6 @@ def _request(requested_key, pair_id):
 
 
 def show_s2_transitions(data_dir, aoi_id: str) -> None:
-    from src.services.local_preview import LocalPreviewError
-
     st.markdown(f"#### {TITLE}")
     st.markdown(":violet-badge[Estimation] :red-badge[Expérimental] :gray-badge[Non validée scientifiquement]")
     st.warning(NO_CAUSE)
@@ -268,11 +267,9 @@ def show_s2_transitions(data_dir, aoi_id: str) -> None:
     try:
         with st.spinner("Calcul de la comparaison : vérification des acquisitions et surface commune…"):
             selection = _compute(data_dir, aoi_id, None)
-    except (LocalPreviewError, ValueError) as error:          # Public messages (no path, no exception text).
-        st.error(f"Erreur de traitement : comparaison temporelle impossible. {error}")
-        return
-    except Exception:
-        st.error("Erreur de traitement : comparaison temporelle impossible (acquisitions locales illisibles).")
+    except Exception as error:  # Functional message, else generic message + diagnostic identifier.
+        show_error(error, context="s2_transitions.selection",
+                   prefix="Erreur de traitement : comparaison temporelle impossible. ")
         return
     for note in selection.notes:
         st.caption(note)
@@ -301,8 +298,9 @@ def show_s2_transitions(data_dir, aoi_id: str) -> None:
         try:
             with st.spinner("Calcul de la paire sélectionnée…"):
                 (pair,) = _compute(data_dir, aoi_id, pair.pair_id).pairs
-        except (LocalPreviewError, ValueError) as error:
-            st.error(f"Erreur de traitement : paire impossible à calculer. {error}")
+        except Exception as error:
+            show_error(error, context="s2_transitions.paire",
+                       prefix="Erreur de traitement : paire impossible à calculer. ")
             return
     else:
         _pair_header(pair, aoi_id)

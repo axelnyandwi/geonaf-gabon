@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from streamlit.testing.v1 import AppTest
 
+from src.services.local_preview import LocalPreviewError
 from tests.test_local_preview import local_data  # noqa: F401  (fixture)
 from tests.test_s2_pairs import FULL, NORTH, SOUTH, dates
 from tests.test_s2_vegetation_inventory import PACK
@@ -111,14 +112,36 @@ def test_unavailable_result_shows_no_estimate(tmp_path, home):
     assert not any(e.label.startswith(("Les quatre", "Sensibilité", "Diagnostic")) for e in app.expander)
 
 
-@pytest.mark.parametrize("error, shown", [(ValueError("Politique SCL « observation » refusée."), "refusée"),
-                                          (RuntimeError("C:/secret/path"), "illisibles")])
-def test_processing_error_is_public(local_data, home, error, shown):
-    app, _ = home(local_data, selection=Mock(side_effect=error))
-    app.button(key=START).click().run(timeout=180)
+def _geonaf_value_error(*args, **kwargs):
+    from src.geo.pair_selection import PairSelectionConfig
+
+    PairSelectionConfig(min_interval_days=-1)  # ValueError raised by GEONAF code itself (src/).
+
+
+@pytest.mark.parametrize("error, shown, internal", [
+    (lambda: LocalPreviewError("Politique SCL « observation » refusée."), "refusée", False),
+    (lambda: _geonaf_value_error, "intervalle temporel configuré est invalide", False),
+    (lambda: RuntimeError("C:/secret/path token=abc123456"), "Identifiant de diagnostic : GN-", True),
+    (lambda: ValueError("C:/secret/path from a library"), "Identifiant de diagnostic : GN-", True),
+])
+def test_processing_error_is_public(local_data, home, caplog, error, shown, internal):
+    """Functional errors keep their message; internal ones show a generic message and an identifier."""
+    app, _ = home(local_data, selection=Mock(side_effect=error()))
+    with caplog.at_level("ERROR", logger="geonaf.ui"):
+        app.button(key=START).click().run(timeout=180)
     assert not app.exception
     (message,) = [e.value for e in app.error]
-    assert message.startswith("Erreur de traitement") and shown in message and "secret" not in message
+    assert message.startswith("Erreur de traitement") and shown in message
+    assert "secret" not in message and "abc123456" not in message and "Traceback" not in message
+    records = [r.getMessage() for r in caplog.records
+               if r.name == "geonaf.ui" and "context=s2_transitions." in r.getMessage()]
+    if internal:
+        incident = message.split("Identifiant de diagnostic : ")[1].rstrip(".")
+        (record,) = records
+        assert f"incident={incident}" in record and "context=s2_transitions.selection" in record
+        assert "Traceback" in record and "abc123456" not in record  # Server-side diagnosis, secret masked.
+    else:
+        assert records == [] and "Identifiant" not in message
 
 
 def test_resource_guard_refuses_before_computation(local_data, home, monkeypatch):

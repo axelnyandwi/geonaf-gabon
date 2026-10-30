@@ -5,6 +5,7 @@ from pathlib import Path
 import streamlit as st
 
 import src.config as config
+from src.components.errors import show_error
 from src.data.demo_pack import DemoPackError, default_cache_root, pack_summary, resolve_data_dir, spec_from_environment
 
 
@@ -22,7 +23,8 @@ def active_data_dir() -> Path:
     try:
         source = _resolve(str(configured), spec_from_environment())
     except DemoPackError as error:
-        st.warning(f"Données de démonstration indisponibles : {error} Réessayer en rechargeant la page.")
+        show_error(error, context="donnees.demonstration", level="warning",
+                   prefix="Données de démonstration indisponibles : ", suffix=" Réessayer en rechargeant la page.")
         return configured
     if source.origin == "demo_pack" and source.pack is not None:
         lines = pack_summary(source.pack)

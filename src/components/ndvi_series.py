@@ -7,6 +7,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from src.components.errors import show_error
 from src.components.formatting import format_ndvi, format_percent, format_pixels
 from src.components.analysis_settings import choose_analysis, choose_territory
 from src.services.local_preview import (
@@ -100,7 +101,7 @@ def show_ndvi_series(data_dir):
         observations = list_local_observations(data_dir)
         first, last = catalogue_bounds(observations)
     except LocalPreviewError as error:
-        st.error(str(error))
+        show_error(error, context="series.acquisitions")
         return
     aoi_id = choose_territory(data_dir, "series_territory")
     if aoi_id is None:
@@ -131,7 +132,7 @@ def show_ndvi_series(data_dir):
     try:
         key = local_series_key(chosen, data_dir, profile, period, gap)
     except LocalPreviewError as error:
-        st.error(str(error))
+        show_error(error, context="series.cle")
         return
     from src.components.resource_panel import assess_aoi_file, show_assessment
 
@@ -147,7 +148,7 @@ def show_ndvi_series(data_dir):
         with st.spinner("Vérification des empreintes et calcul du NDVI de chaque date…"):
             result = cached_series(key, tuple(chosen), str(data_dir), profile, period, float(gap))
     except LocalPreviewError as error:
-        st.error(str(error))
+        show_error(error, context="series.calcul")
         return
 
     status = result.interpretation.status.value

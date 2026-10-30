@@ -7,6 +7,7 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from src.components.errors import show_error, show_internal_error
 from src.components.formatting import format_ndvi, format_percent, format_pixels
 from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
 from src.geo.aoi_identity import load_aoi_identity
@@ -129,9 +130,9 @@ def _retrieval_panel(data_dir, identity, month):
                 action, report = "Sentinel-1", retrieval.retrieve_sentinel1(data_dir, aoi_id=aoi_id,
                                                                             wgs84_bounds=bounds, month=month,
                                                                             aoi_geometry_sha256=digest)
-        except Exception:
-            st.error("Récupération impossible (réseau, autorisation, plafond ou réponse invalide). "
-                     "Aucune donnée partielle n'a été enregistrée.")
+        except Exception as error:
+            show_error(error, context="multisource.recuperation", prefix="Récupération impossible. ",
+                       suffix=" Aucune donnée partielle n'a été enregistrée.")
             return
         if action:
             public = {k: v for k, v in report.items() if k != "storage_key"}
@@ -167,7 +168,7 @@ def show_multisource(data_dir):
     try:
         groups = group_local_observations(list_local_observations(data_dir))
     except LocalPreviewError as error:
-        st.error(str(error))
+        show_error(error, context="multisource.acquisitions")
         return
     if not groups:
         st.error("Aucune acquisition Sentinel-2 locale vérifiée : utiliser le catalogue des acquisitions.")
@@ -179,7 +180,7 @@ def show_multisource(data_dir):
     try:
         identity = load_aoi_identity(aoi_path, aoi_id)
     except ValueError as error:
-        st.error(f"Zone d'étude refusée : {error}")
+        show_error(error, context="multisource.zone", prefix="Zone d'étude refusée : ")
         return
     bounds = identity.wgs84_bounds
     month = date(group[0].acquired_at.year, group[0].acquired_at.month, 1)
@@ -210,9 +211,12 @@ def show_multisource(data_dir):
                    if layer.descriptor.temporal.start_utc.strftime("%Y-%m") == f"{month:%Y-%m}"]
         radar_layers = [layer for polarization in ("VV", "VH") for layer in layers_for_aoi(
             [l for l in monthly if l.descriptor.provenance.get("polarization") == polarization], identity)]
-    except (LocalPreviewError, ValueError) as error:
-        st.error(str(error) if isinstance(error, LocalPreviewError)
-                 else "Couche externe locale invalide (empreinte modifiée) : affichage interrompu.")
+    except LocalPreviewError as error:
+        show_error(error, context="multisource.prise_de_vue")
+        return
+    except ValueError as error:
+        show_internal_error(error, context="multisource.couches",
+                            message="Couche externe locale invalide (empreinte modifiée) : affichage interrompu.")
         return
     with st.spinner("Croisement des sources…"):
         osm = cached_osm(osm_layer.storage_key, osm_layer.descriptor.fingerprint, str(data_dir), bounds) \
@@ -256,8 +260,9 @@ def show_multisource(data_dir):
         payload = cached_map_payload(result_key, filter_key, result, str(aoi_path))
         if not show_map(payload, abs(hash((result_key, filter_key))) % 10**8):
             st.warning("Carte interactive indisponible dans ce navigateur ; les tableaux restent valides.")
-    except Exception:
-        st.warning("Carte interactive indisponible ; les tableaux restent valides.")
+    except Exception as error:
+        show_internal_error(error, context="multisource.carte", level="warning",
+                            message="Carte interactive indisponible ; les tableaux restent valides.")
     st.caption("Filtres d'affichage uniquement : les statistiques ci-dessous portent sur toutes les classes. "
                "Activer les couches dans la barre au-dessus de la carte.")
 

@@ -35,3 +35,14 @@ def _memoize_streamlit_component_manifest_scan():
         yield
     finally:
         manifest_scanner.scan_component_manifests = original
+
+
+@pytest.fixture(autouse=True)
+def _reset_ui_incident_registry():
+    """Each test sees a first occurrence: no carry-over of the repeat-suppression window."""
+    import sys
+
+    module = sys.modules.get("src.components.errors")
+    if module is not None:
+        module._seen.clear()
+    yield

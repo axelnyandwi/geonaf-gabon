@@ -4,6 +4,7 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.components.errors import page_guard, public_text, show_error
 from src.data.download_control import DownloadBudget, TransferAborted
 from src.services.download_queue import DownloadQueue
 
@@ -15,6 +16,12 @@ def download_queue(data_dir):
 
 @st.fragment(run_every=1.0)
 def show_download_status(queue):
+    # A fragment rerun runs alone, outside the page guard: it needs its own.
+    with page_guard("telechargements.suivi"):
+        _show_download_status(queue)
+
+
+def _show_download_status(queue):
     snapshot = queue.snapshot()
     was_busy = st.session_state.get("downloads_was_busy", False)
     st.session_state["downloads_was_busy"] = snapshot["busy"]
@@ -22,7 +29,7 @@ def show_download_status(queue):
         # Commands outside this fragment were rendered disabled; refresh them once.
         st.rerun(scope="app")
     if snapshot["error"]:
-        st.warning(snapshot["error"])
+        st.warning(public_text(snapshot["error"]))
     rows = snapshot["rows"]
     if not rows:
         return
@@ -48,7 +55,7 @@ def show_download_status(queue):
                 queue.start()
                 st.rerun()
             except TransferAborted as error:
-                st.error(str(error))
+                show_error(error, context="telechargements.lancement")
     elif snapshot["phase"] == "finished":
         st.caption("Actualiser l’état local du catalogue pour voir les produits disponibles. "
                    "Pour reprendre : conserver la sélection, réestimer, puis lancer explicitement.")
@@ -77,4 +84,4 @@ def show_download_commands(selection, data_dir):
                                                         memory * 1024**2, reserve * 1024**2, workers))
                 st.rerun()
             except (TransferAborted, ValueError) as error:
-                st.error(str(error))
+                show_error(error, context="telechargements.estimation")

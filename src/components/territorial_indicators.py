@@ -11,6 +11,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from src.components.errors import show_internal_error
 from src.components.formatting import (
     format_hectares_from_km2, format_percent, format_pixels, format_surface, french_table,
 )
@@ -255,8 +256,10 @@ def show_key_figures(data_dir, aoi_id: str, aoi_label: str) -> None:
         inputs = indicator_inputs(Path(data_dir), aoi_id)
         with st.spinner("Calcul des chiffres clés…"):
             result = cached_indicators(inputs.key, inputs, f"Zone d'étude {aoi_label}")
-    except Exception:
-        st.warning("Chiffres clés indisponibles (couche locale illisible ou modifiée depuis son enregistrement).")
+    except Exception as error:
+        show_internal_error(error, context="chiffres_cles", level="warning",
+                            message="Chiffres clés indisponibles (couche locale illisible ou modifiée depuis son "
+                                    "enregistrement).")
         return
     for row in (CARDS[:4], CARDS[4:]):
         for column, (indicator_id, secondary_id) in zip(st.columns(4), row):

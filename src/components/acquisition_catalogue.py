@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
+from src.components.errors import show_error
 from src.data.catalogue import CatalogueError, CatalogueQuery
 from src.geo.scientific_profile import LOCAL_SCIENTIFIC_PROFILES
 from src.services.acquisition_catalogue import (
@@ -56,7 +57,7 @@ def show_acquisition_catalogue(data_dir):
                 result = search_catalogue(query, data_dir)
             st.session_state["catalogue_result"] = result
         except CatalogueError as error:
-            st.error(str(error))
+            show_error(error, context="catalogue.recherche")
             return
     if result is None or result.query.fingerprint != query.fingerprint:
         st.session_state.pop("catalogue_selection", None)
@@ -67,7 +68,7 @@ def show_acquisition_catalogue(data_dir):
             result = refresh_local_states(result, data_dir)
         except CatalogueError as error:
             st.session_state.pop("catalogue_selection", None)
-            st.error(str(error))
+            show_error(error, context="catalogue.etat_local")
             return
         st.session_state["catalogue_result"] = result
     st.caption(f"{len(result.records)} acquisitions uniques · recherche UTC : "

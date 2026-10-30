@@ -1,0 +1,10 @@
+# GEONAF — Streamlit configuration (versioned; secrets stay in .streamlit/secrets.toml, ignored).
+
+[client]
+# Uncaught exceptions: the browser shows a generic message only. Type, message and traceback
+# still go to the server console. GEONAF pages catch errors first and show their own message
+# with a diagnostic identifier (src/components/errors.py).
+# Local debugging only: STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=full streamlit run app.py
+showErrorDetails = "none"
+# No "ask Google / ChatGPT" links, which would send error text to external services.
+showErrorLinks = false

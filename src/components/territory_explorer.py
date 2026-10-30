@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from src.components.errors import is_expected, show_error, show_internal_error
 from src.components.formatting import format_percent, format_surface
 from src.components.resource_panel import assess_geometry, show_assessment
 from src.services import territory_catalog as catalog
@@ -45,8 +46,9 @@ def show_map(payload, key) -> None:
                              default={"error": False}, on_error_change=lambda: None)
         if result.error:
             st.warning("Carte interactive indisponible dans ce navigateur ; les chiffres restent valides.")
-    except Exception:
-        st.warning("Carte interactive indisponible ; les chiffres restent valides.")
+    except Exception as error:
+        show_internal_error(error, context="territoires.carte", level="warning",
+                            message="Carte interactive indisponible ; les chiffres restent valides.")
 
 
 @st.cache_data(max_entries=64, show_spinner=False)
@@ -94,9 +96,9 @@ def _load_button(data_dir, release, level, key):
         try:
             with st.spinner("Récupération bornée geoBoundaries (métadonnées, puis géométries si absentes)…"):
                 report = catalog.load_referential(Path(data_dir), release, level)
-        except Exception as error:
-            message = str(error) if type(error).__name__ == "GeoBoundariesError" else type(error).__name__
-            st.error(f"Chargement impossible : {message}. Aucune donnée partielle n'a été enregistrée.")
+        except Exception as error:  # Never the internal exception type or text.
+            show_error(error, context="territoires.geoboundaries", prefix="Chargement impossible : ",
+                       suffix=" Aucune donnée partielle n'a été enregistrée.")
             return
         st.success(f"{len(report.registered)} unité(s) enregistrée(s), {len(report.rejected)} rejetée(s) ; "
                    + ("instantané local réutilisé." if report.snapshot.reused else
@@ -229,8 +231,10 @@ def _import(data_dir):
         record, _ = catalog.import_custom_zone(Path(data_dir), upload.getvalue(), label=label, author=author,
                                                license_spdx=license_spdx, source_date=source_date)
     except Exception as error:
-        message = str(error) if isinstance(error, ValueError) else "fichier illisible"
-        st.error(f"Import refusé : {message}")
+        if is_expected(error):
+            show_error(error, context="territoires.import", prefix="Import refusé : ")
+        else:  # Unreadable upload: plain user message, details only in the server log.
+            show_internal_error(error, context="territoires.import", message="Import refusé : fichier illisible.")
         return
     st.success(f"Zone « {record.label} » enregistrée ({format_surface(record.area_km2)} km², version "
                f"{record.version}, statut « {record.legal_status} »).")

@@ -13,6 +13,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from src.components.errors import show_internal_error
 from src.components.formatting import format_hectares_from_km2, format_percent, format_surface, french_table
 from src.components.resource_panel import assess_aoi_file, show_assessment
 from src.indicators.assembly import build_s2_vegetation_indicator
@@ -188,8 +189,10 @@ def show_s2_vegetation(data_dir, aoi_id: str) -> None:
         key = s2_inventory_key(data_dir, aoi_id, year=YEAR, profile=VEGETATION_PROFILE)
         with st.spinner("Lecture des acquisitions Sentinel-2 vérifiées…"):
             inventory = cached_inventory(key, str(data_dir), aoi_id)
-    except Exception:
-        st.warning("Estimation Sentinel-2 indisponible (acquisitions locales illisibles ou profil refusé).")
+    except Exception as error:
+        show_internal_error(error, context="s2_vegetation.inventaire", level="warning",
+                            message="Estimation Sentinel-2 indisponible (acquisitions locales illisibles ou "
+                                    "profil refusé).")
         return
     for note in inventory.notes:
         st.caption(note)
