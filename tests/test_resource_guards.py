@@ -236,3 +236,122 @@ def test_free_memory_is_the_smaller_of_host_and_container(tmp_path, monkeypatch)
     assert memory.refuse_at == pytest.approx(824 * 0.9) and "mémoire libre" in memory.reason
     monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", tmp_path / "absent")
     assert available_memory_bytes() == 8 * 1024 * MIB                # Outside a container: the host figure.
+
+
+# --- cgroup: process cgroup, mounts and inherited limits (C4b) -------------------------------------
+
+def _write_v2(directory, limit=None, usage=0, inactive=0):
+    directory.mkdir(parents=True, exist_ok=True)
+    if limit is not None:
+        (directory / "memory.max").write_text(f"{limit}\n")
+    (directory / "memory.current").write_text(f"{usage}\n")
+    (directory / "memory.stat").write_text(f"anon 1\ninactive_file {inactive}\n")
+
+
+def _write_v1(directory, limit, usage=0, inactive=0):
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "memory.limit_in_bytes").write_text(f"{limit}\n")
+    (directory / "memory.usage_in_bytes").write_text(f"{usage}\n")
+    (directory / "memory.stat").write_text(f"total_inactive_file {inactive}\n")
+
+
+def _proc(tmp_path, cgroup_lines, mount_lines):
+    proc = tmp_path / "proc"
+    proc.mkdir(parents=True, exist_ok=True)
+    (proc / "cgroup").write_text("\n".join(cgroup_lines) + "\n")
+    (proc / "mountinfo").write_text("\n".join(mount_lines) + "\n")
+    return {"proc_cgroup": proc / "cgroup", "mountinfo": proc / "mountinfo"}
+
+
+V2_MOUNT = "30 23 0:26 / /sys/fs/cgroup rw,nosuid shared:4 - cgroup2 cgroup2 rw,nsdelegate"
+
+
+def test_cgroup_v2_limit_inherited_from_a_parent_slice(tmp_path):
+    from src.services.resource_guards import LIMITED, cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v2(base / "system.slice" / "app.service", "max", usage=300 * MIB)       # No limit on the service.
+    _write_v2(base / "system.slice", 512 * MIB, usage=300 * MIB, inactive=50 * MIB)
+    figure = cgroup_memory(base, **_proc(tmp_path, ["0::/system.slice/app.service"], [V2_MOUNT]))
+    assert figure.status == LIMITED and figure.version == 2 and figure.level == "/system.slice"
+    assert figure.available_bytes == (512 - 250) * MIB and figure.limit_bytes == 512 * MIB
+
+
+def test_cgroup_most_restrictive_level_wins(tmp_path):
+    from src.services.resource_guards import cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v2(base / "kubepods" / "pod" / "container", 900 * MIB, usage=100 * MIB)  # 800 MiB left here...
+    _write_v2(base / "kubepods" / "pod", 1024 * MIB, usage=700 * MIB)               # ...but 324 MiB left for the pod.
+    figure = cgroup_memory(base, **_proc(tmp_path, ["0::/kubepods/pod/container"], [V2_MOUNT]))
+    assert figure.available_bytes == 324 * MIB and figure.level == "/kubepods/pod"
+
+
+def test_cgroup_v2_namespaced_container_sees_its_cgroup_at_the_mount_root(tmp_path):
+    from src.services.resource_guards import cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v2(base, 1024 * MIB, usage=200 * MIB)
+    figure = cgroup_memory(base, **_proc(tmp_path, ["0::/"], [V2_MOUNT]))
+    assert figure.available_bytes == 824 * MIB and figure.level == "/"
+
+
+def test_cgroup_v1_container_mounted_below_the_hierarchy_root(tmp_path):
+    from src.services.resource_guards import cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v1(base / "memory", 768 * MIB, usage=268 * MIB)
+    mount = ("41 30 0:37 /docker/abc /sys/fs/cgroup/memory ro,nosuid shared:20 - cgroup cgroup "
+             "rw,memory")
+    proc = _proc(tmp_path, ["12:cpu,cpuacct:/docker/abc", "9:memory:/docker/abc"], [mount])
+    figure = cgroup_memory(base, **proc)
+    assert figure.version == 1 and figure.available_bytes == 500 * MIB
+
+
+def test_cgroup_v1_hierarchy_with_a_limited_parent(tmp_path):
+    from src.services.resource_guards import CGROUP_UNLIMITED, cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v1(base / "memory" / "kubepods" / "pod1" / "c1", CGROUP_UNLIMITED + 4096, usage=10 * MIB)
+    _write_v1(base / "memory" / "kubepods" / "pod1", 256 * MIB, usage=56 * MIB)
+    mount = "41 30 0:37 / /sys/fs/cgroup/memory rw - cgroup cgroup rw,memory"
+    figure = cgroup_memory(base, **_proc(tmp_path, ["9:memory:/kubepods/pod1/c1"], [mount]))
+    assert figure.available_bytes == 200 * MIB and figure.level == "/kubepods/pod1"
+
+
+def test_cgroup_statuses_unlimited_absent_and_inaccessible_are_distinct(tmp_path):
+    from src.services.resource_guards import ABSENT, INACCESSIBLE, UNLIMITED, cgroup_memory
+
+    unlimited = tmp_path / "unlimited"
+    _write_v2(unlimited / "user.slice", "max")
+    _write_v2(unlimited, "max")
+    assert cgroup_memory(unlimited, **_proc(tmp_path / "u", ["0::/user.slice"], [V2_MOUNT])).status == UNLIMITED
+    assert cgroup_memory(tmp_path / "nothing", **_proc(tmp_path / "n", [], [])).status == ABSENT
+    broken = tmp_path / "broken"
+    _write_v2(broken, 512 * MIB)
+    (broken / "memory.current").write_text("unreadable\n")
+    figure = cgroup_memory(broken, **_proc(tmp_path / "b", ["0::/"], [V2_MOUNT]))
+    assert figure.status == INACCESSIBLE and figure.available_bytes is None
+
+
+def test_inaccessible_container_limit_never_falls_back_to_the_host_total(tmp_path, monkeypatch):
+    class Host:
+        @staticmethod
+        def virtual_memory():
+            return type("Memory", (), {"available": 64 * 1024 * MIB})()
+
+    monkeypatch.setitem(sys.modules, "psutil", Host)
+    broken = tmp_path / "broken"
+    _write_v2(broken, "not-a-number")
+    monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", broken)
+    monkeypatch.setattr("src.services.resource_guards.PROC_SELF_CGROUP", tmp_path / "none")
+    assert available_memory_bytes() is None                 # Not the host's 64 GiB: configured ceilings only.
+    _write_v2(broken, "max")
+    assert available_memory_bytes() == 64 * 1024 * MIB      # Readable and unlimited: the host figure.
+
+
+def test_process_cgroup_files_unreadable_on_this_platform_mean_absent(tmp_path):
+    from src.services.resource_guards import ABSENT, cgroup_memory
+
+    figure = cgroup_memory(tmp_path / "cgroup", proc_cgroup=tmp_path / "missing", mountinfo=tmp_path / "missing")
+    assert figure.status == ABSENT and figure.available_bytes is None

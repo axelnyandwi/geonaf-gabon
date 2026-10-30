@@ -31,6 +31,7 @@ from src.indicators.s2_inventory import s2_inventory_key
 from src.indicators.s2_pairs import (
     NOT_EVALUATED, PUBLISHABLE, REJECTED, pair_provenance, s2_pair_selection, s2_pairs_key,
 )
+from src.services.compute_slots import heavy_computation
 
 TRANSITION_PROFILE = S2_NDVI_TRANSITION_V0
 TITLE = "Comparaison temporelle sur surface commune"
@@ -49,8 +50,9 @@ STATUS_LABELS = {PUBLISHABLE: "publiable", "non publiable": "non publiable", REJ
 def cached_selection(key, data_dir, aoi_id, only, _inventory):
     # Guards already checked by the caller (with the host's or container's free memory); the key identifies
     # the inventory (``_inventory`` is not hashed) through ``s2_inventory_key`` inside ``s2_pairs_key``.
-    return s2_pair_selection(Path(data_dir), aoi_id, inventory=_inventory, year=YEAR, profile=TRANSITION_PROFILE,
-                             only=only, available_bytes=None)
+    with heavy_computation():  # Cache miss only: shared limit of simultaneous heavy computations.
+        return s2_pair_selection(Path(data_dir), aoi_id, inventory=_inventory, year=YEAR,
+                                 profile=TRANSITION_PROFILE, only=only, available_bytes=None)
 
 
 def _when(instant):

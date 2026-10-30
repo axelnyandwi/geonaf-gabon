@@ -10,6 +10,7 @@ import streamlit as st
 from src.components.errors import show_error
 from src.components.formatting import format_ndvi, format_percent, format_pixels
 from src.components.analysis_settings import choose_analysis, choose_territory
+from src.services.compute_slots import heavy_computation
 from src.services.local_preview import (
     LocalPreviewError, analyze_local_ndvi_series, list_local_observations, local_series_key,
 )
@@ -23,8 +24,9 @@ STATUS_LABELS = {"exploration": "Exploration", "not_assessed": "Comparabilité n
 @st.cache_resource(max_entries=8, show_spinner=False)
 def cached_series(key, _observations, data_dir, _profile, period, gap_warning_days):
     # Immutable result keyed by file revisions, AOI, profile, period and gap threshold.
-    return analyze_local_ndvi_series(_observations, Path(data_dir), scientific_profile=_profile,
-                                     period=period, gap_warning_days=gap_warning_days)
+    with heavy_computation():  # Cache miss only: shared limit of simultaneous heavy computations.
+        return analyze_local_ndvi_series(_observations, Path(data_dir), scientific_profile=_profile,
+                                         period=period, gap_warning_days=gap_warning_days)
 
 
 def _frames(result):

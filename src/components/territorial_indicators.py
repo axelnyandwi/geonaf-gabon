@@ -18,6 +18,7 @@ from src.components.formatting import (
 from src.indicators.presentation import (
     RESULT_KIND_TEXT, ROAD_GLOSSARY, attribution, highway_label, road_category_label, share_text,
 )
+from src.services.compute_slots import heavy_computation
 from src.services.territorial_indicators import (
     AVAILABLE, LOW, NOT_ASSESSED, compute_territorial_indicators, indicator_inputs,
 )
@@ -38,7 +39,8 @@ DENOMINATOR_OF = {"osm.buildings_density_land": "landcover.land_km2"}
 @st.cache_resource(max_entries=4, show_spinner=False)
 def cached_indicators(key, _inputs, aoi_label):
     # One entry per (AOI digest, layer fingerprints, indicator profile): see indicator_inputs.
-    return compute_territorial_indicators(_inputs, aoi_label=aoi_label)
+    with heavy_computation():  # Cache miss only: shared limit of simultaneous heavy computations.
+        return compute_territorial_indicators(_inputs, aoi_label=aoi_label)
 
 
 def _value(indicator):

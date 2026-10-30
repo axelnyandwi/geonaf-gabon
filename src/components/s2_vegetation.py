@@ -20,6 +20,7 @@ from src.indicators.assembly import build_s2_vegetation_indicator
 from src.indicators.presentation import attribution, fr
 from src.indicators.profiles import S2_NDVI_VEGETATION_V0
 from src.indicators.s2_inventory import BREAKDOWN_UNAVAILABLE, s2_inventory_key, s2_vegetation_inventory
+from src.services.compute_slots import heavy_computation
 
 VEGETATION_PROFILE = S2_NDVI_VEGETATION_V0
 TABLE_DECIMALS = {"Surface (km²)": 2, "Surface (ha)": 1, "Part de la zone d'étude (%)": 2,
@@ -47,8 +48,9 @@ DEFINITIONS = {
 @st.cache_resource(max_entries=4, show_spinner=False)
 def cached_inventory(key, data_dir, aoi_id):
     # Guards already checked by the caller (with the host's free memory); not repeated inside the cache.
-    return s2_vegetation_inventory(Path(data_dir), aoi_id, year=YEAR, profile=VEGETATION_PROFILE,
-                                   available_bytes=None)
+    with heavy_computation():  # Cache miss only: shared limit of simultaneous heavy computations.
+        return s2_vegetation_inventory(Path(data_dir), aoi_id, year=YEAR, profile=VEGETATION_PROFILE,
+                                       available_bytes=None)
 
 
 def _km2(m2):

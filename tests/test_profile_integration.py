@@ -15,6 +15,7 @@ from src.geo.scientific_profile import (
     SeasonalRules, ScientificStatus,
 )
 from src.services.temporal_analysis import analyze_temporal_vegetation_change
+from src.components.preview_cache import peek_pair_analysis
 from src.services.local_preview import analyze_local_akanda, list_local_observations, local_preview_key
 from src.data.acquisition import SeasonalContext
 from tests.test_local_preview import local_data
@@ -206,16 +207,16 @@ def test_streamlit_profile_selection_invalidates_science_and_displays_restrictio
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
     assert not app.exception and not app.error
     first_key = app.session_state["pair"]
-    assert app.session_state["result"].scientific_profile == BASE
+    assert peek_pair_analysis(app.session_state["pair"]).scientific_profile == BASE
     assert any("Comparabilité non évaluée" in message.value for message in app.warning)
     # Advanced mode with the sensitivity preset derives a new versioned profile.
     app.radio(key="analysis_mode").set_value("Analyse avancée").run(timeout=30)
-    assert app.session_state["result"].scientific_profile == BASE  # Unchanged values: no derived profile.
+    assert peek_pair_analysis(app.session_state["pair"]).scientific_profile == BASE  # Unchanged values: no derived profile.
     app.button(key="analysis_preset").click().run(timeout=30)
     assert not app.exception and not app.error
     assert app.session_state["pair"] != first_key
-    derived = app.session_state["result"].scientific_profile
-    assert app.session_state["result"].threshold == 0.15 and derived.min_comparable_coverage_percent == 50.0
+    derived = peek_pair_analysis(app.session_state["pair"]).scientific_profile
+    assert peek_pair_analysis(app.session_state["pair"]).threshold == 0.15 and derived.min_comparable_coverage_percent == 50.0
     assert derived.fingerprint != BASE.fingerprint and derived.experimental
     assert derived.version.endswith(".advanced-1") and BASE.fingerprint[:16] in derived.rationale
     options = app.selectbox(key="analysis_scl").options  # Formatted labels; cloudy policies never offered.
@@ -223,4 +224,4 @@ def test_streamlit_profile_selection_invalidates_science_and_displays_restrictio
     assert any("non validée" in message.value for message in app.warning)
     assert len(app.metric) == 4
     app.radio(key="analysis_mode").set_value("Analyse standard").run(timeout=30)
-    assert app.session_state["result"].scientific_profile == BASE and app.session_state["pair"] == first_key
+    assert peek_pair_analysis(app.session_state["pair"]).scientific_profile == BASE and app.session_state["pair"] == first_key

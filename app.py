@@ -5,13 +5,13 @@ from PIL import Image
 
 from src.config import APP_TITLE, PROJECT_ROOT, TAGLINE
 from src.components.data_source import active_data_dir
-from src.components.preview_cache import cached_map_png
+from src.components.preview_cache import cached_map_png, shared_pair_analysis
 from src.components.interactive_map import cached_ndvi_layer, show_interactive_map
 from src.components.temporal_map import cached_temporal_payload, show_temporal_map
 from src.components.observation_picker import pick_observations, observation_quality_notices
 from src.components.formatting import format_pixels, format_ndvi, format_surface, format_percent
 from src.services.local_preview import (
-    LocalPreviewError, analyze_local_akanda, list_local_observations, local_preview_key,
+    LocalPreviewError, list_local_observations, local_preview_key,
 )
 from src.services.observation_selection import observation_label
 from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
@@ -73,13 +73,11 @@ with page_guard("accueil"):  # Unexpected errors: generic message + diagnostic i
         key = local_preview_key(earlier, later, DATA_DIR, scientific_profile=profile)
         if not show_assessment(assess_aoi_file(DATA_DIR / "aoi" / f"{aoi_id}.geojson"), operation="Analyse de la paire"):
             st.stop()
-        if st.session_state.get("pair") != key:
-            with st.spinner("Vérification des fichiers locaux et calcul du NDVI calibré…"):
-                result = analyze_local_akanda(earlier, later, DATA_DIR, scientific_profile=profile)
-            st.session_state["result"] = result
-            st.session_state["pair"] = key
+        # Shared by all sessions, bounded in bytes, read-only arrays; the session keeps only the key.
+        with st.spinner("Vérification des fichiers locaux et calcul du NDVI calibré…"):
+            result = shared_pair_analysis(key, earlier, later, DATA_DIR, profile)
+        st.session_state["pair"] = key
         st.session_state['selected_observations'] = selected
-        result = st.session_state["result"]
     except LocalPreviewError as error:
         show_error(error, context="accueil.analyse")
         st.stop()

@@ -28,7 +28,7 @@ import hashlib
 import json
 import math
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 OK, WARNING, REFUSED, UNKNOWN = "ok", "avertissement", "refus", "inconnu"
 STATUS_NOTE = "Seuils provisoires, calibrés sur un seul poste ; non validés scientifiquement ni opérationnellement."
@@ -186,45 +186,168 @@ def estimate_s2_tiles(geometry_wgs84) -> tuple[tuple[int, int, int], ...]:
 
 
 CGROUP_ROOT = Path("/sys/fs/cgroup")
-CGROUP_FILES = (("memory.max", "memory.current", "memory.stat", "inactive_file"),                       # v2
-                ("memory/memory.limit_in_bytes", "memory/memory.usage_in_bytes", "memory/memory.stat",
-                 "total_inactive_file"))                                                               # v1
+PROC_SELF_CGROUP = Path("/proc/self/cgroup")
+PROC_SELF_MOUNTINFO = Path("/proc/self/mountinfo")
+CGROUP_FILES = {2: ("memory.max", "memory.current", "memory.stat", "inactive_file"),
+                1: ("memory.limit_in_bytes", "memory.usage_in_bytes", "memory.stat", "total_inactive_file")}
 CGROUP_UNLIMITED = 1 << 60     # cgroup v1 writes a huge page-aligned number when no limit is set.
+
+LIMITED, UNLIMITED, ABSENT, INACCESSIBLE = "limited", "unlimited", "absent", "inaccessible"
+
+
+@dataclass(frozen=True)
+class CgroupMemory:
+    """Effective cgroup memory figure of this process.
+
+    ``status``: ``limited`` (a numeric limit applies), ``unlimited`` (cgroup files readable, no limit
+    at any level), ``absent`` (no cgroup memory controller visible: Windows, macOS, bare process),
+    ``inaccessible`` (files present but unreadable or malformed: no figure is trusted).
+    ``available_bytes`` = limit − (usage − inactive file cache), the smallest over the process cgroup
+    and every visible ancestor; ``level`` is the cgroup path giving it (never a host file path).
+    """
+
+    status: str
+    available_bytes: int | None = None
+    limit_bytes: int | None = None
+    version: int | None = None
+    level: str | None = None
+
+
+def _read_text(path: Path) -> str | None:
+    try:
+        return path.read_text(encoding="ascii")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
+def _process_cgroups(proc_cgroup: Path) -> dict[int, str]:
+    """{version: cgroup path} from /proc/self/cgroup (v2 ``0::/path``, v1 line naming ``memory``)."""
+    text = _read_text(proc_cgroup)
+    paths: dict[int, str] = {}
+    for line in (text or "").splitlines():
+        parts = line.split(":", 2)
+        if len(parts) != 3:
+            continue
+        hierarchy, controllers, path = parts
+        if hierarchy == "0" and controllers == "":
+            paths[2] = path
+        elif "memory" in controllers.split(","):
+            paths[1] = path
+    return paths
+
+
+def _mount_roots(mountinfo: Path) -> dict[int, tuple[str, str]]:
+    """{version: (root inside the hierarchy, mount point)} of the cgroup memory mounts."""
+    text = _read_text(mountinfo)
+    mounts: dict[int, tuple[str, str]] = {}
+    for line in (text or "").splitlines():
+        left, separator, right = line.partition(" - ")
+        fields_left, fields_right = left.split(), right.split()
+        if not separator or len(fields_left) < 5 or len(fields_right) < 3:
+            continue
+        root, mount_point, fstype, options = fields_left[3], fields_left[4], fields_right[0], fields_right[2]
+        if fstype == "cgroup2" and 2 not in mounts:
+            mounts[2] = (root, mount_point)
+        elif fstype == "cgroup" and "memory" in options.split(",") and 1 not in mounts:
+            mounts[1] = (root, mount_point)
+    return mounts
+
+
+def _levels(base: Path, cgroup_path: str | None, mount_root: str) -> list[tuple[Path, str]]:
+    """(directory, cgroup path) from the process cgroup up to the visible root of the hierarchy."""
+    if cgroup_path is None:
+        return [(base, "/")]
+    relative = PurePosixPath(cgroup_path)
+    root = PurePosixPath(mount_root or "/")
+    try:
+        relative = relative.relative_to(root)          # Mounted below the hierarchy root (container).
+    except ValueError:
+        relative = PurePosixPath(*relative.parts[1:]) if relative.is_absolute() else relative
+    parts = [part for part in relative.parts if part not in ("", "/", ".", "..")]
+    levels = []
+    for depth in range(len(parts), -1, -1):
+        levels.append((base.joinpath(*parts[:depth]), "/" + "/".join(parts[:depth])))
+    return levels
+
+
+def _level_figure(directory: Path, version: int):
+    """(status, available, limit) of one cgroup directory."""
+    limit_name, usage_name, stat_name, inactive_key = CGROUP_FILES[version]
+    limit_text = _read_text(directory / limit_name)
+    if limit_text is None:
+        return ABSENT, None, None
+    limit_text = limit_text.strip()
+    if limit_text == "max":
+        return UNLIMITED, None, None
+    if not limit_text.isdigit():
+        return INACCESSIBLE, None, None
+    limit = int(limit_text)
+    if limit >= CGROUP_UNLIMITED:
+        return UNLIMITED, None, None
+    usage_text = (_read_text(directory / usage_name) or "").strip()
+    if not usage_text.isdigit():
+        return INACCESSIBLE, None, None
+    inactive = 0
+    for line in (_read_text(directory / stat_name) or "").splitlines():
+        name, _, value = line.partition(" ")
+        if name == inactive_key and value.strip().isdigit():
+            inactive = int(value)
+    return LIMITED, max(0, limit - max(0, int(usage_text) - inactive)), limit
+
+
+def cgroup_memory(root: Path | None = None, *, proc_cgroup: Path | None = None,
+                  mountinfo: Path | None = None) -> CgroupMemory:
+    """Effective memory limit of this process under cgroup v2, else v1 (see :class:`CgroupMemory`).
+
+    The process cgroup comes from ``/proc/self/cgroup``; ``/proc/self/mountinfo`` gives the part of
+    the hierarchy visible under ``root`` (a container usually sees its own cgroup as the root).
+    Every level from the process cgroup up to that visible root is read, so a limit set on a
+    parent (systemd slice, pod) applies. With an explicit ``root`` and no /proc files, ``root`` is
+    the process cgroup itself (single level). The host's total memory is never assumed.
+    """
+    base = CGROUP_ROOT if root is None else Path(root)
+    explicit_root = root is not None and proc_cgroup is None and mountinfo is None
+    cgroups = {} if explicit_root else _process_cgroups(PROC_SELF_CGROUP if proc_cgroup is None else proc_cgroup)
+    mounts = {} if explicit_root else _mount_roots(PROC_SELF_MOUNTINFO if mountinfo is None else mountinfo)
+    statuses = []
+    for version, hierarchy in ((2, base), (1, base / "memory")):
+        mount_root = mounts.get(version, ("/", ""))[0]
+        figures = []
+        for directory, path in _levels(hierarchy, cgroups.get(version), mount_root):
+            status, available, limit = _level_figure(directory, version)
+            statuses.append(status)
+            if status == LIMITED:
+                figures.append((available, limit, path))
+            elif status == INACCESSIBLE:
+                return CgroupMemory(INACCESSIBLE, version=version, level=path)
+        if figures:
+            available, limit, path = min(figures)
+            return CgroupMemory(LIMITED, available, limit, version, path)
+        if UNLIMITED in statuses:
+            return CgroupMemory(UNLIMITED, version=version)
+    return CgroupMemory(ABSENT)
 
 
 def cgroup_memory_bytes(root: Path | None = None) -> int | None:
-    """Memory left under the container's cgroup limit (v2, else v1); None without a limit or when unreadable.
+    """Memory left under the effective cgroup limit; None when unlimited, absent or inaccessible.
 
-    Usage minus inactive file cache (reclaimable), as container runtimes count
-    the working set; never below zero.
+    Usage minus inactive file cache (reclaimable), as container runtimes count the working set;
+    never below zero. See :func:`cgroup_memory`.
     """
-    root = CGROUP_ROOT if root is None else root
-    for limit_name, usage_name, stat_name, inactive_key in CGROUP_FILES:
-        try:
-            limit = (root / limit_name).read_text(encoding="ascii").strip()
-            usage = int((root / usage_name).read_text(encoding="ascii").strip())
-        except (OSError, ValueError):
-            continue
-        if not limit.isdigit() or int(limit) >= CGROUP_UNLIMITED:
-            return None
-        inactive = 0
-        try:
-            for line in (root / stat_name).read_text(encoding="ascii").splitlines():
-                name, _, value = line.partition(" ")
-                if name == inactive_key:
-                    inactive = int(value)
-        except (OSError, ValueError):
-            pass
-        return max(0, int(limit) - max(0, usage - inactive))
-    return None
+    figure = cgroup_memory(root)
+    return figure.available_bytes if figure.status == LIMITED else None
 
 
 def available_memory_bytes() -> int | None:
     """Free memory: the smaller of the host's and of the container's cgroup limit, None when both are unreadable.
 
     In a container the host figure ignores the cgroup limit; without any figure the configured ceilings apply
-    alone.
+    alone. When cgroup files exist but cannot be read, the container limit is unknown: the host figure is
+    not trusted either (it may be far above what the process may use) and None is returned.
     """
+    container = cgroup_memory()
+    if container.status == INACCESSIBLE:
+        return None
     host = None
     try:
         import psutil
@@ -232,7 +355,8 @@ def available_memory_bytes() -> int | None:
         host = int(psutil.virtual_memory().available)
     except (ImportError, OSError):
         pass
-    figures = [value for value in (host, cgroup_memory_bytes()) if value is not None]
+    limited = container.available_bytes if container.status == LIMITED else None
+    figures = [value for value in (host, limited) if value is not None]
     return min(figures) if figures else None
 
 

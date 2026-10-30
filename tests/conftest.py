@@ -46,3 +46,14 @@ def _reset_ui_incident_registry():
     if module is not None:
         module._seen.clear()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_shared_result_cache():
+    """The byte-bounded cache is process-wide: each test starts empty (no cross-test reuse)."""
+    import sys
+
+    module = sys.modules.get("src.services.bounded_cache")
+    if module is not None and module._shared is not None:
+        module._shared.clear()
+    yield

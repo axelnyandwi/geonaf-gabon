@@ -11,6 +11,7 @@ import rasterio
 from rasterio.transform import from_origin
 from shapely.geometry import box
 
+from src.components.preview_cache import peek_pair_analysis
 from src.data.acquisition_manifest import build_acquisition_manifest, write_acquisition_manifest
 from src.services.local_preview import (
     LocalPreviewError, analyze_local_akanda, list_local_observations,
@@ -161,19 +162,19 @@ def test_same_pair_submit_reuses_result_and_invalidates_changed_aoi(local_data, 
     app.session_state["interactive_map"] = False  # Specifically exercise the PNG fallback cache.
     app.session_state["temporal_comparison"] = False
     app.run(timeout=30)
-    original = app.session_state["result"].analysis.delta_ndvi.copy()
+    original = peek_pair_analysis(app.session_state["pair"]).analysis.delta_ndvi.copy()
     submit_dates(app).run()
     assert not app.exception and not app.error
     assert analyze.call_count == 1
     assert encode.call_count == 1
-    np.testing.assert_array_equal(original, app.session_state["result"].analysis.delta_ndvi)
+    np.testing.assert_array_equal(original, peek_pair_analysis(app.session_state["pair"]).analysis.delta_ndvi)
     aoi = local_data / "aoi" / "akanda.geojson"
     aoi.write_bytes(aoi.read_bytes() + b"\n")
     app.run()
     assert not app.exception and not app.error
     assert analyze.call_count == 2
     assert encode.call_count == 2
-    np.testing.assert_array_equal(original, app.session_state["result"].analysis.delta_ndvi)
+    np.testing.assert_array_equal(original, peek_pair_analysis(app.session_state["pair"]).analysis.delta_ndvi)
 
 
 @pytest.mark.parametrize("target", ["manifest", "b04", "b08", "scl", "calibration_xml", "aoi"])
@@ -283,11 +284,11 @@ def test_interactive_layer_cache_reuses_science_and_never_sends_paths(local_data
     assert not any("Carte interactive indisponible" in warning.value for warning in app.warning)
     submit_dates(app).run()
     assert analyze.call_count == prepare.call_count == 1
-    original = app.session_state["result"].comparison.ndvi_date_2.copy()
+    original = peek_pair_analysis(app.session_state["pair"]).comparison.ndvi_date_2.copy()
     app.checkbox(key="interactive_map").uncheck().run()
     assert not app.exception and not app.error
     assert analyze.call_count == 1
-    np.testing.assert_array_equal(original, app.session_state["result"].comparison.ndvi_date_2)
+    np.testing.assert_array_equal(original, peek_pair_analysis(app.session_state["pair"]).comparison.ndvi_date_2)
 
 
 def test_map_adapter_failure_uses_matplotlib(local_data, monkeypatch):

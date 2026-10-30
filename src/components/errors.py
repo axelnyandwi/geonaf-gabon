@@ -71,11 +71,12 @@ def _expected_types() -> tuple[type[BaseException], ...]:
     from src.data.geoboundaries import GeoBoundariesError
     from src.data.remote_window import ByteBudgetExceeded
     from src.geo.pair_selection import IncompleteSTACSearchError
+    from src.services.compute_slots import ComputeBusyError
     from src.services.local_preview import LocalPreviewError
     from src.services.territory_catalog import ZoneImportRefused
 
     return (LocalPreviewError, CatalogueError, TransferAborted, GeoBoundariesError, DemoPackError,
-            ByteBudgetExceeded, IncompleteSTACSearchError, ZoneImportRefused)
+            ByteBudgetExceeded, IncompleteSTACSearchError, ZoneImportRefused, ComputeBusyError)
 
 
 def is_expected(error: BaseException) -> bool:
@@ -253,8 +254,13 @@ def show_error(error: BaseException, *, context: str, prefix: str = "", suffix: 
     return incident
 
 
-def show_internal_error(error: BaseException, *, context: str, message: str, level: str = "error") -> str:
-    """Show a controlled message (never the exception text) with the diagnostic identifier."""
+def show_internal_error(error: BaseException, *, context: str, message: str, level: str = "error") -> str | None:
+    """Show a controlled message (never the exception text) with the diagnostic identifier.
+
+    A listed domain error keeps its own message, written for users (e.g. « Serveur occupé »).
+    """
+    if is_expected(error):
+        return show_error(error, context=context, level=level)
     incident = report_internal_error(error, context=context)
     (st.warning if level == "warning" else st.error)(f"{message}{DIAGNOSTIC_SUFFIX.format(incident=incident)}")
     return incident

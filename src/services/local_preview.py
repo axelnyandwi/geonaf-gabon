@@ -256,6 +256,21 @@ def local_group_key(group, data_dir, scientific_profile: ScientificProfile):
         raise LocalPreviewError("Impossible de vérifier les entrées locales du cache.") from None
 
 
+def local_group_ndvi_key(group, data_dir, scientific_profile: ScientificProfile):
+    """Cache key of the NDVI arrays of one acquisition group: ``local_group_key`` without the
+    change threshold and the minimum comparable coverage, which the NDVI computation does not read.
+
+    Kept: file revisions, AOI path and content digest, and every profile field the computation
+    reads (AOI identifier, SCL policy, region, ecosystem, seasonal rules). Independence proved by
+    ``tests/test_ndvi_cache_independence.py`` (exact comparison). A cached observation must be
+    rebound to the effective profile (``dataclasses.replace(..., scientific_profile=...)``).
+    """
+    _, _, records = local_group_key(group, data_dir, scientific_profile)
+    profile = scientific_profile
+    return ("local-ndvi-group-arrays-v1", profile.aoi_id, profile.scl_policy, profile.region, profile.ecosystem,
+            profile.seasonal_rules, records)
+
+
 def analyze_local_group(group, data_dir: Path, *, scientific_profile: ScientificProfile):
     """Verify every tile's manifest and digests, then compute the (mosaicked) NDVI of one datatake."""
     from src.services.ndvi_observation import analyze_ndvi_mosaic
