@@ -199,7 +199,8 @@ def _fetch_tile_window(client, store, repository, adapter, tile, *, aoi_id: str,
         repository.save(descriptor, key)
         return path, descriptor, report
     budget = ByteBudget(max_bytes)
-    remote = RangeFile(HttpRangeSource(client, url), budget, label=url)
+    # Public ESA bucket, read without credentials.
+    remote = RangeFile(HttpRangeSource(client, url, anonymous=True), budget, label=url)
     data, profile, estimate = read_remote_window(remote, wgs84_bounds, "EPSG:4326")
     temporary = store.temporary(key)
     try:

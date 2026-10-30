@@ -333,3 +333,131 @@ def test_power_to_db_reference_values(tmp_path, linear, expected_db):
     gpd.GeoDataFrame(geometry=[box(560000, 51960, 560040, 52000)], crs="EPSG:32632").to_file(aoi)
     layer = load_radar_layer(tile, descriptor, aoi_path=aoi)
     assert layer.median_db == pytest.approx(expected_db, abs=1e-5) and layer.polarization == "VH"
+
+
+# --- Public anonymous reads: no cloud credential lookup by rasterio (C2c) ---
+
+@pytest.fixture
+def credential_probe(monkeypatch):
+    """Record any rasterio AWS session, boto3 credential lookup or metadata-service connection."""
+    import boto3.session
+    import rasterio.session
+
+    events = []
+    original_init = rasterio.session.AWSSession.__init__
+    original_credentials = boto3.session.Session.get_credentials
+    original_connect = socket.socket.connect
+
+    def aws_session(self, *args, **kwargs):
+        events.append("AWSSession")
+        return original_init(self, *args, **kwargs)
+
+    def get_credentials(self):
+        events.append("get_credentials")
+        return original_credentials(self)
+
+    def connect(self, address):
+        if isinstance(address, tuple) and str(address[0]).startswith("169.254."):
+            events.append(f"connect {address[0]}")
+            raise OSError("Service de métadonnées cloud interdit dans ces tests.")
+        return original_connect(self, address)
+
+    monkeypatch.setattr(rasterio.session.AWSSession, "__init__", aws_session)
+    monkeypatch.setattr(boto3.session.Session, "get_credentials", get_credentials)
+    monkeypatch.setattr(socket.socket, "connect", connect)
+    return events
+
+
+_AWS_OPTIONS = ("AWS_NO_SIGN_REQUEST", "AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN")
+
+
+def _gdal_aws_options():
+    from rasterio._env import get_gdal_config
+
+    return {name: get_gdal_config(name) for name in _AWS_OPTIONS}
+
+
+class ConfigProbeRangeHttp(FakeRangeHttp):
+    """Records the GDAL AWS options seen by the reading thread at each Range GET."""
+
+    def __init__(self, payload):
+        super().__init__(payload)
+        self.seen = []
+
+    def request(self, method, url, *, headers=None, **kwargs):
+        if method == "GET":
+            self.seen.append(_gdal_aws_options())
+        return super().request(method, url, headers=headers, **kwargs)
+
+
+def test_worldcover_public_read_never_looks_up_aws_credentials(tmp_path, credential_probe):
+    import os
+
+    environment, options = dict(os.environ), _gdal_aws_options()
+    tile, data = worldcover_tile(tmp_path)
+    store = LayerFileStore(tmp_path / "external")
+    client = ConfigProbeRangeHttp(tile.read_bytes())
+    bounds = (9.40, 0.40, 9.42, 0.42)
+
+    with pytest.raises(ByteBudgetExceeded):  # Budget still enforced on the anonymous path.
+        fetch_worldcover_window(client, store, FileLayerRepository(store), aoi_id="anon", wgs84_bounds=bounds,
+                                max_bytes=70_000)
+    assert not store.keys("worldcover")
+    path, _, report = fetch_worldcover_window(client, store, FileLayerRepository(store), aoi_id="anon",
+                                              wgs84_bounds=bounds, now=NOW)
+
+    assert credential_probe == []
+    with rasterio.open(path) as window:  # Same window and pixels as the tile itself.
+        assert window.crs.to_epsg() == 4326 and window.width == 240
+        np.testing.assert_array_equal(window.read(1), data[480:720, 120:360])
+    assert 0 < report["network_bytes"] < len(tile.read_bytes())
+    # Rasterio context isolation: no AWS option set or changed, even during the read.
+    assert client.seen and all(seen == options for seen in client.seen)
+    assert _gdal_aws_options() == options and dict(os.environ) == environment
+
+
+def test_sentinel1_authenticated_read_keeps_its_s3_client(tmp_path, monkeypatch, credential_probe):
+    from src.network_config import NetworkSettings
+
+    monkeypatch.setattr(NetworkSettings, "from_environment", classmethod(lambda cls, **kw: cls(max_attempts=1)))
+    tile, data = radar_cog(tmp_path)
+    options, seen = _gdal_aws_options(), []
+
+    class ProbeS3(FakeS3):
+        def get_object(self, Bucket, Key, Range):
+            seen.append(_gdal_aws_options())
+            return super().get_object(Bucket, Key, Range)
+
+    s3 = ProbeS3(tile.read_bytes())
+    store = LayerFileStore(tmp_path / "external")
+    path, descriptor, report = fetch_sentinel1_window(
+        s3, store, FileLayerRepository(store), parse_mosaic_item(mosaic_item()), "VV", aoi_id="t",
+        wgs84_bounds=(9.5435, 0.4250, 9.5615, 0.4430), now=NOW)
+    # Bytes come only through GEONAF's (authenticated) S3 client; rasterio adds nothing.
+    assert s3.gets > 0 and seen and all(value == options for value in seen)
+    assert credential_probe == []
+    assert not report["reused"] and report["network_bytes"] < len(tile.read_bytes())
+    assert descriptor.provenance["s3_key"].startswith("Global-Mosaics/")
+    with rasterio.open(path) as window:
+        assert window.dtypes[0] == "float32" and window.res == (20, 20)
+
+
+def test_anonymous_dataset_name_is_explicit_opt_in(tmp_path):
+    from src.data.remote_window import ByteBudget, HttpRangeSource, RangeFile, S3RangeSource
+
+    tile, _ = worldcover_tile(tmp_path)
+    url = "https://esa-worldcover.s3.eu-central-1.amazonaws.com/v200/2021/map/x.tif"
+    client = FakeRangeHttp(tile.read_bytes())
+
+    def remote(**kwargs):
+        return RangeFile(HttpRangeSource(client, url, **kwargs), ByteBudget(1), label=url)
+
+    assert remote().name == url  # Not inferred from the domain name: default unchanged.
+    assert remote(anonymous="yes").name == url  # Only a real True opts in.
+    first, second = remote(anonymous=True), remote(anonymous=True)
+    assert first.name.startswith("anonymous-range/") and "amazonaws" not in first.name
+    assert first.name != second.name  # rasterio allows one opener per dataset name.
+    assert first.label == url
+    with pytest.raises(FileNotFoundError):
+        first.view(url)
+    assert S3RangeSource.anonymous is False

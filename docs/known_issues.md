@@ -96,24 +96,38 @@ mesurée hors `atomic_json`.
 
 ## WorldCover : recherche d'identifiants AWS inutile à chaque lecture de tuile (constaté le 30/10/2026)
 
-**Statut :** ouvert ; code de production, lot distinct à valider.
+**Statut :** corrigé le 30/10/2026 (C2c), `src/data/remote_window.py` et `src/data/worldcover.py`.
 
-**Constat.** Trois tests (`test_external_sources_fetch.py::test_worldcover_window_is_fetched_once_within_cap_then_reused`,
-`test_aoi_identity.py::test_worldcover_retrieval_after_a_geometry_change_uses_a_new_key`,
-`test_lot5_multitile.py::test_worldcover_aoi_across_two_tiles_keeps_per_tile_provenance`) ouvrent
-chacun 4 connexions vers `169.254.169.254` (service de métadonnées d'instance cloud), ≈ 1 s de délai
-chacune : ≈ 4,3 s par test, ≈ 13 s par suite.
+**Constat.** Chaque lecture de fenêtre WorldCover ouvrait 2 connexions vers `169.254.169.254` (service de
+métadonnées d'instance cloud), ≈ 1 s de délai chacune, sur un poste hors AWS.
 
-**Cause.** `read_remote_window` (`src/data/remote_window.py`) appelle `rasterio.open(url, opener=…)`
-avec l'URL `https://esa-worldcover.s3.eu-central-1.amazonaws.com/…`. rasterio y reconnaît S3, crée une
-`AWSSession` et parcourt la chaîne d'identifiants boto3 jusqu'au service de métadonnées. Les octets
-passant par l'`opener` (HTTP Range borné), ces identifiants ne servent à rien. Même coût en usage réel
-sur un poste hors AWS ; un profil AWS local de l'utilisateur pourrait aussi être chargé inutilement.
+**Cause.** Les octets passent par l'`opener` de `RangeFile` (HTTP Range borné, client GEONAF) ; GDAL
+n'accède pas au réseau. Mais `rasterio.open` choisit une session d'après le nom du jeu de données
+(`Session.cls_from_path`, rasterio 1.4.4) : l'URL `https://esa-worldcover.s3.eu-central-1.amazonaws.com/…`
+contient `amazonaws.com`, d'où une `AWSSession` dont la chaîne d'identifiants boto3 interroge le service
+de métadonnées. Sentinel-1 n'était pas concerné : son nom est une clé S3 sans schéma (session neutre),
+et ses accès authentifiés passent par le client S3 de GEONAF, jamais par rasterio.
 
-**Correction proposée (non réalisée).** Ouvrir le raster sans session AWS (par exemple
-`rasterio.Env(session=…)` sans identifiants, ou un libellé non S3 pour l'`opener`), avec un test
-vérifiant l'absence de connexion. À vérifier : Sentinel-1 (`src/data/sentinel1.py`) passe une clé S3
-comme libellé.
+**Correction.** Paramètre explicite `HttpRangeSource(..., anonymous=True)`, passé uniquement par
+WorldCover (bucket public ESA). Pour une telle source, `RangeFile` ouvre le raster sous un nom neutre et
+unique (`anonymous-range/<uuid>.tif`) : rasterio le classe comme local et n'ouvre aucune session cloud.
+Par défaut (`anonymous=False`, `S3RangeSource`), le nom reste le libellé d'origine : rien n'est déduit
+du nom de domaine. Aucune option GDAL ni variable d'environnement n'est modifiée.
+
+**Option écartée.** `rasterio.Env(AWS_NO_SIGN_REQUEST="YES")` évite aussi la session AWS, mais rasterio
+pose cette option pour tout le processus lorsque la lecture a lieu dans le fil principal (pytest, scripts)
+et seulement pour le fil courant ailleurs (Streamlit, workers) : isolation non garantie.
+
+**Mesures (30/10/2026).**
+
+| Lecture d'une fenêtre, magasin vierge | Avant | Après |
+|---|---|---|
+| Hors ligne (tuile synthétique, 5 lectures) | 2,06 s, 2 connexions IMDS | 0,026 s, 0 |
+| Réseau réel (Akanda ≈ 1 km, 2 lectures) | 3,9–4,1 s, 2 connexions IMDS | 1,9–2,1 s, 0 |
+| Pixels, métadonnées, octets, requêtes | référence | identiques |
+
+**Limites.** Le script manuel `scripts/check_worldcover_akanda_live.py` a son propre `RangeFile` et
+garde l'ancien comportement. Les lectures réelles dépendent du réseau du poste au moment de la mesure.
 
 ## Accessibilité des tableaux `st.dataframe` (constaté le 28/10/2026)
 
