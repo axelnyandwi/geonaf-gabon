@@ -4,14 +4,16 @@ The store interface is deliberately path-free for callers of the queue. A future
 object store adapter must provide equivalent validation/publication guarantees.
 """
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from datetime import datetime
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 import re
 import shutil
+import time
 from uuid import uuid4
 
 from src.data import ingestion
@@ -27,14 +29,45 @@ def safe_id(value):
     return value
 
 
+# Windows only: an antivirus or indexer may briefly hold a file that was just replaced, and
+# the next os.replace then fails with PermissionError (WinError 5). Retry a few times with a
+# bounded total wait (≈ 0.4 s); a lasting refusal is still raised. On POSIX a rename
+# PermissionError is permanent, so it is never retried.
+_REPLACE_RETRY_DELAYS = (0.01, 0.02, 0.05, 0.1, 0.25) if os.name == "nt" else ()
+
+
+def _replace(source, destination):
+    for retry, delay in enumerate((*_REPLACE_RETRY_DELAYS, None)):
+        try:
+            os.replace(source, destination)
+        except PermissionError:
+            if delay is None:
+                raise
+            time.sleep(delay)
+        else:
+            if retry:
+                logging.getLogger(__name__).warning("atomic_json_replace_retried retries=%d", retry)
+            return
+
+
 def atomic_json(destination, value):
+    """Write JSON atomically: readers see the previous complete file or the new one.
+
+    On any failure the destination is left untouched, the temporary file is removed and
+    the original error is raised.
+    """
     temporary = destination.with_name(destination.name + "." + uuid4().hex + ".tmp")
     payload = json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True)
-    with temporary.open("x", encoding="utf-8") as output:
-        output.write(payload)
-        output.flush()
-        os.fsync(output.fileno())
-    os.replace(temporary, destination)
+    try:
+        with temporary.open("x", encoding="utf-8") as output:
+            output.write(payload)
+            output.flush()
+            os.fsync(output.fileno())
+        _replace(temporary, destination)
+    except BaseException:
+        with suppress(OSError):  # The original error, not a cleanup failure, is reported.
+            temporary.unlink(missing_ok=True)
+        raise
 
 
 # Longest temporary suffix: ".<uuid4 hex>.part" (ours) + ".<8 chars>" (s3transfer).
