@@ -101,6 +101,11 @@ htmlcov/
 *.tar.gz
 *.7z
 
+# Artefacts locaux de diagnostic : captures/journaux du navigateur Playwright MCP
+# et profils cProfile écrits à la racine (ex. profile_geonaf.txt)
+.playwright-mcp/
+/profile_*.txt
+
 # Journaux et fichiers système
 *.log
 .DS_Store
