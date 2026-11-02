@@ -24,7 +24,7 @@ ANALYSES = (
     ("analyses_temporelles", "Série temporelle NDVI", "serie", "Suivre le NDVI sur plusieurs dates de la zone d'étude."),
     ("analyses_temporelles", "Catalogue des acquisitions Sentinel-2", "donnees",
      "Rechercher des images Sentinel-2 et les télécharger sur commande explicite."),
-    ("multisource", "Démonstrateur multisource", None,
+    ("analyses_multisources", "Analyses multisources", None,
      "Croiser Sentinel-2, WorldCover, OpenStreetMap et Sentinel-1 (descriptif)."),
     ("territoires", "Territoires et frontières", None, "Comparer les référentiels de limites ou importer une zone."),
 )

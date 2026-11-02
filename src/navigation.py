@@ -11,8 +11,8 @@ import streamlit as st
 PAGES = {
     "tableau_de_bord": ("views/tableau_de_bord.py", "Tableau de bord", None),
     "analyses_temporelles": ("views/analyses_temporelles.py", "Analyses temporelles", "analyses-temporelles"),
-    "multisource": ("views/multisource.py", "Multisource", "Multisource"),
-    "territoires": ("views/territoires.py", "Territoires", "Territoires"),
+    "analyses_multisources": ("views/analyses_multisources.py", "Analyses multisources", "analyses-multisources"),
+    "territoires": ("views/territoires.py", "Territoires", "territoires"),
 }
 DEFAULT = next(iter(PAGES))
 

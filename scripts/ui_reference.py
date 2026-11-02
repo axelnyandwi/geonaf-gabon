@@ -41,7 +41,7 @@ LAYOUTS = {
         ("accueil", "app.py", (f"s2_vegetation_start_{AOI}", f"s2_pairs_start_{AOI}", f"s2_pairs_compute_{AOI}")),
         ("acquisitions", "views/acquisitions_sentinel2.py", ()),
         ("serie_ndvi", "views/serie_ndvi.py", ("series_compute",)),
-        ("multisource", "views/multisource.py", ()),
+        ("multisource", "views/analyses_multisources.py", ()),
         ("territoires", "views/territoires.py", ()),
     ],
 }
@@ -54,11 +54,9 @@ _SECTIONS = [
 ]
 # E3: the home page is still complete; the temporal page holds the series and the catalogue.
 LAYOUTS["e3"] = [LAYOUTS["e0"][0], *_SECTIONS, *LAYOUTS["e0"][3:]]
-# V1 (from E4): dashboard, temporal sections, multisource and territories pages.
+# V1: dashboard, temporal sections, multisource and territories pages.
 LAYOUTS["v1"] = [("tableau_de_bord", "app.py", (f"s2_vegetation_start_{AOI}",)), *_SECTIONS,
                  ("multisource", "views/analyses_multisources.py", ()), ("territoires", "views/territoires.py", ())]
-# E4: V1 layout before the multisource page is renamed (E5).
-LAYOUTS["e4"] = [*LAYOUTS["v1"][:-2], ("multisource", "views/multisource.py", ()), LAYOUTS["v1"][-1]]
 # Where each E0 flow is displayed now: (E0 flows, flows of the layout, relation).
 GROUPS = {
     "e0": [((name,), (name,), "equal") for name, _, _ in LAYOUTS["e0"]],
@@ -69,7 +67,6 @@ GROUPS = {
            (("serie_ndvi",), ("t_serie",), "equal"), (("acquisitions",), ("t_donnees",), "equal"),
            (("multisource",), ("multisource",), "equal"), (("territoires",), ("territoires",), "equal")],
 }
-GROUPS["e4"] = GROUPS["v1"]
 
 
 def copy_pack(pack: Path, target: Path) -> Path:

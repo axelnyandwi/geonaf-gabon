@@ -22,7 +22,7 @@ ROOT = Path(__file__).resolve().parent.parent
 PACK = Path(os.environ.get("GEONAF_DEMO_PACK_DIR") or DATA_DIR / "demo_pack" / "geonaf-demo-akanda-2025-01-v3")
 BOUNDS = (9.40, 0.52, 9.52, 0.64)
 PAGES = ("app.py", *(f"views/analyses_temporelles.py?section={section}" for section in ("comparer", "variation", "serie", "donnees")),
-         "views/multisource.py", "views/territoires.py")
+         "views/analyses_multisources.py", "views/territoires.py")
 
 
 @pytest.fixture
@@ -242,7 +242,7 @@ def test_forbidden_commands_are_replaced_by_a_message(pack_copy, demo, monkeypat
     assert not [button for button in territories.button if button.label.startswith("Charger")]
     assert not [button for button in territories.button if "enregistrer la zone" in button.label]
 
-    multisource = _run("views/multisource.py", pack_copy, monkeypatch)
+    multisource = _run("views/analyses_multisources.py", pack_copy, monkeypatch)
     assert any("Récupération des couches externes" in text and "lecture seule" in text
                for text in _infos(multisource))
     assert not [button for button in multisource.button if button.key and button.key.startswith("ms_fetch_")]
@@ -250,7 +250,7 @@ def test_forbidden_commands_are_replaced_by_a_message(pack_copy, demo, monkeypat
 
 def test_mode_off_keeps_the_commands(pack_copy, monkeypatch):
     monkeypatch.delenv(ENV_NAME, raising=False)
-    multisource = _run("views/multisource.py", pack_copy, monkeypatch)
+    multisource = _run("views/analyses_multisources.py", pack_copy, monkeypatch)
     assert {"ms_fetch_wc", "ms_fetch_osm", "ms_fetch_s1"} <= {button.key for button in multisource.button}
     territories = _run("views/territoires.py", pack_copy, monkeypatch)
     assert not any("lecture seule" in text for text in _infos(territories))
@@ -261,7 +261,7 @@ def test_session_switch_does_not_leak_the_mode_into_the_pack(pack_copy, demo, mo
     from src.data.demo_pack import verify_pack
 
     before = _tree(pack_copy)
-    for page in ("views/multisource.py", "views/territoires.py"):
+    for page in ("views/analyses_multisources.py", "views/territoires.py"):
         assert not _run(page, pack_copy, monkeypatch).exception
     assert _tree(pack_copy) == before
     verify_pack(pack_copy, "geonaf-demo-akanda-2025-01")

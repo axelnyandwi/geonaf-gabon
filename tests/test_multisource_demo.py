@@ -169,8 +169,8 @@ def _page(data_dir, monkeypatch):
         monkeypatch.setattr(external_retrieval, name, mock)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.run(timeout=30)
-    assert any(link.label == "Démonstrateur multisource" for link in app.get("page_link"))
-    app.switch_page("views/multisource.py").run(timeout=60)
+    assert any(link.label == "Analyses multisources" for link in app.get("page_link"))
+    app.switch_page("views/analyses_multisources.py").run(timeout=60)
     return app, retrieval
 
 
@@ -178,7 +178,7 @@ def test_page_renders_offline_and_fetches_only_on_click(layers, monkeypatch):
     data_dir = layers[0]
     app, retrieval = _page(data_dir, monkeypatch)
     assert not app.exception and not app.error
-    assert app.title[0].value == "Démonstrateur multisource"
+    assert app.title[0].value == "Analyses multisources"
     assert all(mock.call_count == 0 for mock in retrieval.values())
     warnings = [w.value for w in app.warning]
     assert "Aucun changement environnemental" in warnings[0]

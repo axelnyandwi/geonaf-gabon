@@ -16,5 +16,7 @@ def _brand_asset(name):
 
 
 favicon = _brand_asset("geonaf_favicon.png")
-st.set_page_config(page_title=APP_TITLE, page_icon=favicon if favicon is not None else "🌍", layout="wide")
-st.navigation(all_pages(), position="sidebar").run()
+current = st.navigation(all_pages(), position="sidebar")
+st.set_page_config(page_title=f"{APP_TITLE} · {current.title}", page_icon=favicon if favicon is not None else "🌍",
+                   layout="wide")
+current.run()

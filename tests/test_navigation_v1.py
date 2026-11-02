@@ -83,3 +83,31 @@ def test_home_links_open_the_series_and_catalogue_sections(stubs):
     # (checked in a real browser, AppTest does not feed bound widgets from the URL).
     assert links["Série temporelle NDVI"].proto.query_string == "section=S%C3%A9rie+temporelle"
     assert links["Catalogue des acquisitions Sentinel-2"].proto.query_string == "section=Donn%C3%A9es+et+acquisitions"
+
+
+def test_multisource_uses_the_shared_study_zone(local_data, monkeypatch):
+    import src.config
+
+    monkeypatch.setattr(src.config, "DATA_DIR", local_data)
+    monkeypatch.setattr("src.components.resource_panel.available_memory_bytes", lambda: None)
+    app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60).run()
+    zone = app.session_state["geonaf_zone"]
+    app.switch_page("views/analyses_multisources.py").run()
+    assert not app.exception and app.title[0].value == "Analyses multisources"
+    keys = [box.key for box in app.selectbox]
+    assert "geonaf_zone" in keys and "ms_territory" not in keys and app.session_state["geonaf_zone"] == zone
+
+
+def test_router_sets_one_page_configuration_with_the_page_title(local_data, monkeypatch):
+    from unittest.mock import Mock
+    import streamlit as st
+    import src.config
+
+    monkeypatch.setattr(src.config, "DATA_DIR", local_data)
+    configure = Mock(wraps=st.set_page_config)
+    monkeypatch.setattr(st, "set_page_config", configure)
+    app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60).run()
+    assert configure.call_args.kwargs["page_title"] == "GEONAF · Tableau de bord"
+    app.switch_page("views/territoires.py").run()
+    assert configure.call_args.kwargs["page_title"] == "GEONAF · Territoires"
+    assert all(call.kwargs.get("layout") == "wide" for call in configure.call_args_list)

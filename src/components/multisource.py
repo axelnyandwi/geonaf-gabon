@@ -10,7 +10,9 @@ import streamlit as st
 
 from src.components.errors import show_error, show_internal_error
 from src.components.formatting import format_decimal, format_ndvi, format_percent, format_pixels
-from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
+from src.components.analysis_settings import (
+    TERRITORY_LABELS, choose_analysis, choose_shared_territory, choose_territory,
+)
 from src.geo.aoi_identity import load_aoi_identity
 from src.services.bounded_cache import shared_cache
 from src.services.compute_slots import heavy_computation
@@ -191,8 +193,8 @@ def _group_label(group):
     return f"{first.acquired_at:%d/%m/%Y · %H:%M UTC} · {len(group)} tuile(s) {tiles}"
 
 
-def show_multisource(data_dir):
-    st.title("Démonstrateur multisource")
+def show_multisource(data_dir, *, shared_zone: bool = False):
+    st.title("Analyses multisources")
     st.caption("Sentinel-2 × ESA WorldCover × OpenStreetMap, et Sentinel-1 présenté séparément. "
                "Croisements descriptifs et exploratoires sur une AOI commune.")
     st.warning("Aucun changement environnemental n'est validé ici : les sources ont des dates, résolutions et "
@@ -200,7 +202,8 @@ def show_multisource(data_dir):
                "nécessaire.")
     columns = st.columns([1, 3])
     with columns[0]:
-        aoi_id = choose_territory(data_dir, "ms_territory")
+        # The page uses the study zone shared with the dashboard and the temporal analyses.
+        aoi_id = choose_shared_territory(data_dir) if shared_zone else choose_territory(data_dir, "ms_territory")
     if aoi_id is None:
         return
     with columns[1]:
