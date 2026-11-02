@@ -1,0 +1,1660 @@
+{
+ "layout": "e0",
+ "pack": "geonaf-demo-akanda-2025-01-v3",
+ "flows": {
+  "accueil": {
+   "page": "app.py",
+   "buttons": [
+    "s2_vegetation_start_akanda",
+    "s2_pairs_start_akanda",
+    "s2_pairs_compute_akanda"
+   ],
+   "cold_seconds": 16.79,
+   "exception": [],
+   "elements": [
+    {
+     "type": "metric",
+     "value": "[\"Surface observée aux deux dates\", \"84,47 km²\", \"\", \"Soit 8 447 ha ; seule surface sur laquelle porte l'analyse.\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Part de la zone d'étude observée\", \"58,61 %\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Part non comparable\", \"41,39 %\", \"\", \"Nuages, ombres ou pixels exclus à l'une des deux dates : non estimée.\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Variation moyenne du NDVI\", \"-0,0329\", \"\", \"Moyenne de ΔNDVI (date 2 − date 1) des pixels comparables, chaque pixel comptant pour un. La section « Transitions » affiche une moyenne pondérée par la surface de chaque pixel.\"]"
+    },
+    {
+     "type": "table",
+     "value": ",Statistique ΔNDVI (pixels comparables),Valeur\n0,Nombre de pixels,845 383\n1,Médiane,\"-0,0264\"\n2,Écart-type,\"0,0918\"\n3,Minimum,\"-0,6957\"\n4,Maximum,\"0,6302\"\n"
+    },
+    {
+     "type": "table",
+     "value": ",Variation,Surface observée (km²),Surface observée (ha)\n0,\"Baisse : Δ < −0,1000\",\"11,76\",\"1 175,82\"\n1,\"Sous le seuil : −0,1000 ≤ Δ ≤ +0,1000\",\"69,02\",\"6 901,61\"\n2,\"Hausse : Δ > +0,1000\",\"3,69\",\"369,13\"\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Catégorie,Longueur (km),Part des voies (%),Valeurs OSM « highway » (km)\n0,Axes principaux,25.470556226203076,4.0093099235198135,\"route principale (primary) 25,37 ; bretelle de route principale (primary_link) 0,10\"\n1,Axes secondaires,20.80418498591279,3.274778319483765,\"route secondaire (secondary) 20,59 ; bretelle de route secondaire (secondary_link) 0,21\"\n2,Axes tertiaires,38.78447161551046,6.105047944204988,\"route tertiaire (tertiary) 38,78\"\n3,Rues de desserte locale,381.20669866628936,60.00559180182529,\"rue résidentielle (residential) 360,70 ; voie mineure (unclassified) 20,51\"\n4,Voies d'accès et de service,150.23560663378586,23.64852589764776,\"voie d'accès ou de service (service) 150,24\"\n5,Pistes,14.274855434337653,2.2469992033712405,\"piste (track) 14,27\"\n6,Chemins piétons et cyclables,4.508917724253123,0.7097469099471361,\"chemin piéton (footway) 4,46 ; sentier (path) 0,05\"\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Regroupement,Surface (km²),Surface (ha),Part de la zone d'étude (%),Détail\n0,Végétation naturelle,63.94668190654989,6394.668190654989,44.373963102033414,\"Couvert arboré 47,73 ; Arbustes 0,00 ; Prairies 15,14 ; Zones humides herbacées 1,08\"\n1,Cultures,0.01153930507166023,1.1539305071660229,0.008007369299023952,\"Cultures 0,01\"\n2,Mangroves,18.617117752742793,1861.7117752742793,12.918814105690181,\"Mangroves 18,62\"\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Indicateur,Valeur,Unité,Statut,Nature du résultat,Source,Nature de la source,Date d'observation,Référentiel,Ingestion GEONAF (UTC),Couverture (%),Fiabilité,Méthode\n0,Surface de la zone d'étude,\"144,11\",km²,disponible,Mesure géométrique,Zone d'étude GEONAF (6372f429d562),Géométrie de référence,,,,100.0,élevée,Aire géodésique de la géométrie de la zone d'étude (aire équivalente EPSG:6933).\n1,Surface terrestre,\"107,44\",km²,disponible,Estimation,ESA WorldCover 10 m 2021 (v200),Classification externe,2021,ESA WorldCover 10 m 2021 (v200),22/10/2026 12:16,99.92287282239101,moyenne,\"Surface classée hors eaux permanentes (classes 80). Somme des cellules classées, pondérées par leur intersection exacte avec la zone d'étude (aire équivalente EPSG:6933), sur la grille native du produit ; aucun masque nuageux Sentinel-2.\"\n2,Surface végétalisée,\"82,58\",km²,disponible,Estimation,ESA WorldCover 10 m 2021 (v200),Classification externe,2021,ESA WorldCover 10 m 2021 (v200),22/10/2026 12:16,99.92287282239101,moyenne,\"Classes Végétation naturelle : 10, 20, 30, 90 ; Cultures : 40 ; Mangroves : 95. Somme des cellules classées, pondérées par leur intersection exacte avec la zone d'étude (aire équivalente EPSG:6933), sur la grille native du produit ; aucun masque nuageux Sentinel-2.\"\n3,Surface bâtie (classe « Bâti »),\"23,92\",km²,disponible,Estimation,ESA WorldCover 10 m 2021 (v200),Classification externe,2021,ESA WorldCover 10 m 2021 (v200),22/10/2026 12:16,99.92287282239101,moyenne,\"Classe(s) 50 (bâtiments, routes et surfaces artificialisées selon la définition du producteur). Somme des cellules classées, pondérées par leur intersection exacte avec la zone d'étude (aire équivalente EPSG:6933), sur la grille native du produit ; aucun masque nuageux Sentinel-2.\"\n4,Voies cartographiées (OSM),635,km,disponible,Observation d'une base cartographique,OpenStreetMap (extrait Overpass) (20261022T165705Z),Base collaborative,inconnue,Base OpenStreetMap au 22/10/2026 16:57 UTC,22/10/2026 16:58,,non évaluée,\"Somme des longueurs des chemins OSM « highway » découpés à la zone d'étude, en projection UTM locale ; regroupement des valeurs « highway » selon le profil d'indicateurs.\"\n5,Bâtiments cartographiés (OSM),36 006,bâtiments,disponible,Observation d'une base cartographique,OpenStreetMap (extrait Overpass) (20261022T165705Z),Base collaborative,inconnue,Base OpenStreetMap au 22/10/2026 16:57 UTC,22/10/2026 16:58,,non évaluée,Nombre de bâtiments OSM (chemins et multipolygones valides) dont le point représentatif est dans la zone d'étude.\n6,Emprise au sol des bâtiments cartographiés (OSM),\"4,48\",km²,disponible,Observation d'une base cartographique,OpenStreetMap (extrait Overpass) (20261022T165705Z),Base collaborative,inconnue,Base OpenStreetMap au 22/10/2026 16:57 UTC,22/10/2026 16:58,,non évaluée,Surface des polygones de bâtiments OSM découpés à la zone d'étude (UTM locale).\n7,Densité de bâtiments cartographiés (zone d'étude),250,bâtiments/km²,disponible,Observation d'une base cartographique,OpenStreetMap (extrait Overpass) (20261022T165705Z),Base collaborative,inconnue,Base OpenStreetMap au 22/10/2026 16:57 UTC,22/10/2026 16:58,,non évaluée,Nombre de bâtiments OSM / surface totale de la zone d'étude.\n8,Densité de bâtiments cartographiés (surface terrestre),335,bâtiments/km²,disponible,Estimation,OpenStreetMap (extrait Overpass) (20261022T165705Z),Base collaborative,inconnue,Base OpenStreetMap au 22/10/2026 16:57 UTC,22/10/2026 16:58,,non évaluée,Nombre de bâtiments OSM / surface terrestre WorldCover (zone d'étude hors eaux permanentes).\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Catégorie,Surface (km²),Surface (ha),Part de la zone d'étude (%)\n0,Surface observée exploitable,92.96736973900154,9296.736973900153,64.51203583197966\n1,\"Surface à NDVI ≥ 0,4\",61.61446377370939,6161.4463773709385,42.755587319474515\n2,\"Surface observée à NDVI < 0,4\",31.35290596529216,3135.2905965292157,21.756448512505155\n3,\"Observée mais exclue par la politique SCL (eau, zones sombres, non classées…)\",17.838064454553688,1783.8064454553687,12.378212446969565\n4,\"Non observée selon le SCL (nuages, ombres, cirrus, pixels défectueux)\",33.303131812845834,3330.313181284583,23.109751721050753\n5,Autres pixels invalides (réflectance ou NDVI),0.0,0.0,0.0\n6,Sans donnée (SCL absent ou hors de la grille analysée),0.0,0.0,0.0\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Seuil,Surface (km²),Surface (ha),Part de la surface observée (%)\n0,\"NDVI ≥ 0,3\",72.62159054798701,7262.159054798702,78.11513948589308\n1,\"NDVI ≥ 0,4\",61.61446377370939,6161.4463773709385,66.27536515950388\n2,\"NDVI ≥ 0,5\",47.151712655450034,4715.171265545003,50.718561563938714\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Paire,Statut,Borne supérieure de couverture commune (%),Motif\n0,15/01/2025 → 25/01/2025,publiable,64.51203583197966,\"Méthode expérimentale non validée : transitions de classe spectrale autour de NDVI 0,4, sans attribution de cause. Couverture commune 58,6 % de la zone d'étude ; la surface non commune n'est pas estimée et le seuil de couverture ne garantit pas la représentativité.\"\n1,20/01/2025 → 25/01/2025,écartée avant calcul,2.7188133431464974,\"Borne supérieure de couverture commune 2,7 % < 30 % (min des couvertures individuelles) : couverture commune nécessairement insuffisante, paire non calculée.\"\n2,15/01/2025 → 20/01/2025,écartée avant calcul,2.7188133431464974,\"Borne supérieure de couverture commune 2,7 % < 30 % (min des couvertures individuelles) : couverture commune nécessairement insuffisante, paire non calculée.\"\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Catégorie,Surface (km²),Surface (ha),Part de la surface commune (%)\n0,\"NDVI ≥ 0,4 puis < 0,4\",6.733098650604916,673.3098650604916,7.971403316591952\n1,\"NDVI < 0,4 puis ≥ 0,4\",2.791140950792107,279.1140950792107,3.3044681782912675\n2,\"Resté NDVI ≥ 0,4\",53.19432483338292,5319.432483338292,62.977455018069904\n3,\"Resté NDVI < 0,4\",21.74709842523885,2174.709842523885,25.746673487046866\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Seuil,Vers NDVI < seuil (km²),Vers NDVI ≥ seuil (km²),Resté ≥ seuil (km²),Resté < seuil (km²),Solde (km²)\n0,\"NDVI 0,3\",5.225088110782077,2.173788612981338,63.795044155126995,13.271741981128379,-3.0512994978007395\n1,\"NDVI 0,4\",6.733098650604916,2.791140950792107,53.19432483338292,21.74709842523885,-3.941957699812809\n2,\"NDVI 0,5\",8.289041817217598,3.3640784565542545,39.66442373566738,33.148118850579564,-4.924963360663344\n"
+    },
+    {
+     "type": "title",
+     "value": "GEONAF"
+    },
+    {
+     "type": "header",
+     "value": "Chiffres clés du territoire"
+    },
+    {
+     "type": "header",
+     "value": "Comparer deux dates"
+    },
+    {
+     "type": "header",
+     "value": "Variation continue du NDVI (analyse détaillée)"
+    },
+    {
+     "type": "subheader",
+     "value": "Végétation observée par Sentinel-2"
+    },
+    {
+     "type": "markdown",
+     "value": "Observer · Comprendre · Prédire · Simuler"
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>144,11 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":gray-badge[Mesure géométrique] :green-badge[Fiabilité : élevée]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature du résultat** : Mesure géométrique. Calcul exact sur la géométrie de la zone d'étude.  \n**Source** : Zone d'étude GEONAF (6372f429d562) - Géométrie de référence  \n**Couverture de la zone d'étude par la source** : 100,00 %  \n**Fiabilité : élevée** - Géométrie exacte du fichier de zone d'étude.  \n**Méthode** : Aire géodésique de la géométrie de la zone d'étude (aire équivalente EPSG:6933)."
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>107,44 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":violet-badge[Estimation] :blue-badge[Fiabilité : moyenne]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature du résultat** : Estimation. Valeur issue d'un modèle ou d'une classification ; exactitude non vérifiée sur la zone d'étude.  \n**Source** : ESA WorldCover 10 m 2021 (v200) - Classification externe  \n**Attribution** : © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium · Licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) · Citation : https://doi.org/10.5281/zenodo.7254221  \n**Dates** : Observation : 2021 · Référentiel : ESA WorldCover 10 m 2021 (v200) · Ingestion GEONAF : 22/10/2026  \n**Couverture de la zone d'étude par la source** : 99,92 %  \n**Fiabilité : moyenne** - Exactitude déclarée par le producteur, non vérifiée sur la zone d'étude. Référentiel 2021, antérieur aux observations récentes.  \n**Méthode** : Surface classée hors eaux permanentes (classes 80). Somme des cellules classées, pondérées par leur intersection exacte avec la zone d'étude (aire équivalente EPSG:6933), sur la grille native du produit ; aucun masque nuageux Sentinel-2."
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>82,58 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":violet-badge[Estimation] :blue-badge[Fiabilité : moyenne]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature du résultat** : Estimation. Valeur issue d'un modèle ou d'une classification ; exactitude non vérifiée sur la zone d'étude.  \n**Source** : ESA WorldCover 10 m 2021 (v200) - Classification externe  \n**Attribution** : © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium · Licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) · Citation : https://doi.org/10.5281/zenodo.7254221  \n**Dates** : Observation : 2021 · Référentiel : ESA WorldCover 10 m 2021 (v200) · Ingestion GEONAF : 22/10/2026  \n**Couverture de la zone d'étude par la source** : 99,92 %  \n**Fiabilité : moyenne** - Exactitude déclarée par le producteur, non vérifiée sur la zone d'étude. Référentiel 2021, antérieur aux observations récentes.  \n**Méthode** : Classes Végétation naturelle : 10, 20, 30, 90 ; Cultures : 40 ; Mangroves : 95. Somme des cellules classées, pondérées par leur intersection exacte avec la zone d'étude (aire équivalente EPSG:6933), sur la grille native du produit ; aucun masque nuageux Sentinel-2."
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>23,92 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":violet-badge[Estimation] :blue-badge[Fiabilité : moyenne]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature du résultat** : Estimation. Valeur issue d'un modèle ou d'une classification ; exactitude non vérifiée sur la zone d'étude.  \n**Source** : ESA WorldCover 10 m 2021 (v200) - Classification externe  \n**Attribution** : © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium · Licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) · Citation : https://doi.org/10.5281/zenodo.7254221  \n**Dates** : Observation : 2021 · Référentiel : ESA WorldCover 10 m 2021 (v200) · Ingestion GEONAF : 22/10/2026  \n**Couverture de la zone d'étude par la source** : 99,92 %  \n**Fiabilité : moyenne** - Exactitude déclarée par le producteur, non vérifiée sur la zone d'étude. Référentiel 2021, antérieur aux observations récentes.  \n**Méthode** : Classe(s) 50 (bâtiments, routes et surfaces artificialisées selon la définition du producteur). Somme des cellules classées, pondérées par leur intersection exacte avec la zone d'étude (aire équivalente EPSG:6933), sur la grille native du produit ; aucun masque nuageux Sentinel-2."
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>635 <span style='font-size:1rem;font-weight:400'>km</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":orange-badge[Observation d'une base cartographique] :gray-badge[Fiabilité : non évaluée]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature du résultat** : Observation d'une base cartographique. Objets présents dans la base à la date de son instantané : ce n'est ni un relevé de terrain ni un total réel.  \n**Source** : OpenStreetMap (extrait Overpass) (20261022T165705Z) - Base collaborative  \n**Attribution** : © OpenStreetMap contributors · Licence [ODbL 1.0](https://www.openstreetmap.org/copyright)  \n**Dates** : Observation : inconnue · Référentiel : Base OpenStreetMap au 22/10/2026 16:57 UTC · Ingestion GEONAF : 22/10/2026  \n**Fiabilité : non évaluée** - Complétude OpenStreetMap non évaluée sur la zone d'étude : valeur minimale cartographiée.  \n**Méthode** : Somme des longueurs des chemins OSM « highway » découpés à la zone d'étude, en projection UTM locale ; regroupement des valeurs « highway » selon le profil d'indicateurs."
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>36 006 <span style='font-size:1rem;font-weight:400'>bâtiments</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":orange-badge[Observation d'une base cartographique] :gray-badge[Fiabilité : non évaluée]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature du résultat** : Observation d'une base cartographique. Objets présents dans la base à la date de son instantané : ce n'est ni un relevé de terrain ni un total réel.  \n**Source** : OpenStreetMap (extrait Overpass) (20261022T165705Z) - Base collaborative  \n**Attribution** : © OpenStreetMap contributors · Licence [ODbL 1.0](https://www.openstreetmap.org/copyright)  \n**Dates** : Observation : inconnue · Référentiel : Base OpenStreetMap au 22/10/2026 16:57 UTC · Ingestion GEONAF : 22/10/2026  \n**Fiabilité : non évaluée** - Complétude OpenStreetMap non évaluée sur la zone d'étude : valeur minimale cartographiée.  \n**Méthode** : Nombre de bâtiments OSM (chemins et multipolygones valides) dont le point représentatif est dans la zone d'étude."
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>335 <span style='font-size:1rem;font-weight:400'>bâtiments/km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":violet-badge[Estimation] :gray-badge[Fiabilité : non évaluée]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature du résultat** : Estimation. Valeur issue d'un modèle ou d'une classification ; exactitude non vérifiée sur la zone d'étude.  \n**Source** : OpenStreetMap (extrait Overpass) (20261022T165705Z) - Base collaborative  \n**Attribution** : © OpenStreetMap contributors · Licence [ODbL 1.0](https://www.openstreetmap.org/copyright)  \n**Dates** : Observation : inconnue · Référentiel : Base OpenStreetMap au 22/10/2026 16:57 UTC · Ingestion GEONAF : 22/10/2026  \n**Dénominateur** : surface terrestre, ESA WorldCover 10 m 2021 (v200) - Classification externe  \n**Dates du dénominateur** : Observation : 2021 · Référentiel : ESA WorldCover 10 m 2021 (v200) · Ingestion GEONAF : 22/10/2026  \n**Attribution du dénominateur** : © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium · Licence [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) · Citation : https://doi.org/10.5281/zenodo.7254221  \n**Fiabilité : non évaluée** - Complétude OpenStreetMap non évaluée sur la zone d'étude : valeur minimale cartographiée.  \n**Méthode** : Nombre de bâtiments OSM / surface terrestre WorldCover (zone d'étude hors eaux permanentes)."
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>4,48 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":orange-badge[Observation d'une base cartographique] :gray-badge[Fiabilité : non évaluée]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature du résultat** : Observation d'une base cartographique. Objets présents dans la base à la date de son instantané : ce n'est ni un relevé de terrain ni un total réel.  \n**Source** : OpenStreetMap (extrait Overpass) (20261022T165705Z) - Base collaborative  \n**Attribution** : © OpenStreetMap contributors · Licence [ODbL 1.0](https://www.openstreetmap.org/copyright)  \n**Dates** : Observation : inconnue · Référentiel : Base OpenStreetMap au 22/10/2026 16:57 UTC · Ingestion GEONAF : 22/10/2026  \n**Fiabilité : non évaluée** - Complétude OpenStreetMap non évaluée sur la zone d'étude : valeur minimale cartographiée.  \n**Méthode** : Surface des polygones de bâtiments OSM découpés à la zone d'étude (UTM locale)."
+    },
+    {
+     "type": "markdown",
+     "value": "**Catégories**"
+    },
+    {
+     "type": "markdown",
+     "value": "**Évolutions temporelles** - aucune évolution n'est affichée sans deux référentiels strictement comparables."
+    },
+    {
+     "type": "markdown",
+     "value": ":red-badge[Estimation expérimentale] :gray-badge[Non validée scientifiquement]"
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.7rem;font-weight:600;line-height:1.2'>61,61 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":violet-badge[Estimation] :red-badge[Expérimental] :orange-badge[Fiabilité : faible]"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature** : estimation ; statut scientifique **experimental** (méthode non validée).  \n**Produits** : S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658  \n**Dates** : acquisition 25/01/2025 09:31 UTC ; ingestion GEONAF 16/10/2026 17:10 UTC  \n**Profil scientifique** : gabon-equatorial-akanda 1.0.0-experimental (empreinte c78ff691b61d9f77…), politique SCL « usable_land »  \n**Profil expérimental** : geonaf-vegetation-ndvi-s2 0.1.0-experimental (empreinte b218a84cede9f2d9…), seuil NDVI ≥ 0,4, couverture minimale 30 %  \n**Ventilation** : ventilée  \n**Fiabilité : faible** - Méthode expérimentale non validée scientifiquement (NDVI ≥ 0,4, seuil non calibré localement). Couverture exploitable 64,5 % de la zone d'étude ; la surface non observée n'est pas estimée et le seuil de couverture ne garantit pas la représentativité spatiale.  \n**Méthode** : Somme des surfaces exactes (aire équivalente EPSG:6933, pixels partiels compris) des pixels valides selon la politique SCL « usable_land » du profil gabon-equatorial-akanda 1.0.0-experimental, dont le NDVI calibré est ≥ 0,4 (comparaison en float32). Part rapportée à la seule surface observée exploitable ; aucune extrapolation. Profil geonaf-vegetation-ndvi-s2 0.1.0-experimental."
+    },
+    {
+     "type": "markdown",
+     "value": "**Limites scientifiques**"
+    },
+    {
+     "type": "markdown",
+     "value": "**Trois lectures différentes, à ne pas confondre**"
+    },
+    {
+     "type": "markdown",
+     "value": "- **Transitions entre classes NDVI** (juste en dessous) : surface observée aux deux dates qui passe au-dessus ou au-dessous du seuil NDVI 0,4. Une transition n'est ni une déforestation ni un reboisement.\n- **Variation continue du NDVI** (section suivante) : écart de l'indice entre les deux dates, pixel par pixel, qualifié de baisse ou de hausse au-delà de ±0,10 (profil standard). Une baisse ne prouve pas une perte de végétation.\n- **Couverture du sol WorldCover** (chiffres clés) : une seule carte (2021) ; aucune évolution n'en est tirée et elle ne se compare pas aux analyses Sentinel-2."
+    },
+    {
+     "type": "markdown",
+     "value": "### Transitions entre classes NDVI (surface commune)"
+    },
+    {
+     "type": "markdown",
+     "value": ":violet-badge[Estimation] :red-badge[Expérimental] :gray-badge[Non validée scientifiquement]"
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.5rem;font-weight:600;line-height:1.2'>84,47 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.5rem;font-weight:600;line-height:1.2'>6,73 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.5rem;font-weight:600;line-height:1.2'>2,79 <span style='font-size:1rem;font-weight:400'>km²</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": "<div style='font-size:1.5rem;font-weight:600;line-height:1.2'>-0,0329 <span style='font-size:1rem;font-weight:400'>ΔNDVI</span></div>"
+    },
+    {
+     "type": "markdown",
+     "value": ":violet-badge[Estimation] :red-badge[Expérimental] :orange-badge[Fiabilité : faible]"
+    },
+    {
+     "type": "markdown",
+     "value": "- Cellules retenues : **140**\n- Avec au moins 10 % de surface commune : **77,86 %** des cellules\n- Sans surface commune : **17,86 %** des cellules"
+    },
+    {
+     "type": "markdown",
+     "value": "**Nature** : estimation ; statut scientifique **experimental** (méthode non validée).  \n**Date antérieure** : acquisition 15/01/2025 09:32 UTC · ingestion GEONAF 16/10/2026 17:10 UTC · produits S2B_MSIL2A_20250115T093239_N0511_R136_T32NNF_20250115T120528 · Sentinel-2B · orbite relative 136 (orbite absolue non enregistrée) · couverture individuelle 66,73 %  \n**Date postérieure** : acquisition 25/01/2025 09:31 UTC · ingestion GEONAF 16/10/2026 17:10 UTC · produits S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658 · Sentinel-2B · orbite relative 136 (orbite absolue non enregistrée) · couverture individuelle 64,51 %  \n**Profil scientifique** : gabon-equatorial-akanda 1.0.0-experimental (empreinte c78ff691b61d9f77…), politique SCL « usable_land », seuil de variation ΔNDVI 0,10 (non utilisé ici)  \n**Profil de végétation** : geonaf-vegetation-ndvi-s2 0.1.0-experimental (empreinte b218a84cede9f2d9…), seuil de classe NDVI 0,4  \n**Profil de transition** : geonaf-transition-ndvi-s2 0.1.0-experimental (empreinte 0bc29958f8c5e08c…), couverture commune minimale 30 %  \n**Couverture commune** : 58,61 % réellement mesurés ; borne supérieure de présélection 64,51 % (min des couvertures individuelles, jamais une preuve de comparabilité)  \n**Comparabilité saisonnière** : not_assessed  \n**Fiabilité : faible** - Méthode expérimentale non validée : transitions de classe spectrale autour de NDVI 0,4, sans attribution de cause. Couverture commune 58,6 % de la zone d'étude ; la surface non commune n'est pas estimée et le seuil de couverture ne garantit pas la représentativité. Intervalle court (10,0 jours < 30) : les transitions peuvent refléter surtout les conditions d'acquisition (atmosphère, humidité, marée, géométrie de visée) ; aucune cause n'est établie. Diagnostic spatial (information) : 78 % des 140 blocs de 1 km² ont au moins 10 % de surface commune ; 18 % n'en ont aucune.  \n**Méthode** : Pixels valides aux deux dates selon la politique SCL « usable_land » du profil gabon-equatorial-akanda 1.0.0-experimental, sur le masque commun de la chaîne de comparaison historique (grilles alignées, aucun rééchantillonnage) ; surfaces exactes en aire équivalente EPSG:6933, pixels partiels compris. Profil geonaf-transition-ndvi-s2 0.1.0-experimental (seuil de classe NDVI 0,4, couverture commune minimale 30 %)."
+    },
+    {
+     "type": "markdown",
+     "value": "**Limites scientifiques**"
+    },
+    {
+     "type": "markdown",
+     "value": "**Dates comparées** : 15/01/2025 09:32 UTC → 25/01/2025 09:31 UTC  \n**Surface observée aux deux dates** : 84,47 km² (58,61 % de la zone d'étude)  \n**Seuil de variation ΔNDVI** : ±0,10 (profil Gabon équatorial · Akanda · expérimental)"
+    },
+    {
+     "type": "caption",
+     "value": "Données de démonstration : Paquet de démonstration geonaf-demo-akanda-2025-01 v3 - Zone d'acquisition historique de 12 × 12 km autour d'Akanda. Ce n'est ni la commune d'Akanda ni une autre unité administrative."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 15/01/2025 (ingéré le 16/10/2026) : couverture valide 66,73 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 20/01/2025 (ingéré le 22/10/2026) : couverture valide 2,72 % - exclue des tendances (couverture exploitable très faible)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 25/01/2025 (ingéré le 16/10/2026) : couverture valide 64,51 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits sans rééchantillonnage de tuiles T32NNF vérifiées. Contains modified Copernicus Sentinel data 2025, processed by GEONAF."
+    },
+    {
+     "type": "caption",
+     "value": "ESA WorldCover 10 m 2021 - © ESA WorldCover project / Contains modified Copernicus Sentinel data processed by ESA WorldCover consortium (CC-BY-4.0)."
+    },
+    {
+     "type": "caption",
+     "value": "OpenStreetMap (extrait Overpass) - © OpenStreetMap contributors (ODbL-1.0)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VV - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VH - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Référentiels geoBoundaries gbOpen (communautaire) et gbHumanitarian (humanitaire, OCHA COD-AB via SALB/HDX) : limites non officielles, non vérifiées, sans valeur juridique. Aucune limite administrative officielle n'est fournie."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbHumanitarian ADM2 - Second Administrative Level Boundaries (SALB), HDX, limites de 2015, 48 unités (référentiel humanitaire (COD)) - Creative Commons Attribution 3.0 Intergovernmental Organisations (CC BY 3.0 IGO)."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbOpen ADM2 - geoBoundaries, Wikimedia, limites de 2018, 49 unités (référentiel communautaire) - Creative Commons Attribution 3.0 License."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits spatiaux de tuiles vérifiées localement : l'intégrité de la source a été contrôlée contre STAC à l'ingestion, pas recontrôlable depuis l'extrait seul."
+    },
+    {
+     "type": "caption",
+     "value": "Dates affichées = dates d'acquisition ; aucune acquisition postérieure au 25/01/2025 dans le paquet."
+    },
+    {
+     "type": "caption",
+     "value": "WorldCover 2021 et l'instantané OSM ne décrivent pas l'état du territoire aux dates Sentinel-2."
+    },
+    {
+     "type": "caption",
+     "value": "Les deux référentiels de limites diffèrent (sources et années différentes) : une divergence entre eux n'est pas un changement du territoire."
+    },
+    {
+     "type": "caption",
+     "value": "Zone d'étude Akanda : chiffres issus des couches stockées localement, sans téléchargement. Chaque valeur indique sa nature, sa date et sa fiabilité ; sa provenance complète est dans la section repliable « Provenance et fiabilité » de chaque valeur."
+    },
+    {
+     "type": "caption",
+     "value": "Surface de la zone d'étude"
+    },
+    {
+     "type": "caption",
+     "value": "soit 14 411 ha"
+    },
+    {
+     "type": "caption",
+     "value": "- Zone d'étude (carré d'acquisition), pas une limite administrative."
+    },
+    {
+     "type": "caption",
+     "value": "Surface terrestre"
+    },
+    {
+     "type": "caption",
+     "value": "soit 10 744 ha  \n74,55 % de la zone d'étude (eaux comprises)"
+    },
+    {
+     "type": "caption",
+     "value": "Observation : 2021"
+    },
+    {
+     "type": "caption",
+     "value": "- Carte issue d'un modèle de classification ; exactitude déclarée par le producteur, non vérifiée localement."
+    },
+    {
+     "type": "caption",
+     "value": "- Résolution 10 m : les petits objets (jardins, alignements d'arbres) sont absorbés dans la classe dominante."
+    },
+    {
+     "type": "caption",
+     "value": "- Nomenclature mondiale non spécifique aux écosystèmes côtiers d'Afrique centrale."
+    },
+    {
+     "type": "caption",
+     "value": "- Décrit l'année de la carte, pas l'état actuel du territoire."
+    },
+    {
+     "type": "caption",
+     "value": "Surface végétalisée"
+    },
+    {
+     "type": "caption",
+     "value": "soit 8 258 ha  \n57,30 % de la zone d'étude (eaux comprises)  \n76,86 % de la surface terrestre (hors eaux permanentes)"
+    },
+    {
+     "type": "caption",
+     "value": "Observation : 2021"
+    },
+    {
+     "type": "caption",
+     "value": "- Carte issue d'un modèle de classification ; exactitude déclarée par le producteur, non vérifiée localement."
+    },
+    {
+     "type": "caption",
+     "value": "- Résolution 10 m : les petits objets (jardins, alignements d'arbres) sont absorbés dans la classe dominante."
+    },
+    {
+     "type": "caption",
+     "value": "- Nomenclature mondiale non spécifique aux écosystèmes côtiers d'Afrique centrale."
+    },
+    {
+     "type": "caption",
+     "value": "- Décrit l'année de la carte, pas l'état actuel du territoire."
+    },
+    {
+     "type": "caption",
+     "value": "Surface bâtie (classe « Bâti »)"
+    },
+    {
+     "type": "caption",
+     "value": "soit 2 392 ha  \n16,60 % de la zone d'étude (eaux comprises)  \n22,26 % de la surface terrestre (hors eaux permanentes)"
+    },
+    {
+     "type": "caption",
+     "value": "Observation : 2021"
+    },
+    {
+     "type": "caption",
+     "value": "- Carte issue d'un modèle de classification ; exactitude déclarée par le producteur, non vérifiée localement."
+    },
+    {
+     "type": "caption",
+     "value": "- Résolution 10 m : les petits objets (jardins, alignements d'arbres) sont absorbés dans la classe dominante."
+    },
+    {
+     "type": "caption",
+     "value": "- Nomenclature mondiale non spécifique aux écosystèmes côtiers d'Afrique centrale."
+    },
+    {
+     "type": "caption",
+     "value": "- Décrit l'année de la carte, pas l'état actuel du territoire."
+    },
+    {
+     "type": "caption",
+     "value": "Voies cartographiées (OSM)"
+    },
+    {
+     "type": "caption",
+     "value": "Référentiel : Base OpenStreetMap au 22/10/2026 16:57 UTC"
+    },
+    {
+     "type": "caption",
+     "value": "- Base collaborative : complétude inconnue ; absence d'objet ≠ absence sur le terrain."
+    },
+    {
+     "type": "caption",
+     "value": "- Un objet présent dans la base peut avoir été cartographié longtemps après sa construction."
+    },
+    {
+     "type": "caption",
+     "value": "- Longueur de tronçons cartographiés, pas longueur de réseau : une voie à chaussées séparées cartographiées par sens compte deux fois."
+    },
+    {
+     "type": "caption",
+     "value": "- Aucune information sur l'état, le revêtement ou la praticabilité des voies."
+    },
+    {
+     "type": "caption",
+     "value": "Bâtiments cartographiés (OSM)"
+    },
+    {
+     "type": "caption",
+     "value": "Référentiel : Base OpenStreetMap au 22/10/2026 16:57 UTC"
+    },
+    {
+     "type": "caption",
+     "value": "- Base collaborative : complétude inconnue ; absence d'objet ≠ absence sur le terrain."
+    },
+    {
+     "type": "caption",
+     "value": "- Un objet présent dans la base peut avoir été cartographié longtemps après sa construction."
+    },
+    {
+     "type": "caption",
+     "value": "- Ce n'est pas le nombre total réel de bâtiments."
+    },
+    {
+     "type": "caption",
+     "value": "- 20 bâtiment(s) à cheval sur la limite, attribué(s) selon leur point représentatif."
+    },
+    {
+     "type": "caption",
+     "value": "Densité de bâtiments cartographiés (surface terrestre)"
+    },
+    {
+     "type": "caption",
+     "value": "250 bâtiments/km² sur toute la zone d'étude (eaux comprises)"
+    },
+    {
+     "type": "caption",
+     "value": "Numérateur : bâtiments OpenStreetMap - Base OpenStreetMap au 22/10/2026 16:57 UTC  \nDénominateur : surface terrestre ESA WorldCover 10 m 2021 (v200) - carte 2021  \nSources de dates différentes : ce rapport ne décrit pas une même année d'observation."
+    },
+    {
+     "type": "caption",
+     "value": "- Base collaborative : complétude inconnue ; absence d'objet ≠ absence sur le terrain."
+    },
+    {
+     "type": "caption",
+     "value": "- Un objet présent dans la base peut avoir été cartographié longtemps après sa construction."
+    },
+    {
+     "type": "caption",
+     "value": "- Combine deux référentiels de dates différentes : OSM 2026 et surface terrestre 2021."
+    },
+    {
+     "type": "caption",
+     "value": "Emprise au sol des bâtiments cartographiés (OSM)"
+    },
+    {
+     "type": "caption",
+     "value": "soit 448 ha  \n3,11 % de la zone d'étude (eaux comprises)"
+    },
+    {
+     "type": "caption",
+     "value": "Référentiel : Base OpenStreetMap au 22/10/2026 16:57 UTC"
+    },
+    {
+     "type": "caption",
+     "value": "- Base collaborative : complétude inconnue ; absence d'objet ≠ absence sur le terrain."
+    },
+    {
+     "type": "caption",
+     "value": "- Un objet présent dans la base peut avoir été cartographié longtemps après sa construction."
+    },
+    {
+     "type": "caption",
+     "value": "- Emprise des toits tracés, différente de la classe « Bâti » de WorldCover (routes, sols scellés)."
+    },
+    {
+     "type": "caption",
+     "value": "Les bâtiments et voies OpenStreetMap sont ceux qui ont été cartographiés, pas le total réel. WorldCover décrit l'année de sa carte, pas l'état actuel."
+    },
+    {
+     "type": "caption",
+     "value": "Sources : © ESA WorldCover project 2021 / Contains modified Copernicus Sentinel data (2021) processed by ESA WorldCover consortium ([CC BY 4.0](https://creativecommons.org/licenses/by/4.0/)) · © OpenStreetMap contributors ([ODbL 1.0](https://www.openstreetmap.org/copyright))"
+    },
+    {
+     "type": "caption",
+     "value": "**Axes principaux** - Autoroutes, voies rapides et routes principales, avec leurs bretelles."
+    },
+    {
+     "type": "caption",
+     "value": "**Axes secondaires** - Routes secondaires et leurs bretelles."
+    },
+    {
+     "type": "caption",
+     "value": "**Axes tertiaires** - Routes tertiaires reliant localités ou quartiers, et leurs bretelles."
+    },
+    {
+     "type": "caption",
+     "value": "**Rues de desserte locale** - Rues qui desservent habitations et quartiers : rues résidentielles, zones de rencontre, voies mineures (« unclassified ») et voies dont le type n'est pas encore précisé (« road »)."
+    },
+    {
+     "type": "caption",
+     "value": "**Voies d'accès et de service** - Voies d'accès à un site, un bâtiment, un parking ou une installation (« service »). Leur statut d'accès (public ou restreint) n'est pas déduit : il dépend d'autres attributs OSM, non retenus ici."
+    },
+    {
+     "type": "caption",
+     "value": "**Pistes** - Chemins à usage agricole, forestier ou de desserte rurale (« track »). Le revêtement n'est pas déduit de cette catégorie : il dépend d'attributs OSM (surface, tracktype) non retenus ici."
+    },
+    {
+     "type": "caption",
+     "value": "**Chemins piétons et cyclables** - Trottoirs et chemins piétons, sentiers, voies piétonnes, pistes cyclables, escaliers, chemins cavaliers."
+    },
+    {
+     "type": "caption",
+     "value": "- Base collaborative : complétude inconnue ; absence d'objet ≠ absence sur le terrain."
+    },
+    {
+     "type": "caption",
+     "value": "- Un objet présent dans la base peut avoir été cartographié longtemps après sa construction."
+    },
+    {
+     "type": "caption",
+     "value": "- Longueur de tronçons cartographiés, pas longueur de réseau : une voie à chaussées séparées cartographiées par sens compte deux fois."
+    },
+    {
+     "type": "caption",
+     "value": "- Aucune information sur l'état, le revêtement ou la praticabilité des voies."
+    },
+    {
+     "type": "caption",
+     "value": "Classes Végétation naturelle : 10, 20, 30, 90 ; Cultures : 40 ; Mangroves : 95. Somme des cellules classées, pondérées par leur intersection exacte avec la zone d'étude (aire équivalente EPSG:6933), sur la grille native du produit ; aucun masque nuageux Sentinel-2."
+    },
+    {
+     "type": "caption",
+     "value": "« - » : sans objet ou non disponible."
+    },
+    {
+     "type": "caption",
+     "value": "Nature du résultat : « mesure géométrique » = calcul exact sur la géométrie ; « observation d'une base cartographique » = contenu d'OpenStreetMap à la date de l'instantané, pas le terrain ; « estimation » = sortie d'un modèle ou d'une classification ; « prédiction » = projection d'un état futur (aucune dans cette version)."
+    },
+    {
+     "type": "caption",
+     "value": "Fiabilité : « élevée » pour une géométrie exacte ; « moyenne » pour une classification dont l'exactitude est déclarée par le producteur sans vérification locale ; « faible » si la couverture est incomplète ; « non évaluée » pour OpenStreetMap, dont la complétude est inconnue."
+    },
+    {
+     "type": "caption",
+     "value": "Profil d'indicateurs geonaf-indicateurs-afrique 1.0.0 · empreinte b60d7ee3fd0f7040… · zone d'étude sha256 6372f429d562d1df…."
+    },
+    {
+     "type": "caption",
+     "value": "- Occupation du sol : une seule version WorldCover disponible localement (v200) ; aucune évolution calculée. Les versions v100 (2020) et v200 (2021) reposent sur des algorithmes différents et ne mesurent pas un changement."
+    },
+    {
+     "type": "caption",
+     "value": "- OpenStreetMap : 1 instantané(s) local(aux) ; aucune évolution calculée."
+    },
+    {
+     "type": "caption",
+     "value": "Ressources vérifiées avant calcul (Estimation Sentinel-2) : calcul autorisé."
+    },
+    {
+     "type": "caption",
+     "value": "Surface à NDVI ≥ 0,4 (Sentinel-2, surface observée)"
+    },
+    {
+     "type": "caption",
+     "value": "soit 6 161 ha  \n66,28 % de la surface observée exploitable"
+    },
+    {
+     "type": "caption",
+     "value": "Surface observée exploitable : 92,97 km² · 64,51 % de la zone d'étude  \nObservée mais exclue : 17,84 km² · non observée (nuages, ombres) : 33,30 km² · sans donnée : 0,00 km²  \nAcquisition 25/01/2025 09:31 UTC · Copernicus Sentinel-2 L2A · seuil NDVI ≥ 0,4"
+    },
+    {
+     "type": "caption",
+     "value": "Ces catégories partagent la zone d'étude sans recouvrement. Les causes indiquées sont celles de la classification SCL de l'acquisition ; aucune n'est déduite de la géographie."
+    },
+    {
+     "type": "caption",
+     "value": "**Surface observée exploitable** - Pixels valides selon la politique SCL du profil scientifique : la seule surface sur laquelle l'estimation porte."
+    },
+    {
+     "type": "caption",
+     "value": "**Surface à NDVI ≥ 0,4** - Pixels observés exploitables dont le NDVI calibré est supérieur ou égal au seuil."
+    },
+    {
+     "type": "caption",
+     "value": "**Surface observée à NDVI < 0,4** - Pixels observés exploitables dont le NDVI est inférieur au seuil."
+    },
+    {
+     "type": "caption",
+     "value": "**Observée mais exclue par la politique SCL (eau, zones sombres, non classées…)** - Pixels observés, mais dont la classe SCL est hors de la politique (eau, zones sombres, non classées…) : écartés, pas estimés."
+    },
+    {
+     "type": "caption",
+     "value": "**Non observée selon le SCL (nuages, ombres, cirrus, pixels défectueux)** - Pixels classés nuage, ombre, cirrus ou défectueux par le SCL : sol non visible."
+    },
+    {
+     "type": "caption",
+     "value": "**Autres pixels invalides (réflectance ou NDVI)** - Classe SCL acceptée mais réflectance ou NDVI invalide."
+    },
+    {
+     "type": "caption",
+     "value": "**Sans donnée (SCL absent ou hors de la grille analysée)** - Aucune donnée SCL (valeur absente ou classe 0) ou partie de la zone hors de la grille analysée ; la cause (bord de trace, donnée manquante…) n'est pas déterminée."
+    },
+    {
+     "type": "caption",
+     "value": "Même surface observée pour les trois seuils : l'écart mesure la dépendance au seuil, pas une incertitude statistique."
+    },
+    {
+     "type": "caption",
+     "value": "Attribution non revérifiée : « Contains modified Copernicus Sentinel data 2025 » - mention reprise de la note de publication du paquet de démonstration v3, non contrôlée sur l'avis juridique Copernicus."
+    },
+    {
+     "type": "caption",
+     "value": "Empreintes des manifestes vérifiés : S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658 e1508397f035…"
+    },
+    {
+     "type": "caption",
+     "value": "- Indice spectral seuillé (NDVI ≥ seuil) : ce n'est pas une mesure directe de la végétation réelle."
+    },
+    {
+     "type": "caption",
+     "value": "- Seuil non calibré pour le climat équatorial ni ces écosystèmes ; résultat très sensible au seuil."
+    },
+    {
+     "type": "caption",
+     "value": "- Mangroves : marée haute ou inondation abaissent le NDVI ; le SCL peut les classer en eau ou en zone sombre, alors exclues de la surface observée."
+    },
+    {
+     "type": "caption",
+     "value": "- Zones humides herbacées : les pixels mêlant eau et végétation peuvent passer sous le seuil."
+    },
+    {
+     "type": "caption",
+     "value": "- Végétation urbaine : à 10 m, jardins et alignements d'arbres sont mêlés au bâti."
+    },
+    {
+     "type": "caption",
+     "value": "- Nuages fins, brumes ou ombres non détectés par le SCL abaissent le NDVI ; la classification SCL (Sen2Cor) peut elle-même se tromper."
+    },
+    {
+     "type": "caption",
+     "value": "- Saison non évaluée : le profil de référence ne contient pas de calendrier phénologique validé."
+    },
+    {
+     "type": "caption",
+     "value": "- La surface non observée n'est pas estimée : aucune extrapolation à la zone d'étude."
+    },
+    {
+     "type": "caption",
+     "value": "- Non comparable à la surface végétalisée WorldCover 2021 (classification, autre année, autre surface de référence) ; deux dates ne sont comparables que sur leur surface observée commune."
+    },
+    {
+     "type": "caption",
+     "value": "Les deux analyses Sentinel-2 portent uniquement sur la surface observée aux deux dates (ni nuage, ni ombre, ni pixel exclu) : la surface non observée n'est ni estimée ni extrapolée."
+    },
+    {
+     "type": "caption",
+     "value": "**Seuil de classe NDVI 0,4** - à chaque date, un pixel observé est classé NDVI ≥ 0,4 ou NDVI < 0,4 ; une transition est un changement de classe entre les deux dates. Hypothèse de travail non calibrée.  \n**Seuil de variation ΔNDVI 0,10** - utilisé par la section « Variation continue du NDVI (analyse détaillée) » pour qualifier une variation continue du NDVI entre deux dates ; il n'intervient pas dans ces transitions."
+    },
+    {
+     "type": "caption",
+     "value": "Ressources vérifiées avant calcul (Comparaison temporelle Sentinel-2) : calcul autorisé."
+    },
+    {
+     "type": "caption",
+     "value": "La borne supérieure (minimum des couvertures individuelles) sert seulement à écarter les paires sans calcul ; seule la couverture commune réellement mesurée décide de la publication."
+    },
+    {
+     "type": "caption",
+     "value": "Paire : **15/01/2025 09:32 UTC → 25/01/2025 09:31 UTC** · intervalle 10,0 jours  \nZone d'étude Akanda (carré d'acquisition de 12 × 12 km) : ce n'est pas la commune administrative d'Akanda."
+    },
+    {
+     "type": "caption",
+     "value": "Surface commune comparable"
+    },
+    {
+     "type": "caption",
+     "value": "soit 8 447 ha  \n58,61 % de la zone d'étude"
+    },
+    {
+     "type": "caption",
+     "value": "NDVI ≥ 0,4 → NDVI < 0,4"
+    },
+    {
+     "type": "caption",
+     "value": "soit 673 ha  \n7,97 % de la surface commune"
+    },
+    {
+     "type": "caption",
+     "value": "NDVI < 0,4 → NDVI ≥ 0,4"
+    },
+    {
+     "type": "caption",
+     "value": "soit 279 ha  \n3,30 % de la surface commune"
+    },
+    {
+     "type": "caption",
+     "value": "Variation moyenne pondérée du NDVI"
+    },
+    {
+     "type": "caption",
+     "value": "NDVI moyen 0,4976 → 0,4648 (date 2 − date 1)  \nmoyenne pondérée par la surface de chaque pixel"
+    },
+    {
+     "type": "caption",
+     "value": "Méthode expérimentale non validée : transitions de classe spectrale autour de NDVI 0,4, sans attribution de cause.  \nCouverture commune 58,6 % de la zone d'étude ; la surface non commune n'est pas estimée et le seuil de couverture ne garantit pas la représentativité.  \nIntervalle court (10,0 jours < 30) : les transitions peuvent refléter surtout les conditions d'acquisition (atmosphère, humidité, marée, géométrie de visée) ; aucune cause n'est établie.  \nDiagnostic spatial (information) : 78 % des 140 blocs de 1 km² ont au moins 10 % de surface commune ; 18 % n'en ont aucune."
+    },
+    {
+     "type": "caption",
+     "value": "Les quatre catégories partagent la surface commune sans recouvrement ; une valeur égale au seuil compte comme ≥ seuil."
+    },
+    {
+     "type": "caption",
+     "value": "**NDVI ≥ 0,4 puis < 0,4** - Pixel au-dessus du seuil à la première date, au-dessous à la seconde."
+    },
+    {
+     "type": "caption",
+     "value": "**NDVI < 0,4 puis ≥ 0,4** - Pixel au-dessous du seuil à la première date, au-dessus à la seconde."
+    },
+    {
+     "type": "caption",
+     "value": "**Resté NDVI ≥ 0,4** - Au-dessus du seuil aux deux dates."
+    },
+    {
+     "type": "caption",
+     "value": "**Resté NDVI < 0,4** - Au-dessous du seuil aux deux dates."
+    },
+    {
+     "type": "caption",
+     "value": "Solde des surfaces de transitions (vers ≥ 0,4 moins vers < 0,4) : **-3,94 km²**. Différence de surfaces de transitions : ce n'est ni une perte ni un gain réel de végétation."
+    },
+    {
+     "type": "caption",
+     "value": "Même surface commune pour les trois seuils : l'écart mesure la dépendance au seuil, pas une incertitude statistique."
+    },
+    {
+     "type": "caption",
+     "value": "Cellules fixes de 1 km² dans une projection à surfaces équivalentes (EPSG:6933, origine 0, 0), indépendantes de la grille de l'image. Chaque pixel est attribué en entier à la cellule qui contient son centre : attribution approximative en bordure de cellule. Une cellule est retenue lorsque la zone d'étude en couvre au moins 50,00 %."
+    },
+    {
+     "type": "caption",
+     "value": "Information seulement : ce diagnostic montre où la surface commune se répartit, il ne prouve pas que la surface commune est représentative de la zone d'étude et ne conditionne pas la publication."
+    },
+    {
+     "type": "caption",
+     "value": "Attribution non revérifiée : « Contains modified Copernicus Sentinel data 2025 » - mention reprise de la note de publication du paquet de démonstration v3, non contrôlée sur l'avis juridique Copernicus."
+    },
+    {
+     "type": "caption",
+     "value": "Empreintes des manifestes vérifiés : S2B_MSIL2A_20250115T093239_N0511_R136_T32NNF_20250115T120528 13c41491bdbd…, S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658 e1508397f035…"
+    },
+    {
+     "type": "caption",
+     "value": "- Transitions de classe spectrale autour d'un seuil NDVI : ni déforestation, ni reboisement, ni changement d'occupation du sol ne sont établis."
+    },
+    {
+     "type": "caption",
+     "value": "- Seuil de classe NDVI non calibré pour ce climat ni ces écosystèmes, distinct du seuil de variation ΔNDVI des classes de changement historiques ; résultats très sensibles au seuil."
+    },
+    {
+     "type": "caption",
+     "value": "- Calcul limité à la surface observée commune aux deux dates : la surface non commune n'est ni estimée ni extrapolée, et la couverture commune ne garantit pas la représentativité spatiale."
+    },
+    {
+     "type": "caption",
+     "value": "- Deux acquisitions isolées : atmosphère, humidité, marée et géométrie de visée ne sont pas neutralisées ; aucune cause n'est attribuée."
+    },
+    {
+     "type": "caption",
+     "value": "- Nuages fins, brumes ou ombres non détectés par le SCL peuvent créer de fausses transitions ; la classification SCL (Sen2Cor) peut elle-même se tromper."
+    },
+    {
+     "type": "caption",
+     "value": "- Non comparable aux indicateurs WorldCover, OpenStreetMap ni à l'estimation Sentinel-2 d'une seule date (autres sources ou autre surface de référence)."
+    },
+    {
+     "type": "caption",
+     "value": "- Comparabilité saisonnière non évaluée : contexte incomplet."
+    },
+    {
+     "type": "caption",
+     "value": "- Comparabilité saisonnière non évaluée pour ce profil."
+    },
+    {
+     "type": "caption",
+     "value": "Écart du NDVI entre deux dates choisies, pixel par pixel, sur la surface observée aux deux dates ; cartes, surfaces en baisse ou en hausse et statistiques."
+    },
+    {
+     "type": "caption",
+     "value": "Profil de référence **Gabon équatorial · Akanda · expérimental** · seuil ΔNDVI 0,10 · couverture minimale 5 % · masque SCL « Végétation et sols nus (SCL 4, 5) - recommandé ». Statut : expérimental, non validé. Seuils opérationnels repris du prototype, non validés par écosystème. Aucun calendrier phénologique validé fourni ; humidité et marées non corrigées."
+    },
+    {
+     "type": "caption",
+     "value": "Catalogue local : 3 acquisitions vérifiées, du 15/01/2025 au 25/01/2025 UTC. Une journée du calendrier peut ne contenir aucune acquisition."
+    },
+    {
+     "type": "caption",
+     "value": "Acquisition sélectionnée : 15/01/2025 · 09:32:39 UTC · S2B_MSIL2A_20250115T093239_N0511_R136_T32NNF_20250115T120528"
+    },
+    {
+     "type": "caption",
+     "value": "Acquisition sélectionnée : 25/01/2025 · 09:31:59 UTC · S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658"
+    },
+    {
+     "type": "caption",
+     "value": "Ressources vérifiées avant calcul (Analyse de la paire) : calcul autorisé."
+    },
+    {
+     "type": "caption",
+     "value": "Contextes absents, hors du profil ou issus de sources/versions différentes."
+    },
+    {
+     "type": "caption",
+     "value": "Profil expérimental : seuils non validés scientifiquement."
+    },
+    {
+     "type": "caption",
+     "value": "Comparabilité saisonnière non évaluée : contexte incomplet."
+    },
+    {
+     "type": "caption",
+     "value": "Comparabilité saisonnière non évaluée pour ce profil."
+    },
+    {
+     "type": "caption",
+     "value": "Cartes et classes exploratoires ; aucun changement durable validé. Validation indépendante de persistance non réalisée dans la V1."
+    },
+    {
+     "type": "caption",
+     "value": "Comparaison interactive : les NDVI conservent le masque propre à chaque date ; classes et ΔNDVI utilisent uniquement les observations comparables aux deux dates. La grille d’affichage est reprojetée ; les indicateurs restent ceux de la grille scientifique native."
+    },
+    {
+     "type": "caption",
+     "value": "Surfaces pondérées par l’intersection exacte avec la zone d'étude ; statistiques descriptives par pixel. Les seuils délimitent des variations d’indice, pas une significativité statistique."
+    },
+    {
+     "type": "caption",
+     "value": "Acquisitions : 15/01/2025 · 09:32:39 UTC · S2B_MSIL2A_20250115T093239_N0511_R136_T32NNF_20250115T120528 → 25/01/2025 · 09:31:59 UTC · S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658."
+    },
+    {
+     "type": "caption",
+     "value": "Masque des nuages et ombres (politique SCL) : usable_land. Grille : EPSG:32632, résolution 10 m. Réflectance de surface (BOA) calibrée à partir des métadonnées XML de chaque produit."
+    },
+    {
+     "type": "caption",
+     "value": "Profil gabon-equatorial-akanda · 1.0.0-experimental · empreinte c78ff691b61d9f7701981c8071954a68e2878669f0919e3187ff641248af207a. Gabon/Estuaire · équatorial (contexte déclaré) · mosaïque forestière et littorale. Usage : exploration des variations NDVI."
+    },
+    {
+     "type": "caption",
+     "value": "Saisonnalité : non évaluée (saisons inconnues)."
+    },
+    {
+     "type": "caption",
+     "value": "Prototype local V0.2 · Sentinel-2 L2A. Données locales uniquement ; aucun téléchargement. Les dates affichées sont celles des acquisitions, pas celles de l’ingestion. Les modifications des fichiers invalident le cache. Les images sont des aperçus ; les calculs conservent la résolution native."
+    },
+    {
+     "type": "info",
+     "value": "Zone d'étude Akanda : carré d’acquisition de 12 × 12 km autour de Akanda. Ce carré n’est pas une limite administrative."
+    },
+    {
+     "type": "warning",
+     "value": "Résultats Sentinel-2 non directement comparables à la surface végétalisée WorldCover 2021 (classification, autre année, autre surface de référence), ni entre acquisitions dont les masques d'observation diffèrent : un écart entre deux dates n'est pas une évolution."
+    },
+    {
+     "type": "warning",
+     "value": "Une transition de classe spectrale ne démontre ni une déforestation, ni un reboisement, ni une modification réelle de l'occupation du sol : elle indique seulement qu'un pixel observé aux deux dates est passé d'un côté à l'autre d'un seuil NDVI."
+    },
+    {
+     "type": "warning",
+     "value": "Statut scientifique : Comparabilité non évaluée. Les cartes et classes restent exploratoires ; aucun changement durable validé dans la V1."
+    },
+    {
+     "type": "warning",
+     "value": "Une variation du NDVI ne démontre pas une déforestation. Nuages résiduels, saisonnalité, humidité, marées et saturation du NDVI peuvent contribuer au signal. Les zones observables ne représentent pas nécessairement toute la zone d'étude. Validation indépendante non réalisée."
+    }
+   ]
+  },
+  "acquisitions": {
+   "page": "pages/1_Acquisitions_Sentinel2.py",
+   "buttons": [],
+   "cold_seconds": 6.85,
+   "exception": [],
+   "elements": [
+    {
+     "type": "title",
+     "value": "Catalogue des acquisitions Sentinel-2"
+    },
+    {
+     "type": "caption",
+     "value": "Données de démonstration : Paquet de démonstration geonaf-demo-akanda-2025-01 v3 - Zone d'acquisition historique de 12 × 12 km autour d'Akanda. Ce n'est ni la commune d'Akanda ni une autre unité administrative."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 15/01/2025 (ingéré le 16/10/2026) : couverture valide 66,73 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 20/01/2025 (ingéré le 22/10/2026) : couverture valide 2,72 % - exclue des tendances (couverture exploitable très faible)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 25/01/2025 (ingéré le 16/10/2026) : couverture valide 64,51 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits sans rééchantillonnage de tuiles T32NNF vérifiées. Contains modified Copernicus Sentinel data 2025, processed by GEONAF."
+    },
+    {
+     "type": "caption",
+     "value": "ESA WorldCover 10 m 2021 - © ESA WorldCover project / Contains modified Copernicus Sentinel data processed by ESA WorldCover consortium (CC-BY-4.0)."
+    },
+    {
+     "type": "caption",
+     "value": "OpenStreetMap (extrait Overpass) - © OpenStreetMap contributors (ODbL-1.0)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VV - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VH - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Référentiels geoBoundaries gbOpen (communautaire) et gbHumanitarian (humanitaire, OCHA COD-AB via SALB/HDX) : limites non officielles, non vérifiées, sans valeur juridique. Aucune limite administrative officielle n'est fournie."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbHumanitarian ADM2 - Second Administrative Level Boundaries (SALB), HDX, limites de 2015, 48 unités (référentiel humanitaire (COD)) - Creative Commons Attribution 3.0 Intergovernmental Organisations (CC BY 3.0 IGO)."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbOpen ADM2 - geoBoundaries, Wikimedia, limites de 2018, 49 unités (référentiel communautaire) - Creative Commons Attribution 3.0 License."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits spatiaux de tuiles vérifiées localement : l'intégrité de la source a été contrôlée contre STAC à l'ingestion, pas recontrôlable depuis l'extrait seul."
+    },
+    {
+     "type": "caption",
+     "value": "Dates affichées = dates d'acquisition ; aucune acquisition postérieure au 25/01/2025 dans le paquet."
+    },
+    {
+     "type": "caption",
+     "value": "WorldCover 2021 et l'instantané OSM ne décrivent pas l'état du territoire aux dates Sentinel-2."
+    },
+    {
+     "type": "caption",
+     "value": "Les deux référentiels de limites diffèrent (sources et années différentes) : une divergence entre eux n'est pas un changement du territoire."
+    },
+    {
+     "type": "caption",
+     "value": "Recherche de métadonnées Copernicus L2A · Téléchargement uniquement sur commande explicite. La couverture nuageuse globale ne mesure pas la qualité locale de l’AOI."
+    },
+    {
+     "type": "caption",
+     "value": "Le profil documente le contexte ; cette sélection ne calcule ni ne valide un changement territorial."
+    },
+    {
+     "type": "info",
+     "value": "Choisir l’AOI et la période, puis lancer explicitement la recherche."
+    }
+   ]
+  },
+  "serie_ndvi": {
+   "page": "pages/2_Series_NDVI.py",
+   "buttons": [
+    "series_compute"
+   ],
+   "cold_seconds": 9.37,
+   "exception": [],
+   "elements": [
+    {
+     "type": "metric",
+     "value": "[\"Dates retenues\", \"2 / 3\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Couverture pixels communs / AOI\", \"58,61 %\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Pixels communs\", \"845 383\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Intervalle max. entre dates retenues\", \"10,00 j\", \"\", \"\"]"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Acquisition (UTC),Produit,Saison,Retenue,Couverture valide (%),NDVI moyen (date),NDVI médian (date),Pixels (date),NDVI moyen (communs),NDVI médian (communs),Motif d’exclusion\n0,15/01/2025 09:32:39,S2B_MSIL2A_20250115T093239_N0511_R136_T32NNF_20250115T120528,non évaluée,oui,\"66,73\",\"0,4989\",\"0,5393\",962 307,\"0,4978\",\"0,5397\",\n1,20/01/2025 09:33:21,S2A_MSIL2A_20250120T093321_N0511_R136_T32NNF_20250120T125148,non évaluée,non,\"2,72\",\"0,2900\",\"0,2795\",39 160,-,-,Couverture valide 2.72 % inférieure au minimum du profil (5 %).\n2,25/01/2025 09:31:59,S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658,non évaluée,oui,\"64,51\",\"0,4638\",\"0,5042\",930 515,\"0,4650\",\"0,5056\",\n"
+    },
+    {
+     "type": "title",
+     "value": "Série temporelle NDVI"
+    },
+    {
+     "type": "subheader",
+     "value": "Dates manquantes, exclues ou lacunes"
+    },
+    {
+     "type": "markdown",
+     "value": "**NDVI sur pixels communs** - seule courbe dont les dates portent sur les mêmes pixels."
+    },
+    {
+     "type": "markdown",
+     "value": "**NDVI propre à chaque date** - points non reliés : pixels différents, non comparables entre dates."
+    },
+    {
+     "type": "markdown",
+     "value": "**Couverture valide par date** - ligne : minimum du profil (5 %)."
+    },
+    {
+     "type": "caption",
+     "value": "Données de démonstration : Paquet de démonstration geonaf-demo-akanda-2025-01 v3 - Zone d'acquisition historique de 12 × 12 km autour d'Akanda. Ce n'est ni la commune d'Akanda ni une autre unité administrative."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 15/01/2025 (ingéré le 16/10/2026) : couverture valide 66,73 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 20/01/2025 (ingéré le 22/10/2026) : couverture valide 2,72 % - exclue des tendances (couverture exploitable très faible)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 25/01/2025 (ingéré le 16/10/2026) : couverture valide 64,51 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits sans rééchantillonnage de tuiles T32NNF vérifiées. Contains modified Copernicus Sentinel data 2025, processed by GEONAF."
+    },
+    {
+     "type": "caption",
+     "value": "ESA WorldCover 10 m 2021 - © ESA WorldCover project / Contains modified Copernicus Sentinel data processed by ESA WorldCover consortium (CC-BY-4.0)."
+    },
+    {
+     "type": "caption",
+     "value": "OpenStreetMap (extrait Overpass) - © OpenStreetMap contributors (ODbL-1.0)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VV - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VH - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Référentiels geoBoundaries gbOpen (communautaire) et gbHumanitarian (humanitaire, OCHA COD-AB via SALB/HDX) : limites non officielles, non vérifiées, sans valeur juridique. Aucune limite administrative officielle n'est fournie."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbHumanitarian ADM2 - Second Administrative Level Boundaries (SALB), HDX, limites de 2015, 48 unités (référentiel humanitaire (COD)) - Creative Commons Attribution 3.0 Intergovernmental Organisations (CC BY 3.0 IGO)."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbOpen ADM2 - geoBoundaries, Wikimedia, limites de 2018, 49 unités (référentiel communautaire) - Creative Commons Attribution 3.0 License."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits spatiaux de tuiles vérifiées localement : l'intégrité de la source a été contrôlée contre STAC à l'ingestion, pas recontrôlable depuis l'extrait seul."
+    },
+    {
+     "type": "caption",
+     "value": "Dates affichées = dates d'acquisition ; aucune acquisition postérieure au 25/01/2025 dans le paquet."
+    },
+    {
+     "type": "caption",
+     "value": "WorldCover 2021 et l'instantané OSM ne décrivent pas l'état du territoire aux dates Sentinel-2."
+    },
+    {
+     "type": "caption",
+     "value": "Les deux référentiels de limites diffèrent (sources et années différentes) : une divergence entre eux n'est pas un changement du territoire."
+    },
+    {
+     "type": "caption",
+     "value": "Acquisitions locales vérifiées uniquement ; aucun téléchargement. Même AOI, même grille, calibration BOA de chaque produit et masque SCL du profil."
+    },
+    {
+     "type": "caption",
+     "value": "Profil de référence **Gabon équatorial · Akanda · expérimental** · seuil ΔNDVI 0,10 · couverture minimale 5 % · masque SCL « Végétation et sols nus (SCL 4, 5) - recommandé ». Statut : expérimental, non validé. Seuils opérationnels repris du prototype, non validés par écosystème. Aucun calendrier phénologique validé fourni ; humidité et marées non corrigées."
+    },
+    {
+     "type": "caption",
+     "value": "3 acquisition(s) locale(s) vérifiée(s) dans la période. Pour en ajouter, utiliser le catalogue des acquisitions."
+    },
+    {
+     "type": "caption",
+     "value": "Ressources vérifiées avant calcul (Calcul de la série) : calcul autorisé."
+    },
+    {
+     "type": "caption",
+     "value": "Moins de 3 dates exploitables : série non comparable."
+    },
+    {
+     "type": "caption",
+     "value": "Comparabilité saisonnière non évaluée : aucun calendrier dans le profil."
+    },
+    {
+     "type": "caption",
+     "value": "Profil expérimental : seuils non validés scientifiquement."
+    },
+    {
+     "type": "caption",
+     "value": "Les statistiques propres à chaque date portent sur des pixels différents et ne constituent pas une tendance."
+    },
+    {
+     "type": "caption",
+     "value": "Évolution exploratoire sur pixels communs ; aucune tendance validée. Nuages résiduels, saisonnalité, humidité, marées et saturation peuvent contribuer au signal."
+    },
+    {
+     "type": "caption",
+     "value": "20/01/2025 09:33 UTC · exclue : Couverture valide 2.72 % inférieure au minimum du profil (5 %)."
+    },
+    {
+     "type": "caption",
+     "value": "Profil gabon-equatorial-akanda · 1.0.0-experimental · empreinte c78ff691b61d9f77… · SCL usable_land · grille EPSG:32632 10 m, 1201×1201 · AOI akanda sha256 6372f429d562d1df…. Dates d’acquisition, pas d’ingestion. Statistiques par pixel touché par l’AOI ; couvertures pondérées par l’intersection exacte."
+    },
+    {
+     "type": "warning",
+     "value": "Statut scientifique : Non comparable. Évolution descriptive du NDVI ; aucune tendance validée ni cause attribuée."
+    }
+   ]
+  },
+  "multisource": {
+   "page": "pages/3_Multisource.py",
+   "buttons": [],
+   "cold_seconds": 16.71,
+   "exception": [],
+   "elements": [
+    {
+     "type": "metric",
+     "value": "[\"NDVI médian (pixels valides)\", \"0,5042\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Part de la zone d'étude observée\", \"64,51 %\", \"\", \"Pixels Sentinel-2 valides (ni nuage, ni ombre, ni pixel exclu) à cette date.\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Bâtiments OSM touchant la zone\", \"36 012\", \"\", \"Objets OpenStreetMap qui recoupent la zone d'étude. Les chiffres clés de l'accueil rattachent chaque bâtiment par son point représentatif : les deux totaux peuvent différer de quelques bâtiments situés en bordure.\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Voies OSM (km)\", \"635\", \"\", \"Longueur des tronçons cartographiés découpés à la zone d'étude.\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Radar VV médian (dB)\", \"-7,3\", \"\", \"Rétrodiffusion Sentinel-1 : rugosité et humidité de surface, pas la végétation.\"]"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Classe WorldCover,Code,Pixels NDVI valides,Surface (ha),NDVI moyen,NDVI médian\n0,Couvert arboré,10,424171,4234.7,0.5580044565980546,0.5946696400642395\n1,Arbustes,20,4,0.0,0.5095783472061157,0.5427646636962891\n2,Prairies,30,127411,1274.5,0.42521062996604386,0.44435104727745056\n3,Cultures,40,119,1.2,0.4165318543795778,0.4540327489376068\n4,Bâti,50,226131,2262.8,0.28153168016642766,0.26365235447883606\n5,Sol nu / végétation clairsemée,60,7541,75.5,0.20636515050917517,0.190342515707016\n6,Eaux permanentes,80,880,8.8,0.22879532742762504,0.17571915686130524\n7,Zones humides herbacées,90,6852,68.6,0.3555274254195115,0.35731200873851776\n8,Mangroves,95,136558,1364.1,0.5294286716235036,0.5640087723731995\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Groupe,Objets (AOI),Surface (ha),Longueur (km),Pixels NDVI valides touchés,NDVI médian\n0,Bâtiments,36012,448.0,,43005,0.20388348400592804\n1,Eau (OSM),91,149.1,55.2,3177,0.4847736358642578\n2,Routes et voies,3035,,635.3,52185,0.28900593519210815\n3,Usage du sol (OSM),20,1736.7,,148212,0.6118964552879333\n4,Végétation (OSM),4,786.7,,75496,0.6432315707206726\n5,Zones humides (OSM),2,2175.8,,158970,0.5692554116249084\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Polarisation,Classe WorldCover (mode 10→20 m),Pixels 20 m,Médiane (dB),Moyenne (dB)\n0,VV,Couvert arboré,120636,-6.65,-6.63\n1,VV,Prairies,37167,-8.2,-8.07\n2,VV,Cultures,26,-5.08,-5.75\n3,VV,Bâti,59960,-6.56,-6.02\n4,VV,Sol nu / végétation clairsemée,2195,-9.81,-9.61\n5,VV,Eaux permanentes,91729,-19.01,-18.88\n6,VV,Zones humides herbacées,2502,-8.65,-8.67\n7,VV,Mangroves,46986,-4.25,-4.58\n8,VH,Couvert arboré,120636,-13.09,-13.11\n9,VH,Prairies,37167,-14.48,-14.53\n10,VH,Cultures,26,-10.72,-11.02\n11,VH,Bâti,59960,-13.54,-13.3\n12,VH,Sol nu / végétation clairsemée,2195,-17.17,-17.08\n13,VH,Eaux permanentes,91729,-29.94,-29.83\n14,VH,Zones humides herbacées,2502,-15.46,-15.96\n15,VH,Mangroves,46986,-12.0,-12.33\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",Source,Nature,Produit,Date / validité,Écart avec S2 (jours),Relation,Résolution,CRS,Couverture AOI (%),Tuiles / produits\n0,Sentinel-2 L2A,Observation mesurée,S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658,Acquisition 25/01/2025 09:31 UTC,,référence,10 m (B04/B08) ; SCL 20 m,EPSG:32632,64.51,S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658\n1,ESA WorldCover,Classification externe,ESA WorldCover 10 m 2021,Validité 01/01/2021 → 31/12/2021,1120.4,S2 postérieure,\"10 m (EPSG:4326, 1/12 000°)\",EPSG:4326,99.94,ESA_WorldCover_10m_2021_v200_N00E009_Map_akanda\n2,OpenStreetMap,Base collaborative,OpenStreetMap (extrait Overpass),Instantané base OSM 22/10/2026 16:57 UTC,635.3,S2 antérieure,Vecteur (rasterisé à 10 m pour les statistiques),EPSG:4326,100.0,\n3,Sentinel-1 VV,Observation mesurée,Sentinel-1 IW mosaïque mensuelle VV,Validité 01/01/2025 → 31/01/2025,0.0,dans la validité,\"20 m (grille native, non ré-échantillonnée)\",EPSG:32632,100.0,Sentinel-1_IW_mosaic_2025_M01_32NNF_0_0\n4,Sentinel-1 VH,Observation mesurée,Sentinel-1 IW mosaïque mensuelle VH,Validité 01/01/2025 → 31/01/2025,0.0,dans la validité,\"20 m (grille native, non ré-échantillonnée)\",EPSG:32632,100.0,Sentinel-1_IW_mosaic_2025_M01_32NNF_0_0\n"
+    },
+    {
+     "type": "json",
+     "value": "{\"mode\": \"standard\", \"config_version\": \"advanced-1\", \"reference_profile\": \"gabon-equatorial-akanda 1.0.0-experimental\", \"reference_fingerprint\": \"c78ff691b61d9f7701981c8071954a68e2878669f0919e3187ff641248af207a\", \"effective_profile\": \"gabon-equatorial-akanda 1.0.0-experimental\", \"effective_fingerprint\": \"c78ff691b61d9f7701981c8071954a68e2878669f0919e3187ff641248af207a\", \"overrides\": {}, \"validated\": false}"
+    },
+    {
+     "type": "title",
+     "value": "Démonstrateur multisource"
+    },
+    {
+     "type": "subheader",
+     "value": "Carte interactive"
+    },
+    {
+     "type": "markdown",
+     "value": "- Annonce CDSE (Sinergise, 06/08/2024) : « terrain-flattened gamma nought backscatter », échelle linéaire, intensités - https://dataspace.copernicus.eu/node/1621"
+    },
+    {
+     "type": "markdown",
+     "value": "- Forum CDSE (G. Milčinski, Sinergise, 28/05/2025) : « Values are in linear units », conversion dB par 10·log10 - https://forum.dataspace.copernicus.eu/t/sentinel-1-monthly-mosaics-linear-or-db/3757"
+    },
+    {
+     "type": "markdown",
+     "value": "- Algorithme CDSE : calibration β⁰, RTC par intégration d'aires, Range-Doppler, ombres exclues - https://documentation.dataspace.copernicus.eu/Data/Others/Sentinel1_Mosaic_Algorithm.html"
+    },
+    {
+     "type": "markdown",
+     "value": "- NDVI de réflectance BOA, une seule date ; pixels masqués selon le profil SCL."
+    },
+    {
+     "type": "markdown",
+     "value": "- Indicateur de verdeur, pas une mesure de biomasse ni d'occupation du sol."
+    },
+    {
+     "type": "markdown",
+     "value": "- Carte issue d'un modèle de classification (exactitude déclarée, non vérifiée localement)."
+    },
+    {
+     "type": "markdown",
+     "value": "- Alignée au plus proche voisin sur la grille Sentinel-2 : décalage possible d'une demi-cellule."
+    },
+    {
+     "type": "markdown",
+     "value": "- Nomenclature mondiale non adaptée aux écosystèmes côtiers gabonais."
+    },
+    {
+     "type": "markdown",
+     "value": "- Complétude inconnue ; absence d'objet ≠ absence sur le terrain."
+    },
+    {
+     "type": "markdown",
+     "value": "- Date de création des objets inconnue : un objet peut être postérieur à l'image."
+    },
+    {
+     "type": "markdown",
+     "value": "- Routes rasterisées en cellules de 10 m : cellules mixtes route/végétation."
+    },
+    {
+     "type": "markdown",
+     "value": "- Grandeur physique différente du NDVI : aucune comparaison directe."
+    },
+    {
+     "type": "markdown",
+     "value": "- Composite mensuel pondéré : pas de date d'acquisition unique."
+    },
+    {
+     "type": "markdown",
+     "value": "- Unité : dB de γ⁰ aplani du relief (10·log10 de la puissance linéaire)."
+    },
+    {
+     "type": "markdown",
+     "value": "- Convention documentée par le producteur, non vérifiée par calibration indépendante ; titres STAC « Amplitude » incohérents."
+    },
+    {
+     "type": "markdown",
+     "value": "- Grandeur physique différente du NDVI : aucune comparaison directe."
+    },
+    {
+     "type": "markdown",
+     "value": "- Composite mensuel pondéré : pas de date d'acquisition unique."
+    },
+    {
+     "type": "markdown",
+     "value": "- Unité : dB de γ⁰ aplani du relief (10·log10 de la puissance linéaire)."
+    },
+    {
+     "type": "markdown",
+     "value": "- Convention documentée par le producteur, non vérifiée par calibration indépendante ; titres STAC « Amplitude » incohérents."
+    },
+    {
+     "type": "markdown",
+     "value": "- *Hypothèse :* NDVI médian « Couvert arboré » (0.59) supérieur à celui du « Bâti » (0.26) : cohérent avec la nomenclature attendue ; ce constat ne valide ni la classification ni le NDVI."
+    },
+    {
+     "type": "markdown",
+     "value": "- *Hypothèse :* Mangroves : NDVI médian 0.56. Les marées et l'eau sous couvert peuvent abaisser le NDVI ; hypothèse non vérifiée sur le terrain."
+    },
+    {
+     "type": "markdown",
+     "value": "- *Hypothèse :* VV : rétrodiffusion médiane plus faible sur « Eaux permanentes » (-19.0 dB) que sur « Couvert arboré » (-6.6 dB), cohérent avec une réflexion spéculaire de l'eau calme ; le vent ou les vagues peuvent l'augmenter."
+    },
+    {
+     "type": "markdown",
+     "value": "- *Hypothèse :* VH : rétrodiffusion médiane plus faible sur « Eaux permanentes » (-29.9 dB) que sur « Couvert arboré » (-13.1 dB), cohérent avec une réflexion spéculaire de l'eau calme ; le vent ou les vagues peuvent l'augmenter."
+    },
+    {
+     "type": "caption",
+     "value": "Données de démonstration : Paquet de démonstration geonaf-demo-akanda-2025-01 v3 - Zone d'acquisition historique de 12 × 12 km autour d'Akanda. Ce n'est ni la commune d'Akanda ni une autre unité administrative."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 15/01/2025 (ingéré le 16/10/2026) : couverture valide 66,73 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 20/01/2025 (ingéré le 22/10/2026) : couverture valide 2,72 % - exclue des tendances (couverture exploitable très faible)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 25/01/2025 (ingéré le 16/10/2026) : couverture valide 64,51 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits sans rééchantillonnage de tuiles T32NNF vérifiées. Contains modified Copernicus Sentinel data 2025, processed by GEONAF."
+    },
+    {
+     "type": "caption",
+     "value": "ESA WorldCover 10 m 2021 - © ESA WorldCover project / Contains modified Copernicus Sentinel data processed by ESA WorldCover consortium (CC-BY-4.0)."
+    },
+    {
+     "type": "caption",
+     "value": "OpenStreetMap (extrait Overpass) - © OpenStreetMap contributors (ODbL-1.0)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VV - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VH - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Référentiels geoBoundaries gbOpen (communautaire) et gbHumanitarian (humanitaire, OCHA COD-AB via SALB/HDX) : limites non officielles, non vérifiées, sans valeur juridique. Aucune limite administrative officielle n'est fournie."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbHumanitarian ADM2 - Second Administrative Level Boundaries (SALB), HDX, limites de 2015, 48 unités (référentiel humanitaire (COD)) - Creative Commons Attribution 3.0 Intergovernmental Organisations (CC BY 3.0 IGO)."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbOpen ADM2 - geoBoundaries, Wikimedia, limites de 2018, 49 unités (référentiel communautaire) - Creative Commons Attribution 3.0 License."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits spatiaux de tuiles vérifiées localement : l'intégrité de la source a été contrôlée contre STAC à l'ingestion, pas recontrôlable depuis l'extrait seul."
+    },
+    {
+     "type": "caption",
+     "value": "Dates affichées = dates d'acquisition ; aucune acquisition postérieure au 25/01/2025 dans le paquet."
+    },
+    {
+     "type": "caption",
+     "value": "WorldCover 2021 et l'instantané OSM ne décrivent pas l'état du territoire aux dates Sentinel-2."
+    },
+    {
+     "type": "caption",
+     "value": "Les deux référentiels de limites diffèrent (sources et années différentes) : une divergence entre eux n'est pas un changement du territoire."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 × ESA WorldCover × OpenStreetMap, et Sentinel-1 présenté séparément. Croisements descriptifs et exploratoires sur une AOI commune."
+    },
+    {
+     "type": "caption",
+     "value": "Profil de référence **Gabon équatorial · Akanda · expérimental** · seuil ΔNDVI 0,10 · couverture minimale 5 % · masque SCL « Végétation et sols nus (SCL 4, 5) - recommandé ». Statut : expérimental, non validé. Seuils opérationnels repris du prototype, non validés par écosystème. Aucun calendrier phénologique validé fourni ; humidité et marées non corrigées."
+    },
+    {
+     "type": "caption",
+     "value": "Requêtes bornées à l'AOI, mises en cache et tracées. Aucune donnée existante n'est écrasée ; plafonds : WorldCover 4 Mo, OSM 64 Mo, Sentinel-1 16 Mo par polarisation (estimation préalable par l'index des tuiles COG)."
+    },
+    {
+     "type": "caption",
+     "value": "Ressources vérifiées avant calcul (Analyse multisource) : calcul autorisé."
+    },
+    {
+     "type": "caption",
+     "value": "Filtres d'affichage uniquement : les statistiques ci-dessous portent sur toutes les classes. Activer les couches dans la barre au-dessus de la carte."
+    },
+    {
+     "type": "caption",
+     "value": "**Nature : Observation mesurée** - Grandeur dérivée d'une mesure satellitaire à une date connue."
+    },
+    {
+     "type": "caption",
+     "value": "**Nature : Classification externe** - Produit d'un modèle de classification tiers, à une autre date."
+    },
+    {
+     "type": "caption",
+     "value": "929 667 pixels NDVI valides classés ; 848 sans classe. Écart de 1120 jours avec la validité de la couche : l'occupation du sol a pu changer, jointure à interpréter avec prudence. Statistiques descriptives par classe ; la classe externe n'explique pas à elle seule le NDVI. Surfaces : intersection exacte cellule/AOI. Classes peu représentées : statistiques instables."
+    },
+    {
+     "type": "caption",
+     "value": "**Nature : Base collaborative** - Objets cartographiés par des contributeurs ; complétude et date de terrain inconnues."
+    },
+    {
+     "type": "caption",
+     "value": "Instantané base OSM : 2026-10-22T16:57:05+00:00 ; objets retenus 39164 (chemins OSM « ways » 39147, relations multipolygones 17) ; rejetés : incomplets 0, invalides 0, non pris en charge 0. Groupes non exclusifs (un pixel peut appartenir à plusieurs). Surfaces et longueurs découpées à l'AOI en UTM 32N."
+    },
+    {
+     "type": "caption",
+     "value": "**Nature : Observation mesurée** - Grandeur dérivée d'une mesure satellitaire à une date connue."
+    },
+    {
+     "type": "caption",
+     "value": "VV · Sentinel-1 IW mosaïque mensuelle VV · dB de γ⁰ aplani du relief (10·log10 de la puissance linéaire) · médiane AOI -7.31 dB (Q1 -14.85, Q3 -5.77) · couverture 100,00 % des cellules AOI · invalides {'nodata': 0, 'non_fini': 0, 'non_positif': 0}."
+    },
+    {
+     "type": "caption",
+     "value": "VH · Sentinel-1 IW mosaïque mensuelle VH · dB de γ⁰ aplani du relief (10·log10 de la puissance linéaire) · médiane AOI -13.84 dB (Q1 -22.53, Q3 -12.56) · couverture 100,00 % des cellules AOI · invalides {'nodata': 0, 'non_fini': 0, 'non_positif': 0}."
+    },
+    {
+     "type": "caption",
+     "value": "Radiométrie (s1-mosaic-radiometry-1) : γ⁰ aplani du relief en puissance linéaire, 10·log10(γ⁰_T) - documentée par le producteur ; non vérifiée par calibration indépendante. Les titres des actifs STAC indiquent « Amplitude » ; contredit par le producteur, non retenu. Les valeurs ne sont pas en dB (minimum strictement positif observé). Valeurs descriptives : aucune qualification quantitative validée."
+    },
+    {
+     "type": "caption",
+     "value": "Attribution : Contains modified Copernicus Sentinel data [2025]"
+    },
+    {
+     "type": "caption",
+     "value": "Attribution : © ESA WorldCover project / Contains modified Copernicus Sentinel data processed by ESA WorldCover consortium"
+    },
+    {
+     "type": "caption",
+     "value": "Attribution : © OpenStreetMap contributors"
+    },
+    {
+     "type": "caption",
+     "value": "Attribution : Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem"
+    },
+    {
+     "type": "caption",
+     "value": "Attribution : Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem"
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 : S2B_MSIL2A_20250125T093159_N0511_R136_T32NNF_20250125T115658 · grille EPSG:32632 10 m, 1201×1201 · SCL usable_land · calibration {'quantification_value': 10000.0, 'red_offset': -1000.0, 'nir_offset': -1000.0} · AOI sha256 6372f429d562d1df…. Licences : WorldCover CC BY 4.0 ; OpenStreetMap ODbL 1.0 (partage à l'identique des bases dérivées) ; Copernicus Sentinel : avis légal Copernicus."
+    },
+    {
+     "type": "caption",
+     "value": "**Nature : Interprétation** - Hypothèse rédigée à partir des statistiques ; non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Démonstrateur descriptif : croisements exploratoires, aucune relation causale ni changement environnemental validé sans vérification indépendante."
+    },
+    {
+     "type": "info",
+     "value": "La rétrodiffusion radar mesure la rugosité, la structure et l'humidité de surface ; elle n'est pas comparée au NDVI. Les statistiques sont présentées par classe WorldCover, sur la grille radar native."
+    },
+    {
+     "type": "warning",
+     "value": "Aucun changement environnemental n'est validé ici : les sources ont des dates, résolutions et natures différentes. Une validation indépendante (terrain, imagerie très haute résolution) reste nécessaire."
+    },
+    {
+     "type": "warning",
+     "value": "WorldCover : Écart de 1120 jours avec la validité de la couche : l'occupation du sol a pu changer, jointure à interpréter avec prudence."
+    },
+    {
+     "type": "warning",
+     "value": "OpenStreetMap : Écart de 635 jours avec la validité de la couche : l'occupation du sol a pu changer, jointure à interpréter avec prudence."
+    }
+   ]
+  },
+  "territoires": {
+   "page": "pages/4_Territoires.py",
+   "buttons": [],
+   "cold_seconds": 7.94,
+   "exception": [],
+   "elements": [
+    {
+     "type": "metric",
+     "value": "[\"gbOpen (km²)\", \"184,70\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"gbHumanitarian (km²)\", \"271,76\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Partie commune (km²)\", \"122,42\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Différence symétrique (km²)\", \"211,61\", \"\", \"\"]"
+    },
+    {
+     "type": "metric",
+     "value": "[\"Recouvrement (%)\", \"36,65\", \"\", \"Partie commune / union des deux représentations (indice de Jaccard).\"]"
+    },
+    {
+     "type": "table",
+     "value": ",Attribut,Valeur\n0,Nom,Zone d'acquisition Akanda (12 × 12 km)\n1,Type,Zone d'acquisition GEONAF\n2,Surface (km²),\"144,11\"\n3,Source,GEONAF (carré de travail 12 × 12 km)\n4,Millésime,-\n5,Licence,-\n6,Statut,\"Zone d'acquisition GEONAF : carré de travail, pas une limite administrative.\"\n"
+    },
+    {
+     "type": "dataframe",
+     "value": ",gbOpen,gbHumanitarian\nNom,Libreville,Libreville\nType,Unité administrative,Unité administrative\nNiveau (type local déclaré),ADM2 (Department),ADM2 (non déclaré par la source (ADM2))\nSurface (km²),\"184,70\",\"271,76\"\nSource,\"geoBoundaries gbOpen GAB ADM2 - geoBoundaries (gbOpen) ; source : geoBoundaries, Wikimedia\",\"geoBoundaries gbHumanitarian GAB ADM2 - geoBoundaries (gbHumanitarian) ; source : Second Administrative Level Boundaries (SALB), HDX\"\nVersion / production,2023-12-12,2023-12-12\nMillésime des limites,2018,2015\nLicence,CC-BY-3.0,CC-BY-3.0-IGO\nRécupération,2026-10-23T17:02:36.526974+00:00,2026-10-23T17:04:58.731940+00:00\nStatut,Référentiel communautaire : limites non officielles et non vérifiées.,Référentiel humanitaire (COD) : limites non officielles et non vérifiées.\nIdentifiant / version,gab-gbopen-adm2-libreville v1,gab-gbhumanitarian-adm2-libreville v1\n"
+    },
+    {
+     "type": "title",
+     "value": "Territoires et frontières"
+    },
+    {
+     "type": "markdown",
+     "value": "**gbOpen seulement :** Doutsita, Komo-Ocèan, Mpassa"
+    },
+    {
+     "type": "markdown",
+     "value": "**gbHumanitarian seulement :** Doutsila, Passa"
+    },
+    {
+     "type": "caption",
+     "value": "Données de démonstration : Paquet de démonstration geonaf-demo-akanda-2025-01 v3 - Zone d'acquisition historique de 12 × 12 km autour d'Akanda. Ce n'est ni la commune d'Akanda ni une autre unité administrative."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 15/01/2025 (ingéré le 16/10/2026) : couverture valide 66,73 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 20/01/2025 (ingéré le 22/10/2026) : couverture valide 2,72 % - exclue des tendances (couverture exploitable très faible)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-2 acquis le 25/01/2025 (ingéré le 16/10/2026) : couverture valide 64,51 % - utilisable, non validée."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits sans rééchantillonnage de tuiles T32NNF vérifiées. Contains modified Copernicus Sentinel data 2025, processed by GEONAF."
+    },
+    {
+     "type": "caption",
+     "value": "ESA WorldCover 10 m 2021 - © ESA WorldCover project / Contains modified Copernicus Sentinel data processed by ESA WorldCover consortium (CC-BY-4.0)."
+    },
+    {
+     "type": "caption",
+     "value": "OpenStreetMap (extrait Overpass) - © OpenStreetMap contributors (ODbL-1.0)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VV - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Sentinel-1 IW mosaïque mensuelle VH - Contains modified Copernicus Sentinel data [2025] — Sentinel-1 Global Mosaics, Copernicus Data Space Ecosystem (LicenseRef-Copernicus-Sentinel-Data)."
+    },
+    {
+     "type": "caption",
+     "value": "Référentiels geoBoundaries gbOpen (communautaire) et gbHumanitarian (humanitaire, OCHA COD-AB via SALB/HDX) : limites non officielles, non vérifiées, sans valeur juridique. Aucune limite administrative officielle n'est fournie."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbHumanitarian ADM2 - Second Administrative Level Boundaries (SALB), HDX, limites de 2015, 48 unités (référentiel humanitaire (COD)) - Creative Commons Attribution 3.0 Intergovernmental Organisations (CC BY 3.0 IGO)."
+    },
+    {
+     "type": "caption",
+     "value": "geoBoundaries gbOpen ADM2 - geoBoundaries, Wikimedia, limites de 2018, 49 unités (référentiel communautaire) - Creative Commons Attribution 3.0 License."
+    },
+    {
+     "type": "caption",
+     "value": "Extraits spatiaux de tuiles vérifiées localement : l'intégrité de la source a été contrôlée contre STAC à l'ingestion, pas recontrôlable depuis l'extrait seul."
+    },
+    {
+     "type": "caption",
+     "value": "Dates affichées = dates d'acquisition ; aucune acquisition postérieure au 25/01/2025 dans le paquet."
+    },
+    {
+     "type": "caption",
+     "value": "WorldCover 2021 et l'instantané OSM ne décrivent pas l'état du territoire aux dates Sentinel-2."
+    },
+    {
+     "type": "caption",
+     "value": "Les deux référentiels de limites diffèrent (sources et années différentes) : une divergence entre eux n'est pas un changement du territoire."
+    },
+    {
+     "type": "caption",
+     "value": "Choisir un territoire et comprendre l'origine de ses limites. GEONAF observe toute zone, qu'une frontière officielle existe ou non ; zone d'acquisition, unité administrative et zone importée restent distinctes."
+    },
+    {
+     "type": "caption",
+     "value": "Garde-fous de ressources (Analyse multisource de ce territoire) - verdict : **inconnu**. Mémoire raster dans les limites ; part OSM inconnue (volume non estimé). Volume OSM inconnu : non estimé. Cellules raster (10 m, emprise) : 1 443 602 cellules (autorisé) · Mémoire estimée : 375 Mio (inconnu) · Tuiles Sentinel-2 (carrés MGRS 100 km) : 1 tuiles (autorisé) · Emprise OSM : 0,11 degrés (autorisé) · Volume OSM estimé : - Mio (inconnu). Estimation prudente calibrée sur le poste de développement : ce n'est pas une garantie de fonctionnement sur un serveur public. Seuils provisoires, calibrés sur un seul poste ; non validés scientifiquement ni opérationnellement."
+    },
+    {
+     "type": "caption",
+     "value": "gbOpen couvert par gbHumanitarian : 66,28 % · gbHumanitarian couvert par gbOpen : 45,05 % · écart de surface (gbHumanitarian − gbOpen) / gbOpen : 47,14 %. Géométries validées sans réparation, arêtes densifiées à 0,001° en WGS84, surfaces calculées en projection équivalente EPSG:6933 (aires vraies sur l'ellipsoïde WGS84 à la densification près)."
+    },
+    {
+     "type": "caption",
+     "value": "- Libreville : geoBoundaries gbOpen GAB ADM2 2023-12-12, statut « référentiel communautaire », limites de 2018"
+    },
+    {
+     "type": "caption",
+     "value": "- Libreville : geoBoundaries gbHumanitarian GAB ADM2 2023-12-12, statut « référentiel humanitaire (COD) », limites de 2015"
+    },
+    {
+     "type": "caption",
+     "value": "- Millésimes différents : l'écart ne mesure pas une évolution des limites dans le temps."
+    },
+    {
+     "type": "caption",
+     "value": "Écart entre deux représentations des limites d'un territoire : ce n'est pas un changement du territoire réel."
+    },
+    {
+     "type": "caption",
+     "value": "Orthographes différentes ou unités propres à un référentiel : aucun rapprochement automatique."
+    },
+    {
+     "type": "caption",
+     "value": "Une zone par opération. Le fichier est vérifié (taille avant lecture, géométrie valide sans réparation, nombre de sommets et de parties) puis enregistré avec sa provenance. Statut : « fourni par l'utilisateur » - jamais officiel automatiquement."
+    },
+    {
+     "type": "info",
+     "value": "Zone d'acquisition GEONAF : carré de 12 × 12 km utilisé pour les acquisitions Sentinel-2. Ce n'est ni une commune ni une autre unité administrative."
+    },
+    {
+     "type": "warning",
+     "value": "Analyse multisource de ce territoire : inconnu de ressources. Mémoire raster dans les limites ; part OSM inconnue (volume non estimé). Volume OSM inconnu : non estimé."
+    },
+    {
+     "type": "warning",
+     "value": "Comparaison de deux représentations des limites d'un même territoire : un écart n'est jamais un changement temporel réel. Les deux contours restent distincts."
+    }
+   ]
+  }
+ }
+}
