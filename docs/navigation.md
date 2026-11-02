@@ -86,3 +86,30 @@ MapLibre : liens directs et cartes sont vérifiés dans un navigateur (Playwrigh
 | - (section des transitions de l'accueil) | `analyses_temporelles.comparer` |
 | `series_ndvi`, `acquisitions` | `analyses_temporelles.serie`, `analyses_temporelles.donnees` |
 | `multisource` | `analyses_multisources` (les contextes internes `multisource.*` sont inchangés) |
+
+## Validation du 02/11/2026 (Windows, Python 3.10, paquet v3 Akanda)
+
+- Suite Python complète : 1072 tests réussis, aucun ignoré ; 14 tests JavaScript réussis ; navigation
+  (13 tests) et lecture seule (28 tests) réussies.
+- Comparaison avec E0 (`docs/benchmarks/ui_reference_e0.json` → `ui_reference_v1.json`) : les 36
+  éléments scientifiques (métriques, tableaux, données) sont identiques, groupe par groupe :
+  accueil → tableau de bord + « Comparer deux dates » + « Variation NDVI » (14), série (5),
+  multisource (10), territoires (7) ; aucune exception. Textes : seuls les titres de page changent,
+  plus les nouveaux textes de navigation et de la carte.
+- Navigateur (serveur local en lecture seule, Playwright) : aucun débordement horizontal à 1 280 px et
+  390 px sur les sept vues, aucune exception, carte du périmètre affichée, liens directs vers les
+  sections, menu latéral utilisable à 390 px.
+
+| Vue | AppTest à froid, avant (E0) | AppTest à froid, après (V1) | Navigateur, premier affichage (V1) |
+|---|---|---|---|
+| Accueil → tableau de bord | 16,8 s (toutes analyses) | 12,9 s | 4,6 s |
+| Comparer deux dates (transitions calculées) | dans l'accueil | 10,9 s | 3,9 s |
+| Variation NDVI | dans l'accueil | 8,8 s | 6,2 s |
+| Série temporelle (série calculée) | 9,4 s | 8,2 s | 1,0 s |
+| Données et acquisitions | 6,9 s | 5,6 s | 0,5 s |
+| Analyses multisources | 16,7 s | 16,6 s | 0,4 s (texte initial) |
+| Territoires | 7,9 s | 6,6 s | 0,4 s |
+
+Les durées AppTest passent par la page d'entrée (comme un visiteur) ; celles du navigateur suivent
+d'autres affichages du même serveur (caches partiellement chauds). Elles ne sont pas représentatives
+de Streamlit Cloud.
