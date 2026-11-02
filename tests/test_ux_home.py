@@ -1,4 +1,8 @@
-"""Home page wording, structure and accessibility (C5); offline, synthetic data."""
+"""Dashboard and temporal analyses wording, structure and accessibility (C5); offline, synthetic data.
+
+Navigation V1: the former home page is split into the dashboard and the « Comparer deux dates » and
+« Variation NDVI » sections of the temporal analyses page.
+"""
 
 from pathlib import Path
 import re
@@ -8,6 +12,7 @@ from streamlit.testing.v1 import AppTest
 
 from src.components.temporal_guide import TRANSITIONS_TITLE, VARIATION_TITLE
 from src.geo.scientific_profile import REFERENCE_PROFILES
+from tests.streamlit_pages import open_section
 from tests.test_local_preview import local_data  # noqa: F401  (fixture)
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -20,6 +25,20 @@ def home(local_data, monkeypatch):
     monkeypatch.setattr(src.config, "DATA_DIR", local_data)
     monkeypatch.setattr("src.components.resource_panel.available_memory_bytes", lambda: None)
     app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60).run()
+    assert not app.exception and not app.error
+    return app
+
+
+@pytest.fixture
+def comparison(home):
+    app = open_section(home, "comparer")
+    assert not app.exception and not app.error
+    return app
+
+
+@pytest.fixture
+def variation(home):
+    app = open_section(home, "variation")
     assert not app.exception and not app.error
     return app
 
@@ -51,8 +70,8 @@ def _visible(app):
     return [value for _, value, folded in _texts(app) if not folded]
 
 
-def test_reading_guide_separates_the_three_temporal_readings_before_the_analyses(home):
-    texts = _visible(home)
+def test_reading_guide_separates_the_three_temporal_readings_before_the_analyses(comparison):
+    texts = _visible(comparison)
     guide = next(i for i, t in enumerate(texts) if t.startswith("**Trois lectures différentes"))
     transitions = next(i for i, t in enumerate(texts) if t == f"### {TRANSITIONS_TITLE}")
     assert guide < transitions
@@ -69,9 +88,14 @@ def test_reading_guide_separates_the_three_temporal_readings_before_the_analyses
             assert re.search(r"\b(ni|ne|pas|n'est|ne démontre|ne prouve)\b", window), text
 
 
-def test_variation_section_states_dates_common_surface_coverage_and_threshold(home):
-    headers = [h.value for h in home.header]
-    assert headers == ["Chiffres clés du territoire", "Comparer deux dates", VARIATION_TITLE]
+def test_pages_keep_their_section_headers(home):
+    assert [h.value for h in home.header] == ["Périmètre analysé", "Chiffres clés du territoire", "Analyses détaillées"]
+    assert [h.value for h in open_section(home, "comparer").header] == ["Comparer deux dates"]
+    assert [h.value for h in open_section(home, "variation").header] == [VARIATION_TITLE]
+
+
+def test_variation_section_states_dates_common_surface_coverage_and_threshold(variation):
+    home = variation
     summary = next(t for t in _visible(home) if t.startswith("**Dates comparées**"))
     assert "15/01/2025" in summary and "25/01/2025" in summary
     assert "**Surface observée aux deux dates**" in summary and "km²" in summary and "% de la zone d'étude" in summary
@@ -83,6 +107,11 @@ def test_variation_section_states_dates_common_surface_coverage_and_threshold(ho
 
 
 def test_no_raw_technical_state_or_duplicate_note_in_the_visible_page(home):
+    for page in (home, open_section(home, "comparer")):        # Dashboard and comparison: no raw state.
+        joined = "\n".join(_visible(page))
+        for raw in ("not_assessed", "(unknown)", "usable_land", "Garde-fous de ressources", "AOI "):
+            assert raw not in joined, raw
+    home = open_section(home, "variation")                     # Then the full check on the variation section.
     visible = _visible(home)
     joined = "\n".join(visible)
     for raw in ("not_assessed", "(unknown)", "usable_land", "Garde-fous de ressources", "AOI "):
@@ -96,8 +125,8 @@ def test_no_raw_technical_state_or_duplicate_note_in_the_visible_page(home):
     assert any("empreinte" in t for t in details)                             # Fingerprints moved there.
 
 
-def test_authorised_resource_check_is_one_short_line_with_details_in_its_tooltip(home):
-    lines = [c for c in home.caption if c.value.startswith("Ressources vérifiées avant calcul")]
+def test_authorised_resource_check_is_one_short_line_with_details_in_its_tooltip(variation):
+    lines = [c for c in variation.caption if c.value.startswith("Ressources vérifiées avant calcul")]
     assert lines and all(c.value.endswith("calcul autorisé.") for c in lines)
     assert all("Cellules raster" in (c.help or "") for c in lines)
 

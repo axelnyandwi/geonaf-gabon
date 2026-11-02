@@ -1,4 +1,4 @@
-"""« Végétation observée par Sentinel-2 » on the home page with AppTest; offline."""
+"""« Végétation observée par Sentinel-2 » on the dashboard with AppTest; offline."""
 
 from dataclasses import replace
 from unittest.mock import Mock
@@ -6,7 +6,6 @@ from unittest.mock import Mock
 import pytest
 from streamlit.testing.v1 import AppTest
 
-from src.components.temporal_guide import VARIATION_TITLE
 from src.indicators.profiles import S2_NDVI_VEGETATION_V0
 from tests.test_local_preview import local_data  # noqa: F401  (fixture)
 from tests.test_s2_vegetation_inventory import PACK
@@ -65,7 +64,7 @@ def test_nothing_is_computed_at_the_initial_load(local_data, home):
     assert any("Estimation expérimentale" in t for t in app.markdown.values)
     assert any("ni entre acquisitions dont les masques d'observation diffèrent" in w.value for w in app.warning)
     assert compute.call_count == 0 and app.button(key=START).label == "Calculer l'estimation Sentinel-2"
-    assert [h.value for h in app.header] == ["Chiffres clés du territoire", "Comparer deux dates", VARIATION_TITLE]
+    assert [h.value for h in app.header] == ["Périmètre analysé", "Chiffres clés du territoire", "Analyses détaillées"]
 
 
 def test_explicit_start_computes_once_and_date_changes_reuse_the_cache(local_data, home):

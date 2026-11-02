@@ -1,4 +1,4 @@
-"""« Transitions entre classes NDVI » (two-date comparison) on the home page with AppTest; offline."""
+"""« Transitions entre classes NDVI » (« Comparer deux dates » section of the temporal analyses page); offline."""
 
 import json
 from unittest.mock import Mock
@@ -10,6 +10,7 @@ from streamlit.testing.v1 import AppTest
 from src.services.local_preview import LocalPreviewError
 from src.components.s2_transitions import TITLE as SECTION_TITLE
 from src.components.temporal_guide import VARIATION_TITLE
+from tests.streamlit_pages import open_section
 from tests.test_local_preview import local_data  # noqa: F401  (fixture)
 from tests.test_s2_pairs import FULL, NORTH, SOUTH, dates
 from tests.test_s2_vegetation_inventory import PACK
@@ -22,7 +23,8 @@ NBSP = "\u202f"
 
 @pytest.fixture
 def home(monkeypatch):
-    """Runs the home page on ``data_dir`` with cold caches; ``compute`` counts the pair selections."""
+    """Runs the « Comparer deux dates » section on ``data_dir`` with cold caches; ``compute`` counts the pair
+    selections. The dashboard runs first, as for a visitor."""
     import src.config
     import src.components.s2_transitions as section
     import src.components.s2_vegetation as vegetation
@@ -41,7 +43,7 @@ def home(monkeypatch):
             state["inventory"] = Mock(wraps=vegetation.s2_vegetation_inventory)
             monkeypatch.setattr(section, "s2_pair_selection", state["compute"])
             monkeypatch.setattr(vegetation, "s2_vegetation_inventory", state["inventory"])
-        return AppTest.from_file(APP).run(timeout=180), state["compute"]
+        return open_section(AppTest.from_file(APP).run(timeout=180), "comparer", 180), state["compute"]
     run.state = state
     return run
 
@@ -95,7 +97,7 @@ def test_nothing_is_computed_at_the_initial_load(local_data, home):
     assert "ne démontre ni une déforestation, ni un reboisement, ni une modification réelle" in text
     assert "Seuil de classe NDVI 0,4" in text and "Seuil de variation ΔNDVI 0,10" in text
     assert "n'intervient pas dans ces transitions" in text and "km²" not in text
-    assert [h.value for h in app.header] == ["Chiffres clés du territoire", "Comparer deux dates", VARIATION_TITLE]
+    assert [h.value for h in app.header] == ["Comparer deux dates"]   # Section of the temporal analyses page.
 
 
 def test_explicit_start_gives_the_result_and_the_button_disappears(local_data, home):

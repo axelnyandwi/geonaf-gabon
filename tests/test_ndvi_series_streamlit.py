@@ -18,7 +18,9 @@ def _page(series_data, monkeypatch):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.run(timeout=30)
     assert any(link.label == "Série temporelle NDVI" for link in app.get("page_link"))
-    app.session_state["section"] = "serie"   # Section of the temporal analyses page.
+    from src.navigation import SECTIONS
+
+    app.session_state["section"] = SECTIONS["serie"]   # Section of the temporal analyses page.
     app.switch_page("views/analyses_temporelles.py").run(timeout=30)
     return app, analyze
 

@@ -132,6 +132,35 @@ def selection_payload(option: TerritoryOption) -> dict:
                        attributions=attribution)
 
 
+def zone_context_payload(zone: TerritoryOption, units=(), *, margin_deg: float = 0.02) -> tuple[dict, list]:
+    """(map payload, labels of the overlapping units): analysed perimeter and limits around it; display only.
+
+    ``units``: administrative units of one referential level. Only those overlapping the zone are
+    drawn, as one layer of boundary lines (a border shared by two units is drawn once) cut to the
+    zone's bounding box widened by ``margin_deg``: the map stays on the zone and no artificial edge
+    is drawn. No area, share or statistic is computed.
+    """
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    zone_geometry = geometry_wgs84(zone)
+    left, bottom, right, top = zone_geometry.bounds
+    window = box(left - margin_deg, bottom - margin_deg, right + margin_deg, top + margin_deg)
+    overlapping = [(unit, geometry) for unit in units for geometry in (geometry_wgs84(unit),)
+                   if geometry.intersects(zone_geometry)]
+    labels = [unit.label for unit, _ in overlapping]
+    layers = [("units", "Limites administratives : " + ", ".join(labels),
+               unary_union([geometry.boundary for _, geometry in overlapping]).intersection(window),
+               COLORS["b"], "dashed")] if overlapping else []
+    layers.append(("zone", f"{zone.label} : périmètre analysé", zone_geometry, COLORS["zone"], "outline"))
+    note = ("Trait plein : zone d'acquisition GEONAF, carré de travail, pas une limite administrative."
+            + (" Tirets : limites administratives du référentiel, non officielles, tracées autour de la zone."
+               if overlapping else " Aucune limite administrative locale disponible pour cette zone."))
+    attributions = list(dict.fromkeys(unit.record.source.attribution for unit, _ in overlapping
+                                      if unit.record is not None))
+    return map_payload(layers, note=note, attributions=attributions), labels
+
+
 def comparison_payload(a: TerritoryOption, b: TerritoryOption) -> dict:
     """Two outlines kept separate, plus their common part and each side's own part (display only)."""
     geometry_a, geometry_b = geometry_wgs84(a), geometry_wgs84(b)

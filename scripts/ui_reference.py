@@ -57,6 +57,8 @@ LAYOUTS["e3"] = [LAYOUTS["e0"][0], *_SECTIONS, *LAYOUTS["e0"][3:]]
 # V1 (from E4): dashboard, temporal sections, multisource and territories pages.
 LAYOUTS["v1"] = [("tableau_de_bord", "app.py", (f"s2_vegetation_start_{AOI}",)), *_SECTIONS,
                  ("multisource", "views/analyses_multisources.py", ()), ("territoires", "views/territoires.py", ())]
+# E4: V1 layout before the multisource page is renamed (E5).
+LAYOUTS["e4"] = [*LAYOUTS["v1"][:-2], ("multisource", "views/multisource.py", ()), LAYOUTS["v1"][-1]]
 # Where each E0 flow is displayed now: (E0 flows, flows of the layout, relation).
 GROUPS = {
     "e0": [((name,), (name,), "equal") for name, _, _ in LAYOUTS["e0"]],
@@ -67,6 +69,7 @@ GROUPS = {
            (("serie_ndvi",), ("t_serie",), "equal"), (("acquisitions",), ("t_donnees",), "equal"),
            (("multisource",), ("multisource",), "equal"), (("territoires",), ("territoires",), "equal")],
 }
+GROUPS["e4"] = GROUPS["v1"]
 
 
 def copy_pack(pack: Path, target: Path) -> Path:
@@ -113,7 +116,9 @@ def run_flow(page: str, buttons, timeout: float):
     app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=timeout).run()
     page, _, section = page.partition("?section=")
     if section:
-        app.session_state["section"] = section
+        from src.navigation import SECTION_KEY, SECTIONS
+
+        app.session_state[SECTION_KEY] = SECTIONS[section]
     if page != "app.py":
         app.switch_page(page).run()
     for key in buttons:

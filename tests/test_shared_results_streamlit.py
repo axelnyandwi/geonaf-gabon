@@ -13,6 +13,7 @@ from src.components.preview_cache import peek_pair_analysis
 from src.services import bounded_cache, compute_slots
 from src.services.bounded_cache import MIB, ByteBudgetCache
 from src.services.compute_slots import ComputeSlots, SlotSettings
+from tests.streamlit_pages import open_section
 from tests.test_local_preview import local_data  # noqa: F401  (fixture)
 from tests.test_multisource_demo import layers  # noqa: F401  (fixture)
 
@@ -53,7 +54,7 @@ def home(local_data, monkeypatch):
         app = AppTest.from_file(APP, default_timeout=60)
         for name, value in state.items():
             app.session_state[name] = value
-        return app.run()
+        return open_section(app.run(), "variation")   # Former home pair analysis.
     open_session.analyze = analyze
     return open_session
 

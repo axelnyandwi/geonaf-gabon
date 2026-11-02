@@ -8,18 +8,17 @@ import streamlit as st
 from src.components.analysis_settings import TERRITORY_LABELS, choose_shared_territory
 from src.components.data_source import active_data_dir
 from src.components.errors import page_guard
+from src.navigation import SECTION_KEY, SECTIONS
 
-SECTIONS = {"comparer": "Comparer deux dates", "variation": "Variation NDVI", "serie": "Série temporelle",
-            "donnees": "Données et acquisitions"}
-SECTION_KEY = "section"   # Also the URL query parameter: /analyses-temporelles?section=serie.
 
 with page_guard("analyses_temporelles"):
     st.title("Analyses temporelles")
     st.caption("Évolutions observées par Sentinel-2 sur la zone d'étude : comparaison de deux dates, variation "
                "continue du NDVI, série temporelle, et données disponibles. Résultats exploratoires, non validés.")
     data_dir = active_data_dir()  # Local data, else the verified demonstration pack.
-    section = st.segmented_control("Section", list(SECTIONS), format_func=SECTIONS.get, key=SECTION_KEY,
-                                   default="comparer", required=True, bind="query-params", persist_state="session")
+    choice = st.segmented_control("Section", list(SECTIONS.values()), key=SECTION_KEY, default=SECTIONS["comparer"],
+                                  required=True, bind="query-params", persist_state="session")
+    section = next(name for name, label in SECTIONS.items() if label == choice)
     if section == "donnees":  # Catalogue search covers every AOI file: no study-zone selector here.
         with page_guard("analyses_temporelles.donnees"):
             from src.components.acquisition_catalogue import show_acquisition_catalogue

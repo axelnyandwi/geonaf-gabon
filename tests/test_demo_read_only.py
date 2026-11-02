@@ -204,7 +204,9 @@ def _run(page: str, pack_copy: Path, monkeypatch) -> AppTest:
     app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
     page, _, section = page.partition("?section=")
     if section:  # Section of the temporal analyses page (also its URL query parameter).
-        app.session_state["section"] = section
+        from src.navigation import SECTION_KEY, SECTIONS
+
+        app.session_state[SECTION_KEY] = SECTIONS[section]
     if page != "app.py":  # Secondary pages are reached through the real entrypoint (page links).
         app.switch_page(page).run()
     return app
@@ -226,10 +228,11 @@ def test_pages_work_on_the_pack_without_writing_it(page, pack_copy, demo, monkey
     verify_pack(pack_copy, "geonaf-demo-akanda-2025-01")
 
 
-def test_home_analyses_run_in_read_only_mode(pack_copy, demo, monkeypatch):
-    app = _run("app.py", pack_copy, monkeypatch)
-    assert not app.exception
-    assert app.metric or app.dataframe     # Key figures and pair analysis computed in memory.
+def test_analyses_run_in_read_only_mode(pack_copy, demo, monkeypatch):
+    dashboard = _run("app.py", pack_copy, monkeypatch)
+    assert not dashboard.exception and dashboard.dataframe            # Key figures computed in memory.
+    variation = _run("views/analyses_temporelles.py?section=variation", pack_copy, monkeypatch)
+    assert not variation.exception and len(variation.metric) == 4     # Pair analysis computed in memory.
 
 
 def test_forbidden_commands_are_replaced_by_a_message(pack_copy, demo, monkeypatch):

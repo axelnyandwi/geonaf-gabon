@@ -16,6 +16,7 @@ from src.data.acquisition_manifest import build_acquisition_manifest, write_acqu
 from src.services.local_preview import (
     LocalPreviewError, analyze_local_akanda, list_local_observations,
 )
+from tests.streamlit_pages import open_section, variation_app
 
 
 def submit_dates(app):
@@ -114,11 +115,11 @@ def test_streamlit_renders_local_results_without_private_paths(local_data, monke
     import src.config
 
     monkeypatch.setattr(src.config, "DATA_DIR", local_data)
-    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
+    app = variation_app(timeout=30)   # Former home pair analysis.
     assert not app.exception
     assert not app.error
     assert len(app.metric) == 4
-    assert len(app.date_input) == 2 and [box.key for box in app.selectbox] == ["territory"]
+    assert len(app.date_input) == 2 and [box.key for box in app.selectbox] == ["geonaf_zone"]
     assert app.metric[1].value == "50,00 %"            # Part of the study zone observed at both dates.
     assert "limite administrative" in app.info[0].value
     for kind in (app.caption, app.info, app.warning):
@@ -139,7 +140,7 @@ def test_streamlit_missing_data_is_safe(tmp_path, monkeypatch):
     (tmp_path / "aoi").mkdir()
     gpd.GeoDataFrame(geometry=[box(500000, 99980, 500020, 100000)], crs="EPSG:32632").to_file(
         tmp_path / "aoi" / "akanda.geojson")
-    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
+    app = variation_app(timeout=30)
     assert not app.exception
     assert "Deux acquisitions" in app.error[0].value
     assert str(tmp_path) not in app.error[0].value
@@ -161,7 +162,7 @@ def test_same_pair_submit_reuses_result_and_invalidates_changed_aoi(local_data, 
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.session_state["interactive_map"] = False  # Specifically exercise the PNG fallback cache.
     app.session_state["temporal_comparison"] = False
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), "variation", timeout=30)
     original = peek_pair_analysis(app.session_state["pair"]).analysis.delta_ndvi.copy()
     submit_dates(app).run()
     assert not app.exception and not app.error
@@ -224,7 +225,7 @@ def test_cached_result_is_not_displayed_after_asset_tampering(local_data, monkey
     import src.config
 
     monkeypatch.setattr(src.config, "DATA_DIR", local_data)
-    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
+    app = variation_app(timeout=30)
     observation = list_local_observations(local_data)[0]
     path = observation.manifest_path.parent / "b04.tif"
     path.write_bytes(path.read_bytes() + b"changed")
@@ -252,7 +253,8 @@ def test_branding_and_asset_fallback(local_data, monkeypatch, missing_assets):
     assert not app.exception and not app.error
     icon = configure.call_args.kwargs["page_icon"]
     slogans = [element for element in app.markdown if element.value == src.config.TAGLINE]
-    assert app.title[0].value == "GEONAF"
+    assert app.title[0].value == "Tableau de bord"                      # Main page renamed (navigation V1).
+    assert any(element.value.startswith("GEONAF") for element in app.caption)
     assert len(slogans) == 1
     assert not any(getattr(element, "key", None) == "branding" for element in app.get("container"))
     if missing_assets:
@@ -279,7 +281,7 @@ def test_interactive_layer_cache_reuses_science_and_never_sends_paths(local_data
     monkeypatch.setattr(preview, "analyze_local_akanda", analyze)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.session_state["temporal_comparison"] = False
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), "variation", timeout=30)
     assert not app.exception and not app.error
     assert not any("Carte interactive indisponible" in warning.value for warning in app.warning)
     submit_dates(app).run()
@@ -300,6 +302,6 @@ def test_map_adapter_failure_uses_matplotlib(local_data, monkeypatch):
     monkeypatch.setattr(interactive, "show_interactive_map", lambda payload: False)
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.session_state["temporal_comparison"] = False
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), "variation", timeout=30)
     assert not app.exception and not app.error
     assert any("Carte interactive indisponible" in warning.value for warning in app.warning)

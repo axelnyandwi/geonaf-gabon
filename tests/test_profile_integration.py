@@ -204,7 +204,9 @@ def test_streamlit_profile_selection_invalidates_science_and_displays_restrictio
     import src.config
 
     monkeypatch.setattr(src.config, "DATA_DIR", local_data)
-    app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
+    from tests.streamlit_pages import variation_app
+
+    app = variation_app(timeout=30)   # Former home pair analysis.
     assert not app.exception and not app.error
     first_key = app.session_state["pair"]
     assert peek_pair_analysis(app.session_state["pair"]).scientific_profile == BASE

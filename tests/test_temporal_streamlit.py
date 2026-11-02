@@ -8,6 +8,7 @@ from datetime import date
 from streamlit.testing.v1 import AppTest
 
 from tests.test_local_preview import local_data, submit_dates  # Reuse the verified acquisition fixture.
+from tests.streamlit_pages import open_section
 from src.services.local_preview import analyze_local_akanda, list_local_observations, local_preview_key
 
 
@@ -29,7 +30,7 @@ def configured_app(local_data, monkeypatch):
 
 def test_default_comparison_reuses_result_and_bounded_payload(local_data, monkeypatch):
     app, prepare, analyze = configured_app(local_data, monkeypatch)
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), 'variation', timeout=30)   # Former home pair analysis.
     assert not app.exception and not app.error
     assert app.checkbox(key='temporal_comparison').value
     assert len(app.metric) == 4 and len(app.table) == 2
@@ -57,7 +58,7 @@ def test_size_and_public_contract_and_response_isolation(local_data):
 
 def test_invalid_dates_hide_previous_comparison_and_recovery_is_cached(local_data, monkeypatch):
     app, prepare, analyze = configured_app(local_data, monkeypatch)
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), 'variation', timeout=30)   # Former home pair analysis.
     app.date_input[0].set_value(date(2025, 1, 25))
     submit_dates(app).run()
     assert not app.exception and app.error and not app.metric
@@ -71,7 +72,7 @@ def test_invalid_dates_hide_previous_comparison_and_recovery_is_cached(local_dat
 
 def test_aoi_revision_invalidates_science_and_temporal_cache(local_data, monkeypatch):
     app, prepare, analyze = configured_app(local_data, monkeypatch)
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), 'variation', timeout=30)   # Former home pair analysis.
     path = local_data/'aoi/akanda.geojson'
     path.write_bytes(path.read_bytes()+b'\n')
     app.run()
@@ -86,7 +87,7 @@ def test_renderer_failure_uses_png_and_retains_indicators(local_data, monkeypatc
     png = Mock(wraps=images.cached_map_png)
     monkeypatch.setattr(images, 'cached_map_png', png)
     monkeypatch.setattr(adapter, 'show_temporal_map', lambda payload: False)
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), 'variation', timeout=30)   # Former home pair analysis.
     assert not app.exception and not app.error
     assert len(app.metric) == 4 and png.call_count == 1
     assert any('Carte interactive indisponible' in item.value for item in app.warning)
@@ -100,7 +101,7 @@ def test_preparation_exception_is_safe_and_legacy_view_remains_available(local_d
     def failure(*args, **kwargs):
         raise RuntimeError('private-source-path-placeholder')
     monkeypatch.setattr(adapter, 'cached_temporal_payload', failure)
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), 'variation', timeout=30)   # Former home pair analysis.
     assert not app.exception and not app.error
     assert all('private-source' not in item.value for item in app.warning)
     app.checkbox(key='temporal_comparison').uncheck().run()
@@ -136,7 +137,7 @@ def test_different_valid_acquisition_invalidates_component_and_payload(local_dat
     app, prepare, analyze = configured_app(local_data, monkeypatch)
     show = Mock(return_value=True)
     monkeypatch.setattr(adapter, 'show_temporal_map', show)
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), 'variation', timeout=30)   # Former home pair analysis.
     assert not show.called  # A calendar day never silently picks one of two products.
     picker = lambda: next(box for box in app.selectbox if box.label.startswith('Acquisition de la date'))
     picker().select_index(1)

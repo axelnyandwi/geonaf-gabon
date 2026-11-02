@@ -10,6 +10,6 @@ from src.components.territory_explorer import show_territories
 
 st.set_page_config(page_title="GEONAF · Territoires",
                    page_icon=str(PROJECT_ROOT / "assets" / "geonaf_favicon.png"), layout="wide")
-st.page_link(page("accueil"), label="Accueil")
+st.page_link(page("tableau_de_bord"), label="Tableau de bord")
 with page_guard("territoires"):
     show_territories(active_data_dir())
