@@ -6,6 +6,7 @@ import streamlit as st
 
 from src.components.errors import show_error
 from src.data.catalogue import CatalogueError, CatalogueQuery
+from src.demo_mode import read_only
 from src.geo.scientific_profile import LOCAL_SCIENTIFIC_PROFILES
 from src.services.acquisition_catalogue import (
     available_catalogue_aois, load_catalogue_aoi, search_catalogue,
@@ -18,7 +19,8 @@ def show_acquisition_catalogue(data_dir):
     st.caption("Recherche de métadonnées Copernicus L2A · Téléchargement uniquement sur commande explicite. "
                "La couverture nuageuse globale ne mesure pas la qualité locale de l’AOI.")
     from src.components.acquisition_downloads import download_queue, show_download_status, show_download_commands
-    show_download_status(download_queue(str(data_dir.resolve())))
+    if not read_only():  # Read-only demo: no queue, so no shared download folder is created.
+        show_download_status(download_queue(str(data_dir.resolve())))
     aois = available_catalogue_aois(data_dir)
     if not aois:
         st.info("Aucune AOI GeoJSON disponible dans le répertoire de données configuré.")

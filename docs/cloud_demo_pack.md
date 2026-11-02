@@ -62,6 +62,9 @@ Soit renseigner `RELEASED_PACK` dans `src/data/demo_pack.py` (empreinte épingl�
 dans Git, recommandé), soit définir dans les secrets Streamlit, au niveau racine :
 `GEONAF_DEMO_PACK_URL`, `GEONAF_DEMO_PACK_SHA256`, `GEONAF_DEMO_PACK_ID`.
 
+Déploiement public : définir aussi `GEONAF_DEMO_READ_ONLY=1` (aucun téléchargement ni écriture
+déclenchés par les visiteurs dans le dossier partagé, voir `demo_read_only.md`).
+
 ## Mesures du 26/10/2026 (Windows, sans réseau)
 
 | Mesure | Valeur |

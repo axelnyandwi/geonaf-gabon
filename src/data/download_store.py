@@ -18,6 +18,7 @@ from uuid import uuid4
 
 from src.data import ingestion
 from src.data.download_control import TransferAborted
+from src.demo_mode import ensure_writable
 
 
 def safe_id(value):
@@ -56,6 +57,7 @@ def atomic_json(destination, value):
     On any failure the destination is left untouched, the temporary file is removed and
     the original error is raised.
     """
+    ensure_writable("Téléchargements Sentinel-2")
     temporary = destination.with_name(destination.name + "." + uuid4().hex + ".tmp")
     payload = json.dumps(value, ensure_ascii=True, allow_nan=False, sort_keys=True)
     try:
@@ -81,6 +83,7 @@ class LocalDownloadStore:
         self._verify_observation = observation_validator
         # Windows without LongPathsEnabled rejects paths over MAX_PATH (260 incl. NUL).
         self.max_path = max_path
+        ensure_writable("Téléchargements Sentinel-2")
         self.root = Path(data_dir).resolve()
         self.work = self._confined(self.root / "downloads")
         self.final = self._confined(self.root / "raw" / "sentinel2")

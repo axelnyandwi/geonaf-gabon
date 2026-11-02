@@ -9,6 +9,7 @@ import streamlit as st
 from src.components.errors import is_expected, show_error, show_internal_error
 from src.components.formatting import format_percent, format_surface
 from src.components.resource_panel import assess_geometry, show_assessment
+from src.demo_mode import read_only, unavailable_text
 from src.services import territory_catalog as catalog
 
 KINDS = ("Zone d'étude GEONAF (zone d'acquisition)", "Territoire administratif (référentiel)",
@@ -92,6 +93,9 @@ def _provenance_table(option):
 
 
 def _load_button(data_dir, release, level, key):
+    if read_only():
+        st.info(unavailable_text(f"Chargement {catalog.REFERENTIALS[release]} - {catalog.LEVELS[level]}"))
+        return
     if st.button(f"Charger {catalog.REFERENTIALS[release]} - {catalog.LEVELS[level]} (réseau)", key=key):
         try:
             with st.spinner("Récupération bornée geoBoundaries (métadonnées, puis géométries si absentes)…"):
@@ -208,6 +212,9 @@ def _comparison(data_dir):
 
 
 def _import(data_dir):
+    if read_only():  # No uploader: nothing is received or stored.
+        st.info(unavailable_text("Import de zone personnalisée"))
+        return
     st.caption("Une zone par opération. Le fichier est vérifié (taille avant lecture, géométrie valide sans "
                "réparation, nombre de sommets et de parties) puis enregistré avec sa provenance. Statut : "
                "« fourni par l'utilisateur » - jamais officiel automatiquement.")

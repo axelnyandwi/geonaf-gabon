@@ -145,8 +145,12 @@ def _nature(label):
 
 
 def _retrieval_panel(data_dir, identity, month):
+    from src.demo_mode import read_only, unavailable_text
     from src.services import external_retrieval as retrieval
 
+    if read_only():
+        st.info(unavailable_text("Récupération des couches externes (WorldCover, OpenStreetMap, Sentinel-1)"))
+        return
     with st.expander("Récupération des couches externes (réseau, sur action explicite)"):
         st.caption("Requêtes bornées à l'AOI, mises en cache et tracées. Aucune donnée existante n'est écrasée ; "
                    f"plafonds : WorldCover {retrieval.WORLDCOVER_MAX_BYTES // 2**20} Mo, OSM "

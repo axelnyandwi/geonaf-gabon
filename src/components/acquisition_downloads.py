@@ -6,6 +6,7 @@ import streamlit as st
 
 from src.components.errors import page_guard, public_text, show_error
 from src.data.download_control import DownloadBudget, TransferAborted
+from src.demo_mode import read_only, unavailable_text
 from src.services.download_queue import DownloadQueue
 
 
@@ -63,6 +64,9 @@ def _show_download_status(queue):
 
 def show_download_commands(selection, data_dir):
     if not selection.records:
+        return
+    if read_only():
+        st.info(unavailable_text("Téléchargements Sentinel-2"))
         return
     queue = download_queue(str(Path(data_dir).resolve()))
     with st.expander("Téléchargements sécurisés"):

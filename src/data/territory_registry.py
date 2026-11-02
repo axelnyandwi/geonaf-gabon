@@ -31,6 +31,7 @@ from pathlib import Path
 import re
 
 from src.data.layer_store import LayerFileStore, sha256_file
+from src.demo_mode import ensure_writable
 from src.geo.aoi_identity import load_aoi_identity
 
 SCHEMA = "geonaf.territory/v1"
@@ -250,6 +251,7 @@ class TerritoryRegistry:
         different metadata creates version n+1 that ``supersedes`` version n;
         nothing is ever overwritten.
         """
+        ensure_writable("Enregistrement de territoire")
         from src.geo.change_analysis import load_equal_area_aoi
 
         geometry_path = Path(geometry_path)

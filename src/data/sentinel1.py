@@ -30,6 +30,7 @@ import rasterio
 from src.data.external_sources import (
     ExternalLayerDescriptor, LayerLicense, LayerQuality, SpatialExtent, TemporalValidity,
 )
+from src.demo_mode import ensure_writable
 
 COLLECTION = "sentinel-1-global-mosaics"
 PRODUCT_TYPE = "S1SAR_L3_IW_MCM"
@@ -243,6 +244,7 @@ def fetch_sentinel1_window(s3_client, store, repository, mosaic: Sentinel1Mosaic
     A stored window is reused only if it covers the bounds and was not recorded
     for another geometry (``aoi_geometry_sha256``, see ``src.geo.aoi_identity``).
     """
+    ensure_writable("Récupération Sentinel-1")
     from src.data.remote_window import ByteBudget, RangeFile, S3RangeSource, read_remote_window
 
     if polarization not in POLARIZATIONS:

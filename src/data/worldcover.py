@@ -20,6 +20,7 @@ from rasterio.warp import transform_bounds
 from src.data.external_sources import (
     ExternalLayerDescriptor, LayerLicense, LayerQuality, RetrievalPlan, SpatialExtent, TemporalValidity,
 )
+from src.demo_mode import ensure_writable
 
 BUCKET_URL = "https://esa-worldcover.s3.eu-central-1.amazonaws.com"
 VERSIONS = {"v100": 2020, "v200": 2021}
@@ -125,6 +126,7 @@ def fetch_worldcover_windows(client, store, repository, *, aoi_id: str, wgs84_bo
     ``aoi_geometry_sha256`` (see ``src.geo.aoi_identity``) binds new windows to
     the zone geometry; a window recorded for another geometry is never reused.
     """
+    ensure_writable("Récupération WorldCover")
     adapter = WorldCoverAdapter(version)
     left, bottom, right, top = wgs84_bounds
     output = []

@@ -66,6 +66,7 @@ _SECRET_ENV = re.compile(r"(?i)(secret|token|password|passwd|access_key|api_key)
 def _expected_types() -> tuple[type[BaseException], ...]:
     # Imported lazily: domain modules are heavy and must not depend on the interface.
     from src.data.catalogue import CatalogueError
+    from src.demo_mode import DemoReadOnlyError
     from src.data.demo_pack import DemoPackError
     from src.data.download_control import TransferAborted
     from src.data.geoboundaries import GeoBoundariesError
@@ -76,7 +77,8 @@ def _expected_types() -> tuple[type[BaseException], ...]:
     from src.services.territory_catalog import ZoneImportRefused
 
     return (LocalPreviewError, CatalogueError, TransferAborted, GeoBoundariesError, DemoPackError,
-            ByteBudgetExceeded, IncompleteSTACSearchError, ZoneImportRefused, ComputeBusyError)
+            ByteBudgetExceeded, IncompleteSTACSearchError, ZoneImportRefused, ComputeBusyError,
+            DemoReadOnlyError)
 
 
 def is_expected(error: BaseException) -> bool:

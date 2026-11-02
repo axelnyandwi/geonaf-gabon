@@ -21,6 +21,7 @@ from src.data.territory_registry import (
     ACQUISITION_ZONE, ADMIN_UNIT, COMMUNITY, CUSTOM_IMPORT, GEONAF_ZONE, HISTORICAL_ZONES,
     HUMANITARIAN, USER_PROVIDED, TerritoryRegistry, TerritorySource,
 )
+from src.demo_mode import ensure_writable
 
 REFERENTIALS = {"gbOpen": "geoBoundaries gbOpen (communautaire)",
                 "gbHumanitarian": "geoBoundaries gbHumanitarian (humanitaire, OCHA COD-AB)"}
@@ -88,6 +89,7 @@ def custom_zones(data_dir) -> tuple[TerritoryOption, ...]:
 
 def load_referential(data_dir, release: str, level: str, iso3: str = "GAB", client=None):
     """Explicit user action: retrieve (or reuse the cached snapshot of) one referential level."""
+    ensure_writable("Chargement geoBoundaries")
     from src.data.geoboundaries import import_geoboundaries
 
     return import_geoboundaries(Path(data_dir), release=release, iso3=iso3, level=level, client=client)
@@ -165,6 +167,7 @@ def import_custom_zone(data_dir, content: bytes, *, label: str, author: str, lic
     status is always « fourni par l'utilisateur ». Nothing is stored when a
     check fails.
     """
+    ensure_writable("Import de zone personnalisée")
     import tempfile
 
     from src.data.geoboundaries import slug

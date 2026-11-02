@@ -12,6 +12,7 @@ import calendar
 from pathlib import Path
 
 from src.services.external_layers import open_store
+from src.demo_mode import ensure_writable
 
 WORLDCOVER_MAX_BYTES = 4 * 1024 * 1024
 OSM_MAX_BYTES = 64 * 1024 * 1024  # Libreville estimate 22/10/2026: 49 MB (61 497 elements).
@@ -28,6 +29,7 @@ def _external_client(client):
 def retrieve_worldcover(data_dir: Path, *, aoi_id: str, wgs84_bounds, client=None,
                         max_bytes: int = WORLDCOVER_MAX_BYTES, aoi_geometry_sha256: str | None = None) -> dict:
     """Every WorldCover tile intersecting the AOI; one window, file and provenance per tile."""
+    ensure_writable("Récupération WorldCover")
     from src.data.worldcover import fetch_worldcover_windows
 
     store, repository = open_store(data_dir)
@@ -43,6 +45,7 @@ def retrieve_worldcover(data_dir: Path, *, aoi_id: str, wgs84_bounds, client=Non
 def retrieve_osm(data_dir: Path, *, wgs84_bounds, force_refresh: bool = False, client=None,
                  max_bytes: int = OSM_MAX_BYTES) -> dict:
     """One bounded Overpass query, preceded on a cache miss by an ``out count`` volume estimate."""
+    ensure_writable("Récupération OpenStreetMap")
     from src.data.openstreetmap import fetch_osm_snapshot
 
     store, repository = open_store(data_dir)
@@ -55,6 +58,7 @@ def retrieve_osm(data_dir: Path, *, wgs84_bounds, force_refresh: bool = False, c
 def retrieve_sentinel1(data_dir: Path, *, aoi_id: str, wgs84_bounds, month: date, stac_io=None, s3_client=None,
                        max_bytes: int = SENTINEL1_MAX_BYTES, aoi_geometry_sha256: str | None = None) -> dict:
     """Search the month's IW mosaics (one per MGRS tile), estimate each window, fetch only under the cap."""
+    ensure_writable("Récupération Sentinel-1")
     from src.data.sentinel1 import estimate_window_bytes, fetch_sentinel1_window, reusable_window, search_mosaics
 
     store, repository = open_store(data_dir)
