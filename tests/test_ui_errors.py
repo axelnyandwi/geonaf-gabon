@@ -268,7 +268,7 @@ def multisource(local_data, monkeypatch):
             getattr(ui, name).clear()
         monkeypatch.setattr(external_retrieval, "retrieve_worldcover", Mock(side_effect=error))
         app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=30)
-        app.switch_page("pages/3_Multisource.py").run(timeout=60)
+        app.switch_page("views/multisource.py").run(timeout=60)
         assert not app.exception and not app.error
         app.button(key="ms_fetch_wc").click().run(timeout=60)
         assert not app.exception

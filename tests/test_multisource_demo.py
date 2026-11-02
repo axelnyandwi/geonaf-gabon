@@ -170,7 +170,7 @@ def _page(data_dir, monkeypatch):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.run(timeout=30)
     assert any(link.label == "Démonstrateur multisource" for link in app.get("page_link"))
-    app.switch_page("pages/3_Multisource.py").run(timeout=60)
+    app.switch_page("views/multisource.py").run(timeout=60)
     return app, retrieval
 
 

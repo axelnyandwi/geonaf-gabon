@@ -39,10 +39,10 @@ AOI = "akanda"
 LAYOUTS = {
     "e0": [
         ("accueil", "app.py", (f"s2_vegetation_start_{AOI}", f"s2_pairs_start_{AOI}", f"s2_pairs_compute_{AOI}")),
-        ("acquisitions", "pages/1_Acquisitions_Sentinel2.py", ()),
-        ("serie_ndvi", "pages/2_Series_NDVI.py", ("series_compute",)),
-        ("multisource", "pages/3_Multisource.py", ()),
-        ("territoires", "pages/4_Territoires.py", ()),
+        ("acquisitions", "views/acquisitions_sentinel2.py", ()),
+        ("serie_ndvi", "views/serie_ndvi.py", ("series_compute",)),
+        ("multisource", "views/multisource.py", ()),
+        ("territoires", "views/territoires.py", ()),
     ],
 }
 

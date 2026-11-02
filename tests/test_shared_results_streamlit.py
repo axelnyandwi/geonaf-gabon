@@ -148,7 +148,7 @@ def _multisource(data_dir, monkeypatch):
     ndvi = Mock(wraps=ui.analyze_local_group)
     monkeypatch.setattr(ui, "analyze_local_group", ndvi)
     app = AppTest.from_file(APP, default_timeout=60).run()
-    app.switch_page("pages/3_Multisource.py").run()
+    app.switch_page("views/multisource.py").run()
     assert not app.exception and not app.error
     return app, ndvi
 

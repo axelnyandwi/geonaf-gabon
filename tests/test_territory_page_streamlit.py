@@ -20,7 +20,7 @@ def open_page():
     """Start from the home script (as users do) then switch: page links need the app's page registry."""
     app = AppTest.from_file(APP)
     app.run(timeout=60)
-    return app.switch_page("pages/4_Territoires.py").run(timeout=60)
+    return app.switch_page("views/territoires.py").run(timeout=60)
 
 
 @pytest.fixture(autouse=True)

@@ -28,7 +28,7 @@ def _page(local_data, monkeypatch):
     monkeypatch.setattr(preview, "list_local_observations", lambda data_dir: ())
     page = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     page.run(timeout=30)
-    page.switch_page("pages/1_Acquisitions_Sentinel2.py")
+    page.switch_page("views/acquisitions_sentinel2.py")
     return page, search
 
 

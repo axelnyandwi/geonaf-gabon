@@ -18,7 +18,7 @@ def _page(series_data, monkeypatch):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.run(timeout=30)
     assert any(link.label == "Série temporelle NDVI" for link in app.get("page_link"))
-    app.switch_page("pages/2_Series_NDVI.py").run(timeout=30)
+    app.switch_page("views/serie_ndvi.py").run(timeout=30)
     return app, analyze
 
 
