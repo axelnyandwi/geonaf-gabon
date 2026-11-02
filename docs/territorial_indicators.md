@@ -1,6 +1,7 @@
 # Chiffres clés du territoire - lot 6, module 1
 
-Première section de la page d'accueil (`app.py`), avant les analyses scientifiques. Le moteur
+Section du tableau de bord (`views/tableau_de_bord.py`, navigation V1), après la carte du périmètre
+analysé ; les analyses scientifiques détaillées sont dans la page Analyses temporelles. Le moteur
 `src/services/territorial_indicators.py` ne dépend pas de Streamlit ; l'affichage est dans
 `src/components/territorial_indicators.py`. Aucun accès réseau : seules les couches déjà
 stockées (`data/external/`, catalogue vérifié par empreinte SHA-256) sont lues.

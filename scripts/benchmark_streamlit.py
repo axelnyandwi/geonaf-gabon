@@ -111,7 +111,13 @@ def main():
             module, attribute = target.rsplit(".", 1)
             original = getattr(importlib.import_module(module), attribute)
             patches.enter_context(patch(target, wrap(original, name)))
-        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
+        from src.components.preview_cache import peek_pair_analysis
+        from src.navigation import SECTION_KEY, SECTIONS
+
+        # Navigation V1: the pair analysis is the « Variation NDVI » section of the temporal analyses page.
+        app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py")).run(timeout=180)
+        app.session_state[SECTION_KEY] = SECTIONS["variation"]
+        app.switch_page("views/analyses_temporelles.py")
         reports = []
         for mode in ("first_load", "same_pair_submit", "idle_rerun"):
             totals.clear()
@@ -124,7 +130,7 @@ def main():
                 raise RuntimeError("Application profile failed; no private error details emitted.")
             reports.append({"mode": mode, "seconds": elapsed,
                             "phases": dict(totals),
-                            "scientific_digest": scientific_digest(app.session_state["result"])})
+                            "scientific_digest": scientific_digest(peek_pair_analysis(app.session_state["pair"]))})
         digests = {report["scientific_digest"] for report in reports}
         if len(digests) != 1 or (expected is not None and digests != {expected}):
             raise RuntimeError("Scientific arrays or indicators differ from the reference.")

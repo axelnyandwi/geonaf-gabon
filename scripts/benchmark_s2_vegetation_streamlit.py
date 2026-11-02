@@ -1,4 +1,4 @@
-"""Home page timings around the Sentinel-2 vegetation section with AppTest (manual diagnostic, no network).
+"""Dashboard timings around the Sentinel-2 vegetation section with AppTest (manual diagnostic, no network).
 
 Usage : python scripts/benchmark_s2_vegetation_streamlit.py [data_dir]   (default: demo pack v3)
 

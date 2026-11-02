@@ -38,7 +38,8 @@ et complétés par l'identifiant de diagnostic.
 
 Débogage local uniquement : `STREAMLIT_CLIENT_SHOW_ERROR_DETAILS=full streamlit run app.py`.
 
-Chaque page (`app.py`, `pages/*.py`) et le fragment de suivi des téléchargements sont entourés de
+Chaque page (`views/*.py`, servies par le routeur `app.py`), chaque section des analyses temporelles et
+le fragment de suivi des téléchargements sont entourés de
 `page_guard` : une exception imprévue y produit le message générique avec identifiant. `st.stop()` et
 `st.rerun()` ne sont pas interceptés (exceptions de contrôle dérivées de `BaseException`).
 

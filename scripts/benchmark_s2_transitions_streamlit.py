@@ -1,4 +1,4 @@
-"""Home page timings around the Sentinel-2 temporal comparison with AppTest (manual diagnostic, no network).
+"""« Comparer deux dates » section timings (Sentinel-2 transitions) with AppTest (manual diagnostic, no network).
 
 Usage : python scripts/benchmark_s2_transitions_streamlit.py [data_dir ...] [--output file.json]
         (default: demo pack v3)
@@ -49,9 +49,17 @@ def measure(mode: str, data_dir: Path) -> dict:
     src.config.DATA_DIR = data_dir
     if mode == "before":
         section.show_s2_transitions = lambda *args, **kwargs: None
+    from src.navigation import SECTION_KEY, SECTIONS
+
+    def comparison_section():
+        """Dashboard, then the « Comparer deux dates » section of the temporal analyses page (navigation V1)."""
+        app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=300)
+        app.session_state[SECTION_KEY] = SECTIONS["comparer"]
+        return app.switch_page("views/analyses_temporelles.py").run(timeout=300)
+
     timings = {}
     start = perf_counter()
-    app = AppTest.from_file(str(ROOT / "app.py")).run(timeout=300)
+    app = comparison_section()
     timings["chargement_initial_s"] = perf_counter() - start
     if mode == "after":
         start = perf_counter()
@@ -64,7 +72,7 @@ def measure(mode: str, data_dir: Path) -> dict:
             app.selectbox(key=PAIR).set_value(other).run(timeout=300)
             timings["changement_de_paire_s"] = perf_counter() - start
             timings["paire_choisie"] = selector.format_func(other)
-        second = AppTest.from_file(str(ROOT / "app.py")).run(timeout=300)
+        second = comparison_section()
         start = perf_counter()
         second.button(key=START).click().run(timeout=300)
         timings["autre_session_cache_partage_s"] = perf_counter() - start

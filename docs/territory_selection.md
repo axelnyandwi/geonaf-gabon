@@ -2,7 +2,7 @@
 
 > **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
 
-Page `pages/4_Territoires.py` (« Territoires et frontières », lien depuis l'accueil). Interface :
+Page `views/territoires.py` (« Territoires et frontières », route `/territoires`, navigation V1). Interface :
 `src/components/territory_explorer.py`, carte `src/components/maplibre/territory.js`, garde-fous
 `src/components/resource_panel.py`. Logique sans Streamlit : `src/services/territory_catalog.py`.
 
@@ -34,8 +34,8 @@ temporel réel.
 
 | Page | Opération | Contrôles |
 |---|---|---|
-| Accueil | analyse de la paire | cellules, mémoire, tuiles S2 |
-| Série NDVI | calcul de la série (avant le bouton) | idem |
+| Analyses temporelles, section « Variation NDVI » (ancien accueil) | analyse de la paire | cellules, mémoire, tuiles S2 |
+| Analyses temporelles, section « Série temporelle » | calcul de la série (avant le bouton) | idem |
 | Multisource | NDVI + croisements | idem + emprise OSM + volume OSM (taille de l'instantané stocké, sinon inconnu) |
 | Territoires | analyse multisource future du territoire | idem, volume OSM inconnu |
 

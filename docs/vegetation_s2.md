@@ -117,6 +117,8 @@ différents.
 
 ### Temps de la page d'accueil (`scripts/benchmark_s2_vegetation_streamlit.py`, paquet v3)
 
+Mesures du 28/10/2026 sur l'ancien accueil ; depuis la navigation V1 la section est sur le tableau de bord.
+
 AppTest, un processus par mode (caches froids), trois séries le 28/10/2026 :
 
 | Mesure | Avant L3c | Après L3c |

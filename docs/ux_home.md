@@ -1,5 +1,10 @@
 # Accueil : structure, libellés et accessibilité (C5)
 
+> **Navigation V1 (02/11/2026)** : l'accueil est réparti entre le tableau de bord (chiffres clés,
+> végétation Sentinel-2, carte du périmètre) et les sections « Comparer deux dates » et « Variation
+> NDVI » de la page Analyses temporelles, avec les mêmes titres, libellés et valeurs. Voir
+> `navigation.md`. Le tableau ci-dessous décrit la structure du 30/10/2026.
+
 Consolidation de l'interface du 30/10/2026, sans changement de calcul, de seuil, de profil ni du
 paquet v3. Constats mesurés sur le paquet v3 (Akanda) avec `AppTest` et un navigateur (390 px et
 1 280 px, thèmes clair et sombre).

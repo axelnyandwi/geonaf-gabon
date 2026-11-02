@@ -4,7 +4,8 @@
 
 ## Usage
 
-Accueil → « Série temporelle NDVI ». Choisir un profil scientifique, une période
+Analyses temporelles → section « Série temporelle » (lien « Série temporelle NDVI » du tableau de
+bord ; zone d'étude partagée). Choisir un profil scientifique, une période
 UTC, le seuil de lacune (jours) et au moins trois acquisitions locales vérifiées,
 puis cliquer sur « Calculer la série ». Aucun calcul n'est lancé par un simple
 rerun ; un changement de paramètre demande un nouveau clic. Aucun téléchargement.

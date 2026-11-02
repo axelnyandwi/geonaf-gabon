@@ -26,7 +26,7 @@ Utilisateurs :
 
 | Espace | Contenu | Clé |
 |---|---|---|
-| `accueil.paire` | analyse de paire de l'accueil (≈ 29 Mio sur Akanda v3) | `local_preview_key` : empreinte du profil, SCL, seuil, révisions et empreintes des fichiers des deux acquisitions, chemin et contenu de l'AOI |
+| `accueil.paire` | analyse de paire, section « Variation NDVI » des analyses temporelles depuis la navigation V1 (≈ 29 Mio sur Akanda v3) | `local_preview_key` : empreinte du profil, SCL, seuil, révisions et empreintes des fichiers des deux acquisitions, chemin et contenu de l'AOI |
 | `multisource.ndvi` | NDVI d'une prise de vue | `local_group_ndvi_key` (voir § 2) |
 | `multisource.result` | croisement multisource | clé complète du groupe (profil effectif compris) + empreintes des couches + AOI |
 | `multisource.osm`, `.radar`, `.map`, `.observation` | couches chargées, carte | mêmes arguments que les anciennes clés Streamlit |

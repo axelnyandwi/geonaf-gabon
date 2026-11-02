@@ -92,6 +92,7 @@ Ne jamais versionner de secrets. Les fichiers `.env` et les secrets Streamlit so
 |-- requirements.txt
 |-- requirements-dev.txt
 |-- app.py
+|-- views/
 |-- src/
 |   |-- __init__.py
 |   |-- config.py
@@ -130,7 +131,8 @@ Ne jamais versionner de secrets. Les fichiers `.env` et les secrets Streamlit so
 `-- docs/data_sources.md
 ```
 
-- `app.py` : point d’entrée de l’interface Streamlit.
+- `app.py` : point d’entrée de l’interface Streamlit, routeur `st.navigation` des quatre pages (`src/navigation.py`).
+- `views/` : pages Tableau de bord, Analyses temporelles, Analyses multisources et Territoires (`docs/navigation.md`).
 - `src/config.py` : configuration générale et chemins, sans création automatique de dossiers.
 - `src/data/` : découverte et ingestion, préparation raster, calibration et contrôle qualité.
 - `src/geo/` : validation des AOI et calculs géospatiaux, dont les indices spectraux.

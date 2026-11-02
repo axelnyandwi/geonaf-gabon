@@ -126,7 +126,8 @@ sources. Satellites et orbite relative déduits de l'identifiant produit (conven
 ## Interface (L4c, `src/components/s2_transitions.py`)
 
 Sous-section « Comparaison temporelle sur surface commune » de « Végétation observée par
-Sentinel-2 » (page d'accueil), indépendante de l'estimation d'une date.
+Sentinel-2 » (page d'accueil ; depuis la navigation V1 : section « Comparer deux dates » des analyses
+temporelles, `navigation.md`), indépendante de l'estimation d'une date.
 
 - **Toujours visibles** : badges « Estimation », « Expérimental », « Non validée
   scientifiquement » ; avertissement permanent (une transition de classe spectrale ne démontre ni
