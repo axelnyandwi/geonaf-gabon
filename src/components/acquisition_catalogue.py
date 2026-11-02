@@ -14,8 +14,8 @@ from src.services.acquisition_catalogue import (
 )
 
 
-def show_acquisition_catalogue(data_dir):
-    st.title("Catalogue des acquisitions Sentinel-2")
+def show_acquisition_catalogue(data_dir, *, embedded: bool = False):
+    (st.header if embedded else st.title)("Catalogue des acquisitions Sentinel-2")
     st.caption("Recherche de métadonnées Copernicus L2A · Téléchargement uniquement sur commande explicite. "
                "La couverture nuageuse globale ne mesure pas la qualité locale de l’AOI.")
     from src.components.acquisition_downloads import download_queue, show_download_status, show_download_commands

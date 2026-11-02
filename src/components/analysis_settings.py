@@ -31,6 +31,20 @@ def choose_territory(data_dir, key: str) -> str | None:
     return st.selectbox("Territoire", territories, format_func=TERRITORY_LABELS.get, key=key)
 
 
+SHARED_TERRITORY_KEY = "geonaf_zone"
+
+
+def choose_shared_territory(data_dir) -> str | None:
+    """Study zone shared by the dashboard, temporal and multisource analyses (one session value)."""
+    territories = available_territories(data_dir)
+    if not territories:
+        st.error("Aucune AOI locale disponible (Akanda, Libreville, Owendo).")
+        return None
+    return st.selectbox("Zone d'étude", territories, format_func=TERRITORY_LABELS.get, key=SHARED_TERRITORY_KEY,
+                        persist_state="session",
+                        help="Zone partagée par le tableau de bord, les analyses temporelles et multisources.")
+
+
 def _apply_sensitivity(prefix):
     st.session_state[f"{prefix}_threshold"] = SENSITIVITY_PRESET["change_threshold"]
     st.session_state[f"{prefix}_coverage"] = SENSITIVITY_PRESET["min_comparable_coverage_percent"]

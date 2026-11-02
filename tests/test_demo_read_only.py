@@ -21,8 +21,8 @@ from src.demo_mode import ENV_NAME, DemoReadOnlyError, ensure_writable, read_onl
 ROOT = Path(__file__).resolve().parent.parent
 PACK = Path(os.environ.get("GEONAF_DEMO_PACK_DIR") or DATA_DIR / "demo_pack" / "geonaf-demo-akanda-2025-01-v3")
 BOUNDS = (9.40, 0.52, 9.52, 0.64)
-PAGES = ("app.py", "views/acquisitions_sentinel2.py", "views/serie_ndvi.py", "views/multisource.py",
-         "views/territoires.py")
+PAGES = ("app.py", *(f"views/analyses_temporelles.py?section={section}" for section in ("comparer", "variation", "serie", "donnees")),
+         "views/multisource.py", "views/territoires.py")
 
 
 @pytest.fixture
@@ -202,6 +202,9 @@ def _run(page: str, pack_copy: Path, monkeypatch) -> AppTest:
     monkeypatch.setattr(src.config, "DATA_DIR", pack_copy)
     monkeypatch.setattr("src.components.resource_panel.available_memory_bytes", lambda: None)
     app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=120).run()
+    page, _, section = page.partition("?section=")
+    if section:  # Section of the temporal analyses page (also its URL query parameter).
+        app.session_state["section"] = section
     if page != "app.py":  # Secondary pages are reached through the real entrypoint (page links).
         app.switch_page(page).run()
     return app

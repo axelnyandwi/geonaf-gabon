@@ -17,9 +17,10 @@ from src.services.local_preview import LocalPreviewError
 with page_guard("accueil"):  # Unexpected errors: generic message + diagnostic identifier.
     st.title(APP_TITLE)
     st.markdown(TAGLINE)
-    st.page_link(page("acquisitions"), label="Catalogue des acquisitions Sentinel-2",
+    st.page_link(page("analyses_temporelles"), label="Catalogue des acquisitions Sentinel-2",
+                 query_params={"section": "donnees"},
                  help="Rechercher des images Sentinel-2 et les télécharger sur commande explicite.")
-    st.page_link(page("serie_ndvi"), label="Série temporelle NDVI",
+    st.page_link(page("analyses_temporelles"), label="Série temporelle NDVI", query_params={"section": "serie"},
                  help="Suivre le NDVI sur plusieurs dates de la zone d'étude.")
     st.page_link(page("multisource"), label="Démonstrateur multisource",
                  help="Croiser Sentinel-2, WorldCover, OpenStreetMap et Sentinel-1 (descriptif).")

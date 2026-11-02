@@ -95,8 +95,8 @@ def _missing(result, in_period, chosen):
     return lines
 
 
-def show_ndvi_series(data_dir):
-    st.title("Série temporelle NDVI")
+def show_ndvi_series(data_dir, aoi_id: str | None = None, *, embedded: bool = False):
+    (st.header if embedded else st.title)("Série temporelle NDVI")
     st.caption("Acquisitions locales vérifiées uniquement ; aucun téléchargement. Même AOI, même grille, "
                "calibration BOA de chaque produit et masque SCL du profil.")
     try:
@@ -105,7 +105,8 @@ def show_ndvi_series(data_dir):
     except LocalPreviewError as error:
         show_error(error, context="series.acquisitions")
         return
-    aoi_id = choose_territory(data_dir, "series_territory")
+    if aoi_id is None:  # Inside the temporal analyses page, the shared study zone is given.
+        aoi_id = choose_territory(data_dir, "series_territory")
     if aoi_id is None:
         return
     configuration = choose_analysis(aoi_id, "series_analysis")

@@ -10,8 +10,7 @@ import streamlit as st
 # name: (script relative to app.py, title, url_path); the first page is the default one ("/").
 PAGES = {
     "accueil": ("views/accueil.py", "Accueil", None),
-    "acquisitions": ("views/acquisitions_sentinel2.py", "Acquisitions Sentinel-2", "Acquisitions_Sentinel2"),
-    "serie_ndvi": ("views/serie_ndvi.py", "Série NDVI", "Series_NDVI"),
+    "analyses_temporelles": ("views/analyses_temporelles.py", "Analyses temporelles", "analyses-temporelles"),
     "multisource": ("views/multisource.py", "Multisource", "Multisource"),
     "territoires": ("views/territoires.py", "Territoires", "Territoires"),
 }
