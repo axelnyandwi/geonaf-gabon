@@ -152,3 +152,38 @@ def test_sentinel2_tables_are_numeric_with_full_precision(local_data, home):
     assert frame["Surface (ha)"].tolist() == [v * 100.0 for v in frame["Surface (km²)"]]
     sensitivity = next(e for e in app.expander if e.label.startswith("Sensibilité"))
     assert str(sensitivity.dataframe[0].value["Part de la surface observée (%)"].dtype) == "float64"
+
+
+def _diagnosis_page(estimate):
+    from types import SimpleNamespace
+
+    from src.components.s2_vegetation import _unpublished
+
+    _unpublished(SimpleNamespace(label="Végétation observée"), estimate)
+
+
+def test_unknown_diagnostic_share_reads_not_specified():
+    """A1-bis: with no usable observed area the share is unknown (None); a lone "-" in st.table is rendered
+    as an empty Markdown list item, so only that cell reads « Non précisé ». The measure is unchanged."""
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    from src.components.s2_vegetation import MISSING
+    from src.indicators.vegetation_s2 import VegetationMeasure
+
+    measure = VegetationMeasure(zone_m2=1e6, observed_m2=0.0, vegetated_m2=0.0, not_vegetated_m2=0.0,
+                                no_data_m2=0.0, not_observed_m2=1e6, excluded_observed_m2=0.0,
+                                other_invalid_m2=0.0, unsplit_m2=None, threshold=0.4,
+                                sensitivity_m2=((0.3, 0.0), (0.4, 0.0), (0.5, 0.0)), scl_policy="usable_land",
+                                resolution=(10.0, 10.0), crs="EPSG:32632", observed_pixels=0, vegetated_pixels=0)
+    estimate = SimpleNamespace(measure=measure, breakdown_status="complete",
+                               acquired_at_utc=datetime(2025, 1, 20, 9, 50, tzinfo=timezone.utc),
+                               assessment=SimpleNamespace(reasons=("Aucune surface observée exploitable.",)))
+    app = AppTest.from_function(_diagnosis_page, kwargs={"estimate": estimate}).run()
+    assert not app.exception
+    diagnosis = next(e for e in app.expander if e.label == "Données de diagnostic (non publiables)")
+    shown = dict(zip(*(diagnosis.table[0].value[c] for c in ("Mesure technique", "Valeur"))))
+    assert shown["Part de la petite surface observée"] == MISSING == "Non précisé"
+    assert shown["Pixels observés à NDVI ≥ seuil"] == "0,00 km²"                    # Other cells unchanged.
+    assert not [v for v in shown.values() if str(v).strip() in ("", "-", "None")]
+    assert measure.vegetated_share_percent is None                                     # Source value unchanged.

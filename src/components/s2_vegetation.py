@@ -26,6 +26,8 @@ VEGETATION_PROFILE = S2_NDVI_VEGETATION_V0
 TABLE_DECIMALS = {"Surface (km²)": 2, "Surface (ha)": 1, "Part de la zone d'étude (%)": 2,
                   "Part de la surface observée (%)": 2}
 YEAR = 2025
+# Shown for a missing diagnostic value: a lone "-" in st.table is rendered by Markdown as an empty list item.
+MISSING = "Non précisé"
 NOT_COMPARABLE = ("Résultats Sentinel-2 non directement comparables à la surface végétalisée WorldCover 2021 "
                   "(classification, autre année, autre surface de référence), ni entre acquisitions dont les "
                   "masques d'observation diffèrent : un écart entre deux dates n'est pas une évolution.")
@@ -108,7 +110,7 @@ def _unpublished(indicator, estimate):
         m = estimate.measure
         st.caption("Mesures techniques conservées pour comprendre l'acquisition. Elles ne constituent pas une "
                    "estimation de la végétation de la zone d'étude.")
-        share = "-" if m.vegetated_share_percent is None else f"{format_percent(m.vegetated_share_percent)} %"
+        share = MISSING if m.vegetated_share_percent is None else f"{format_percent(m.vegetated_share_percent)} %"
         st.table(pd.DataFrame({
             "Mesure technique": ["Surface observée exploitable", f"Pixels observés à NDVI ≥ seuil",
                                  "Part de la petite surface observée"],
