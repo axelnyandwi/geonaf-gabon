@@ -15,6 +15,8 @@ from src.services import territory_catalog as catalog
 KINDS = ("Zone d'étude GEONAF (zone d'acquisition)", "Territoire administratif (référentiel)",
          "Zone personnalisée importée")
 SESSION_KEY = "geonaf_territory"
+# Shown for a missing provenance value: a lone "-" in st.table is rendered by Markdown as an empty list item.
+MISSING = "Non précisé"
 
 
 @st.cache_resource(show_spinner=False)
@@ -84,9 +86,15 @@ def _provenance(option) -> dict:
     }
 
 
+def _shown(value) -> str:
+    """Display text of one provenance value; missing values (None, empty, "-") read « Non précisé »."""
+    text = "" if value is None else str(value).strip()
+    return MISSING if text in ("", "-") else text
+
+
 def _provenance_table(option):
-    st.table(pd.DataFrame({"Attribut": list(_provenance(option)), "Valeur": [str(v) for v in
-                                                                            _provenance(option).values()]}))
+    values = _provenance(option)   # Unchanged values; only their display is adapted.
+    st.table(pd.DataFrame({"Attribut": list(values), "Valeur": [_shown(v) for v in values.values()]}))
     if option.record is not None:
         for limit in option.record.limits:
             st.caption(f"- {limit}")
