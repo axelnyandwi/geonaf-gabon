@@ -305,8 +305,8 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
         "03_mark_environment_dev.sql", "03_mark_environment_test.sql", "04_verify_schema.sql",
         "07_export_parity.sql", "08_inspect_legacy_schema.sql", "09_legacy_schema_fingerprint.sql",
         "09_rename_legacy_schema_application.sql", "09_rename_legacy_schema_rollback.sql",
-        "09_rename_legacy_schema_simulation.sql", "10_security_precheck.sql", "90_test_constraints.sql",
-        "99_drop_schema_test.sql"]
+        "09_rename_legacy_schema_simulation.sql", "10_security_precheck.sql", "10_verify_legacy_schema_rename.sql",
+        "90_test_constraints.sql", "99_drop_schema_test.sql"]
     for path in scripts:
         text = path.read_text(encoding="utf-8")
         assert not TRANSACTION_CONTROL.search(text) and "\u2014" not in text
@@ -314,7 +314,7 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
     writes = re.compile(r"\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|GRANT|REVOKE|TRUNCATE|COMMENT|LOCK|SET\s+ROLE)\b",
                         re.I)
     for name in ("00_preflight.sql", "04_verify_schema.sql", "07_export_parity.sql", "08_inspect_legacy_schema.sql",
-                 "09_legacy_schema_fingerprint.sql", "10_security_precheck.sql"):
+                 "09_legacy_schema_fingerprint.sql", "10_security_precheck.sql", "10_verify_legacy_schema_rename.sql"):
         assert not writes.search(code_only((SUPABASE / name).read_text(encoding="utf-8"))), name
 
 
