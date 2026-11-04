@@ -36,8 +36,8 @@ avant de passer à l'étape suivante.
 | # | Fichier | Écrit ? | Attendu |
 |---|---|---|---|
 | 1 | `08_inspect_legacy_schema.sql` | Non (lecture seule imposée) | Toutes les lignes `conforme = true`. Exporter le résultat en CSV, nommé d'après le projet ; procédure détaillée dans `docs/supabase_security_d2_2.md` |
-| 2 | `09_rename_legacy_schema_simulation.sql` | Non (annulé) | Erreur « GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE ». Toute autre erreur : arrêt |
-| 3 ✋ | `09_rename_legacy_schema_application.sql` | Oui (renommage) | `geonaf_libere = true`, `tables_conservees = 8` |
+| 2 | `09_legacy_schema_fingerprint.sql`, `09_rename_legacy_schema_simulation.sql`, puis de nouveau l'empreinte et 08 | Non (annulé) | Erreur « GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE » ; empreinte et 08 identiques avant et après. Toute autre erreur : arrêt. Procédure : `docs/supabase_security_d2_2.md`, section 6 |
+| 3 ✋ | `09_rename_legacy_schema_application.sql`, après saisie de la confirmation (08 l.`-3`) | Oui (renommage) | `geonaf_libere = true`, `tables_conservees = 8`, marque `geonaf-legacy: ... ; commentaire initial (JSON) : null` |
 | 4 | `00_preflight.sql` | Non | Toutes les lignes conformes ; schéma geonaf « absent (migration à appliquer) » |
 | 5 ✋ | `01_roles.sql` | Oui (rôles `NOLOGIN`) | Deux rôles |
 | 5 bis | `10_security_precheck.sql`, puis contrôles manuels S2 à S8 | Non (lecture seule imposée) | Toutes les lignes conformes ; voir `docs/supabase_security_d2_2.md`. Sinon, ne pas appliquer 0001 |
@@ -83,16 +83,19 @@ propre validation.
 
 ## Retour arrière
 
-- Avant l'étape 7 : `ALTER SCHEMA geonaf_legacy_draft RENAME TO geonaf;` (✋ validation).
+- Avant l'étape 7 : `09_rename_legacy_schema_rollback.sql` (✋ validation, même confirmation que
+  l'application). Il restaure le nom et le commentaire initial exact conservé dans la marque, et
+  refuse tout état qu'il n'a pas reconnu (`docs/supabase_security_d2_2.md`, section 6).
 - Après l'étape 7, sur `geonaf-test` : `99_drop_schema_test.sql` (supprime le schéma 0001 seulement,
-  ✋), puis le renommage inverse.
+  ✋), puis `09_rename_legacy_schema_rollback.sql`.
 - Après l'étape 7, sur `geonaf-dev` : il faudrait supprimer le schéma 0001. C'est une suppression,
   donc une autorisation explicite à part, non prévue ici.
 
 ## Risques résiduels
 
-- Les scripts 08 et 09 sont validés hors ligne : analyse syntaxique PostgreSQL 17 (`pglast`) et
-  tests statiques. Les noms de colonnes des catalogues et les droits de lecture de
+- Les scripts 08 et 09 sont validés hors ligne : tests statiques et, pour 09 (D2.9), tests
+  d'intégration sur un PostgreSQL 16 jetable (simulation, sélections partielles, application,
+  retour arrière, déclencheurs d'événement). Les noms de colonnes des catalogues et les droits de lecture de
   `pg_db_role_setting` ou de `cron.job` sous Supabase ne sont confirmés que par l'exécution :
   l'étape 2 sur `geonaf-test` sert à cela.
 - Nous ne savons pas qui a créé le schéma hérité, ni pourquoi. Le renommer peut casser un usage

@@ -127,68 +127,113 @@ autorisé.
 | R8 | Fonctions | Droit `EXECUTE` à `PUBLIC` par défaut sur toute nouvelle fonction | 0001 : `REVOKE ALL ON ALL FUNCTIONS ... FROM PUBLIC` et rôles API | Même règle en 0002 |
 | R9 | Data API | Un schéma exposé via le tableau de bord n'apparaît pas forcément dans les paramètres de rôle | Contrôle manuel S2 ; aucun droit `USAGE` pour les rôles API (04) | - |
 | R10 | Data API | Paramètres `pgrst.*` pouvant contenir un secret (`pgrst.jwt_secret`) | 10 n'affiche que `pgrst.db_schemas` ; test qui interdit toute autre lecture | - |
-| R11 | Déclencheurs d'événement | Ils s'exécutent pendant `ALTER SCHEMA` et 0001, avec les droits de leur fonction | Listés en 08 l.27 et 10 l.34 | Relecture humaine (section 3) |
+| R11 | Déclencheurs d'événement | Ils s'exécutent pendant `ALTER SCHEMA` et 0001, avec les droits de leur fonction. Un `NOTIFY` est annulé avec la requête ; **un `nextval` ne l'est pas** (pg_graphql incrémente `graphql.seq_schema_version` à chaque DDL et reconstruit alors son cache) | Listés en 08 l.27 et 10 l.34 ; le message de succès de la simulation 09 liste ceux qui se sont exécutés, avec `(*)` si leur code peut avoir un effet non transactionnel. Comportement démontré par un test d'intégration (D2.9) | Relecture humaine (section 3) |
 | R12 | Renommage | Les références **par nom** (fonctions, `search_path`, `pg_cron`, code externe) viseraient, après 0001, les nouvelles tables `territories`/`territory_versions` | Bloquants en 08 et 09 ; verrou des 8 tables pendant 09 | S6 (code externe, invisible depuis SQL) |
 | R13 | Identification | Coller un script dans le mauvais projet. 08 et 09 ne peuvent pas s'appuyer sur une marque : les deux schémas hérités n'en ont pas | Critères I1 à I4 (section 1), triple vérification manuelle, ordre test puis dev. L'identifiant système de PostgreSQL est partagé entre projets et n'est plus utilisé | Fiche d'exécution hors dépôt (référence, nom, heures `-3` et `-2`) ; envisager une marque d'identité posée avant 09 (décision à prendre : c'est une écriture) |
-| R14 | Éditeur | Si l'éditeur n'exécute pas tout en une transaction, un échec pourrait laisser un état partiel | Sonde de 00 ; lecture seule imposée (08, 10) | - |
+| R14 | Éditeur | Si l'éditeur n'exécute pas tout en une transaction, un échec pourrait laisser un état partiel | Sonde de 00 ; lecture seule imposée (08, 10) ; 09 : une seule instruction `DO`, atomique par elle-même quel que soit l'éditeur (D2.9) | - |
+| R17 | Éditeur | **Sélection partielle** : le SQL Editor exécute le texte sélectionné. Avant D2.9, la ligne de renommage de 09 seule renommait sans garde, même dans le fichier de simulation, et la ligne `SELECT ... INTO found` seule créait une table `public.found` (`SELECT INTO` hors PL/pgSQL = `CREATE TABLE AS`) : 122 plages de lignes dangereuses mesurées sur PostgreSQL 16 | D2.9 : renommage et commentaire construits par `format()` à l'intérieur du `DO`, plus de `SELECT INTO`, aucune instruction exécutable dans les commentaires. Test d'intégration : aucune plage de lignes des trois scripts 09 ne modifie la base (état initial et état renommé) ; test statique sur le texte brut | Une sélection qui commence ou finit au milieu d'une ligne n'est couverte que par le test statique |
 | R15 | Poste | Exports CSV et futur `.env` de connexion | Worktree hors OneDrive ; `.env` ignoré par Git | Exports dans `%USERPROFILE%\.geonaf\exports\` |
 | R16 | Dépôt | Le `.git` du dépôt principal est dans OneDrive : objets synchronisés (aucun secret suivi, vérifié), risque de corruption par la synchronisation | - | Décision séparée : déplacer le dépôt hors OneDrive |
 
 ## 5. Opérations nécessitant une validation humaine
 
-1. ✋ Application de 09 (renommage), projet par projet, après 08 conforme.
-2. ✋ `01_roles.sql`, puis ✋ application de 02 (migration 0001), puis ✋ 03 (marque).
-3. Commit de la correction R5 (appliquée dans le worktree en D2.7, non commitée).
-4. Décision sur les rôles de la plateforme listés en 10 l.30 et l.31.
-5. Activation future de `LOGIN` pour les rôles GEONAF et choix d'un rôle de migration distinct.
-6. Suppression éventuelle de `geonaf_legacy_draft` : hors périmètre, autorisation séparée.
-7. ✋ Simulation de 09 sur `geonaf-test` (section 6). Elle n'écrit rien, mais exécute un DDL annulé
-   et pose des verrous sur les 8 tables pendant la requête.
+1. ✋ Simulation de 09 sur `geonaf-test` (section 6). Elle n'écrit rien dans `geonaf`, mais exécute un
+   DDL annulé, pose des verrous sur les 8 tables pendant la requête et déclenche les déclencheurs
+   d'événement (R11).
+2. ✋ Application de 09 (renommage), projet par projet, après 08 conforme et simulation réussie.
+3. ✋ `01_roles.sql`, puis ✋ application de 02 (migration 0001), puis ✋ 03 (marque).
+4. Commit de la sécurisation D2.9 (non commitée).
+5. Décision sur les rôles de la plateforme listés en 10 l.30 et l.31.
+6. Activation future de `LOGIN` pour les rôles GEONAF et choix d'un rôle de migration distinct.
+7. Suppression éventuelle de `geonaf_legacy_draft` : hors périmètre, autorisation séparée.
+8. ✋ Retour arrière (`09_rename_legacy_schema_rollback.sql`) : seulement en cas d'incident, avant 0001.
 
-## 6. Simulation 09 sur geonaf-test (préparée, non exécutée)
+## 6. Simulation 09 sur geonaf-test (D2.9, préparée, non exécutée)
 
-**Prérequis**, tous requis :
+### Conception
 
-- 08 et 10 du 2026-11-04 conformes. C'est le cas sur les deux projets : 08 sans aucune ligne fausse ;
-  10 en exécution anticipée, seules les lignes 2, 3, 20 et 21 sont fausses, comme attendu.
-- I1, I3 et I4 satisfaits :
-  - `geonaf-test` : démarrage 2026-11-02 16:49:52, exécutions à 09:12:39 (08) et 09:16:32 (10) ;
-  - `geonaf-dev` : démarrage 16:08:10, exécutions à 09:17:25 et 09:18:28.
-- I2 consigné dans la fiche (nom et référence du projet `geonaf-test`).
+| Exigence | Réponse | Preuve |
+|---|---|---|
+| Une sélection partielle ne doit rien écrire | La simulation est **une seule instruction `DO`**. Une sélection partielle est une erreur de syntaxe. Le renommage et le commentaire n'existent que sous forme de modèles `format('ALTER SCHEMA %I RENAME TO %I', ...)`, construits à l'exécution ; aucun `SELECT ... INTO` ; aucune instruction exécutable dans les commentaires | Test d'intégration : chaque plage de lignes contiguës (et chaque fin de ligne de commentaire) des trois scripts est exécutée seule ; aucune ne modifie la base. Contre-épreuve : 122 plages dangereuses dans les scripts d'avant D2.9 |
+| Ne pas compter sur un `ROLLBACK` final | Il n'y a ni `BEGIN`, ni `ROLLBACK`, ni `COMMIT` de niveau requête (interdits par test). Le renommage se fait dans un sous-bloc PL/pgSQL `BEGIN ... EXCEPTION` : une **sous-transaction**, annulée par le signal interne `GN009`. Le bloc vérifie ensuite que le nom, l'OID et le commentaire sont revenus à l'état initial, puis l'erreur finale annule toute la requête (deuxième annulation, indépendante) | Documentation PostgreSQL (PL/pgSQL, « Trapping Errors » : les modifications de l'état persistant faites dans le bloc sont annulées) ; test d'intégration : empreinte identique avant et après |
+| Seul le signal interne est intercepté | `EXCEPTION WHEN SQLSTATE 'GN009'`, jamais `WHEN OTHERS` : un refus de droits, un déclencheur d'événement en erreur ou un verrou indisponible remontent tels quels. L'indicateur `rename_tested`, positionné juste avant le signal, prouve que le `GN009` intercepté est bien le sien : un `GN009` levé ailleurs (par un déclencheur d'événement, avant le renommage) donne « signal GN009 inattendu » au lieu d'un faux succès (faille trouvée en revue, D2.9) | Test statique ; test d'intégration avec un déclencheur piège sur `ddl_command_start` et `ddl_command_end` |
+| Simulation sans renommage réel ? | Étudiée et **non retenue seule** : la garde lit déjà toutes les préconditions vérifiables par catalogue (droits du propriétaire, `CREATE` sur la base, nom cible libre, dépendances). Elle ne peut pas vérifier ce que seul le DDL déclenche : déclencheurs d'événement de la plateforme, crochets d'extension (`supautils`), verrous réels sur le catalogue. Le renommage en sous-transaction est la seule façon de les éprouver sans rien conserver | - |
+| `BEGIN`, contrôles, renommage, `ROLLBACK` explicites ? | **Rejeté** : une sélection qui omet le `ROLLBACK` laisse une transaction ouverte sur une connexion de l'éditeur (validée ou annulée selon son pool, inconnu) ; une sélection de la seule ligne de renommage la valide aussitôt | - |
+| Confusion simulation / application | L'application et le retour arrière **refusent de s'exécuter tels qu'ils sont versionnés** : il faut remplacer `AAAA-MM-JJ HH:MM:SS.UUUUUU` par la ligne `-3` de 08 (démarrage de l'instance, UTC, microsecondes), lue juste avant sur le même projet. La simulation n'a rien à modifier. Coller le mauvais fichier arrête tout avant la garde | Tests d'intégration et statiques |
+| État identique avant et après | `09_legacy_schema_fingerprint.sql` (lecture seule) : OID et commentaire exact (JSON) des deux schémas, nombre de tables et SHA-256 d'un texte canonique (schéma, relations, colonnes, contraintes, index, politiques, déclencheurs, droits). Les lignes sont comptées par 08 l.5 | Test d'intégration |
+
+**Garanties de PostgreSQL utilisées.** Plusieurs instructions envoyées en une requête forment une
+transaction implicite : une erreur annule tout (démontré par test). Une instruction `DO` est atomique
+par elle-même. Une sous-transaction annulée défait le DDL qu'elle contient ; un `NOTIFY` émis dedans
+n'est jamais délivré (démontré par test).
+
+**Ce que PostgreSQL n'annule pas** (démontré par test avec un déclencheur d'événement qui imite celui de
+pg_graphql) : les incréments de séquence (`nextval`), ainsi que les statistiques, les journaux et la
+consommation d'identifiants de transaction. Aucun ne touche `geonaf`.
+
+**Non vérifié** (pas d'accès, aucune documentation officielle trouvée) : la façon dont le SQL Editor
+envoie le texte (une requête ou plusieurs), l'exécution de la seule sélection, les déclencheurs
+d'événement et les crochets réels de Supabase, le comportement sous PostgreSQL 15 ou 17 (tests
+exécutés sur PostgreSQL 16.2). La conception ne dépend pas des points propres à l'éditeur.
+
+### Prérequis, tous requis
+
+- 08 et 10 du 2026-11-04 conformes (constat D2.7 : 08 sans ligne fausse ; 10 anticipé, seules les
+  lignes 2, 3, 20 et 21 fausses, comme attendu).
+- I1, I3 et I4 satisfaits (`geonaf-test` : démarrage 2026-11-02 16:49:52 UTC ; `geonaf-dev` : 16:08:10).
 - S2 : Data API désactivée sur les deux projets (constat déclaré le 2026-11-04).
-- Autorisation explicite de la simulation.
+- 08 l.27 relue : chaque déclencheur d'événement est connu (section 3).
+- Autorisation explicite de la simulation, pour `geonaf-test` seulement.
 
-**La simulation n'écrit rien, mais elle :**
-
-- exécute toute la garde, puis `ALTER SCHEMA ... RENAME` et `COMMENT`, avant d'annuler la requête
-  par une erreur volontaire ;
-- pose `SHARE ROW EXCLUSIVE` sur les 8 tables vides pendant quelques millisecondes ;
-- déclenche les déclencheurs d'événement de la plateforme (`pgrst_ddl_watch` émet un `NOTIFY`,
-  annulé avec la transaction).
-
-**Procédure** (`geonaf-test` seulement) :
+### Procédure (`geonaf-test` seulement)
 
 1. Tableau de bord avec authentification multifacteur. Vérifier le nom et la référence du projet
    `geonaf-test` et les noter dans la fiche, avec l'heure (I2).
-2. SQL Editor > New query : exécuter `08_inspect_legacy_schema.sql`. Toutes les lignes doivent être
-   conformes, et la ligne `-3` doit être égale à 2026-11-02 16:49:52 (I4). Sinon, s'arrêter.
-3. New query : coller **en entier** `09_rename_legacy_schema_simulation.sql`, puis Run.
-4. Lire le résultat :
+2. New query : coller **tout** `08_inspect_legacy_schema.sql`, ne rien sélectionner, Run. Toutes les
+   lignes conformes ; la ligne `-3` commence par `2026-11-02 16:49:52` (I4). Exporter. Sinon, s'arrêter.
+3. New query : coller **tout** `09_legacy_schema_fingerprint.sql`, ne rien sélectionner, Run.
+   `lecture_seule = on`, `oid_geonaf_legacy_draft = absent`, `commentaire_geonaf_json = null`,
+   `tables = 8`. Exporter (empreinte **avant**).
+4. New query : coller **tout** `09_rename_legacy_schema_simulation.sql`. Avant Run, vérifier :
+   première ligne `... 09 rename of the legacy geonaf schema: SIMULATION. Writes nothing.` ; aucune
+   ligne `confirmation constant` dans le texte ; **aucune sélection** (cliquer une fois dans le texte).
+5. Run, puis lire le résultat :
 
    | Message | Signification | Suite |
    |---|---|---|
-   | `GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE` | Garde franchie, renommage possible, tout est annulé | Étape 5 |
+   | `GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE`, `DETAIL` qui commence par `declencheurs d'evenement executes :` | Garde franchie, renommage éprouvé puis annulé deux fois | Recopier le `DETAIL` dans la fiche, puis étape 6 |
    | `GEONAF: renommage refuse` + `DETAIL` | Un bloquant est apparu depuis 08 | S'arrêter ; transmettre le `DETAIL` |
-   | `lock not available` (code 55P03) | Une autre session tient un verrou sur une table héritée (`NOWAIT`) | Une seule nouvelle tentative quelques minutes plus tard ; sinon s'arrêter |
+   | `lock not available` (55P03) | Une autre session tient un verrou (`NOWAIT`) | Une seule nouvelle tentative quelques minutes plus tard ; sinon s'arrêter |
    | `schema geonaf marque`, `tables inattendues`, `geonaf_legacy_draft existe deja`, `droits du proprietaire` | L'état ne correspond plus à l'inventaire | S'arrêter |
-   | Toute autre erreur (`must be owner`, `permission denied`, erreur de syntaxe) | Non prévu | S'arrêter, ne rien relancer |
+   | `ETAT NON RESTAURE APRES LA SIMULATION` | Ne devrait jamais arriver (la requête est quand même annulée) | S'arrêter, ne rien relancer, transmettre |
+   | `signal GN009 inattendu, simulation non concluante` | Un déclencheur d'événement (ou autre code) a levé le code réservé GN009 : le renommage n'a pas été éprouvé ; rien n'est écrit | S'arrêter ; relire 08 l.27 ; ne pas appliquer 09 |
+   | `APPLICATION REFUSEE` ou `RETOUR ARRIERE REFUSE` | **Mauvais fichier collé** | S'arrêter ; rien n'a été fait ; recommencer à l'étape 4 avec le bon fichier |
+   | Résultat sans erreur (« Success ») | Ne peut pas venir du fichier de simulation | S'arrêter ; étape 6 immédiatement, puis transmettre |
+   | Toute autre erreur (`must be owner`, `permission denied`, erreur de syntaxe) | Non prévu ; une erreur de syntaxe signale une sélection partielle ou un collage incomplet | S'arrêter, ne rien relancer |
 
-5. New query : relancer `08_inspect_legacy_schema.sql`. Il doit être **identique** au résultat de
-   l'étape 2, à l'exception de la ligne `-2` (heure d'exécution) et éventuellement de la ligne 25
-   (sessions). Le schéma `geonaf` est toujours présent et `geonaf_legacy_draft` absent : c'est la
-   preuve que rien n'a été écrit.
-6. Exporter les deux 08 et le message de 09 sous `geonaf-test_09sim_<AAAAMMJJ>.*`, hors dépôt et
+6. New query : relancer **tout** `09_legacy_schema_fingerprint.sql`. Toutes les colonnes doivent être
+   identiques à l'étape 3, sauf `execution_utc`. Puis relancer **tout** 08 : identique à l'étape 2,
+   sauf `-2` et éventuellement 25 (sessions).
+7. Exporter les résultats et le message de 09 sous `geonaf-test_09sim_<AAAAMMJJ>.*`, hors dépôt et
    hors OneDrive. Fermer les onglets sans les enregistrer.
+
+**Conditions d'arrêt** : toute ligne non conforme en 08, toute empreinte différente, tout message autre
+que le succès, un déclencheur d'événement inconnu dans le `DETAIL`, un doute sur le projet.
 
 **Ne pas simuler sur `geonaf-dev` ni appliquer 09 sans une nouvelle autorisation, après examen du
 résultat.**
+
+### Retour arrière (incident ou décision, avant 0001 seulement)
+
+`09_rename_legacy_schema_rollback.sql`, ✋ après autorisation, avec la même confirmation que
+l'application. Il refuse si un schéma `geonaf` existe (0001 appliquée), si `geonaf_legacy_draft`
+n'a pas exactement la marque écrite par 09, ou si ses tables diffèrent des 8 attendues. Il redonne au
+schéma son nom (même OID : tables, droits, politiques et lignes inchangés), puis **le commentaire
+initial exact lu dans la marque**, qui se termine par `; commentaire initial (JSON) : <null ou chaîne>`.
+Il ne suppose donc pas que ce commentaire était NULL. La garde de 09 n'accepte aujourd'hui qu'un
+schéma sans commentaire, mais la marque conserve la valeur quelle qu'elle soit. Une marque dont la
+valeur ne peut pas être un vrai commentaire (chaîne vide, nombre, objet, JSON invalide) est refusée.
+Après le retour arrière, l'empreinte doit être identique à celle exportée avant l'application.
+
+L'ancienne commande d'une ligne (renommage inverse seul) laissait la marque `geonaf-legacy:` sur
+`geonaf` : 08 et 09 auraient ensuite refusé le schéma. Elle n'est plus documentée (test).

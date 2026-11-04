@@ -303,7 +303,8 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
     assert [p.name for p in scripts] == [
         "00_preflight.sql", "01_roles.sql", "02_migration_0001_application.sql", "02_migration_0001_simulation.sql",
         "03_mark_environment_dev.sql", "03_mark_environment_test.sql", "04_verify_schema.sql",
-        "07_export_parity.sql", "08_inspect_legacy_schema.sql", "09_rename_legacy_schema_application.sql",
+        "07_export_parity.sql", "08_inspect_legacy_schema.sql", "09_legacy_schema_fingerprint.sql",
+        "09_rename_legacy_schema_application.sql", "09_rename_legacy_schema_rollback.sql",
         "09_rename_legacy_schema_simulation.sql", "10_security_precheck.sql", "90_test_constraints.sql",
         "99_drop_schema_test.sql"]
     for path in scripts:
@@ -313,7 +314,7 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
     writes = re.compile(r"\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|GRANT|REVOKE|TRUNCATE|COMMENT|LOCK|SET\s+ROLE)\b",
                         re.I)
     for name in ("00_preflight.sql", "04_verify_schema.sql", "07_export_parity.sql", "08_inspect_legacy_schema.sql",
-                 "10_security_precheck.sql"):
+                 "09_legacy_schema_fingerprint.sql", "10_security_precheck.sql"):
         assert not writes.search(code_only((SUPABASE / name).read_text(encoding="utf-8"))), name
 
 
@@ -401,28 +402,147 @@ LEGACY_TABLES = ("acquisitions,analysis_acquisitions,analysis_runs,indicator_def
                  "territories,territory_versions")
 
 
-def test_legacy_rename_is_guarded_never_drops_and_its_simulation_writes_nothing():
-    """09 renames only the exact legacy schema seen on 2026-11-03; the simulation differs only by its ending."""
-    application = (SUPABASE / "09_rename_legacy_schema_application.sql").read_text(encoding="utf-8")
-    simulation = (SUPABASE / "09_rename_legacy_schema_simulation.sql").read_text(encoding="utf-8")
-    inventory = (SUPABASE / "08_inspect_legacy_schema.sql").read_text(encoding="utf-8")
-    code = code_only(application)
-    assert not re.search(r"\b(DROP|DELETE|TRUNCATE|INSERT|UPDATE|GRANT|REVOKE)\b", code, re.I)
-    assert re.findall(r"\bALTER\b[^;]*;", code) == ["ALTER SCHEMA geonaf RENAME TO geonaf_legacy_draft;"]
-    statements = statements_outside_comments(application)
-    guard_end = statements.index("END $$;")
-    for check in ("IS DISTINCT FROM expected", "obj_description(legacy, 'pg_namespace') IS NOT NULL",
-                  "row_count > 0", "cardinality(blockers) > 0", "to_regnamespace('geonaf_legacy_draft') IS NOT NULL"):
-        assert statements.index(check) < guard_end < statements.index("ALTER SCHEMA"), check
-    assert f"'{LEGACY_TABLES}'" in application and f"'{LEGACY_TABLES}'" in inventory
-    marker = "-- ===== Result ====="
-    assert application.split(marker)[0].splitlines()[1:] == simulation.split(marker)[0].splitlines()[1:]
-    ending = simulation.split(marker)[1]
-    assert "RAISE EXCEPTION 'GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE'" in ending
-    assert simulation.rstrip().endswith("END $$;")
-    # The renamed schema must never pass the D2.1 environment guard.
-    assert "COMMENT ON SCHEMA geonaf_legacy_draft IS 'geonaf-legacy:" in application
-    assert "geonaf-environment:" not in code_only(application)
+# --- 09: legacy schema rename, simulation, rollback and fingerprint (D2.9) ----------------------------
+
+RENAME_SCRIPTS = ("09_rename_legacy_schema_simulation.sql", "09_rename_legacy_schema_application.sql",
+                  "09_rename_legacy_schema_rollback.sql")
+# Text that would write if a user selected it alone and pressed Run. The scripts are scanned as raw text,
+# comments and literals included: any contiguous selection is a substring of the file, so a pattern absent
+# from the whole file is absent from every selection. Writes are only built at run time by format('... %I').
+RUNNABLE_WRITES = {
+    "rename": re.compile(r"\bALTER\s+SCHEMA\s+(?!%I\b)", re.I),
+    "comment": re.compile(r"\bCOMMENT\s+ON\s+(?!SCHEMA\s+%I\b)", re.I),
+    "select into (CREATE TABLE AS outside PL/pgSQL)": re.compile(r"\bSELECT\b[^;']*?\bINTO\b", re.I),
+    "other write": re.compile(
+        r"\b(CREATE|DROP)\s+(OR\s+REPLACE\s+)?(TABLE|SCHEMA|VIEW|FUNCTION|PROCEDURE|INDEX|ROLE|USER|TEMP|TEMPORARY"
+        r"|UNLOGGED|SEQUENCE|TRIGGER|EXTENSION|POLICY|TYPE|DOMAIN|MATERIALIZED|EVENT|RULE|PUBLICATION)\b"
+        r"|\bINSERT\s+INTO\b|\bUPDATE\s+[\w.\"]+\s+SET\b|\bDELETE\s+FROM\b|\bTRUNCATE\b"
+        r"|\b(GRANT|REVOKE)\s+\w+[^;]*?\b(ON|TO|FROM)\b|\bCOMMIT\b|\bSET\s+ROLE\b", re.I),
+}
+# The integration test (tests/test_supabase_legacy_rename_integration.py) is the stronger proof: it runs
+# every contiguous line range of these files on a real PostgreSQL and checks that none changes the state.
+CONFIRMATION = "confirmation constant text := 'AAAA-MM-JJ HH:MM:SS.UUUUUU';"
+START_FORMAT = "to_char(pg_postmaster_start_time() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US')"
+
+
+def _region(text: str, title: str) -> str:
+    start = text.index(f"-- ===== {title}")
+    return text[start:text.index("-- ===== End of", start)]
+
+
+def _statements(text: str) -> list[str]:
+    """Top-level statements (comments removed); a DO body counts as one statement."""
+    code, parts, depth_dollar = statements_outside_comments(text), [], False
+    current = ""
+    for chunk in re.split(r"(\$\$|;)", code):
+        current += chunk
+        if chunk == "$$":
+            depth_dollar = not depth_dollar
+        elif chunk == ";" and not depth_dollar:
+            parts.append(current.strip())
+            current = ""
+    assert not current.strip(), "text after the last statement"
+    return [p for p in parts if p != ";"]
+
+
+@pytest.mark.parametrize("name", RENAME_SCRIPTS)
+def test_no_selection_of_a_09_script_holds_a_runnable_write(name):
+    """Partial selection in the SQL Editor (D2.9): no substring of the file is a write statement."""
+    text = (SUPABASE / name).read_text(encoding="utf-8")
+    for label, pattern in RUNNABLE_WRITES.items():
+        assert not pattern.search(text), (name, label, pattern.search(text))
+
+
+def test_09_scripts_are_one_do_statement_plus_at_most_a_read_only_select():
+    simulation = _statements((SUPABASE / RENAME_SCRIPTS[0]).read_text(encoding="utf-8"))
+    assert len(simulation) == 1 and simulation[0].startswith("DO $$") and simulation[0].endswith("END $$;")
+    for name in RENAME_SCRIPTS[1:]:
+        statements = _statements((SUPABASE / name).read_text(encoding="utf-8"))
+        assert len(statements) == 2 and statements[0].startswith("DO $$"), name
+        assert statements[1].startswith("SELECT ") and not re.search(r"\bINTO\b|set_config", statements[1]), name
+
+
+def test_simulation_and_application_share_the_guard_character_for_character():
+    simulation, application, rollback = ((SUPABASE / n).read_text(encoding="utf-8") for n in RENAME_SCRIPTS)
+    for title in ("Constants", "Guard variables", "Guard (identical"):
+        assert _region(simulation, title) == _region(application, title), title
+    assert _region(rollback, "Constants") == _region(simulation, "Constants")
+    guard = _region(application, "Guard (identical")
+    for check in ("found_tables IS DISTINCT FROM expected", "initial_comment IS NOT NULL", "n_rows > 0",
+                  "cardinality(blockers) > 0", "to_regnamespace(new_name) IS NOT NULL",
+                  "has_database_privilege(current_database(), 'CREATE')", "IN SHARE ROW EXCLUSIVE MODE NOWAIT"):
+        assert check in guard, check
+    # The table list is read again under the locks (a table created in between is seen).
+    assert guard.count("found_tables IS DISTINCT FROM expected") == 2
+    assert guard.index("NOWAIT") < guard.rindex("found_tables IS DISTINCT FROM expected")
+    for name, text in zip(RENAME_SCRIPTS, (simulation, application, rollback)):
+        assert "MEMBER" not in code_only(text) and "geonaf-environment:" not in text, name
+    assert f"'{LEGACY_TABLES}'" in simulation
+    assert f"'{LEGACY_TABLES}'" in (SUPABASE / "08_inspect_legacy_schema.sql").read_text(encoding="utf-8")
+
+
+def test_simulation_rolls_back_its_rename_twice_and_catches_only_its_own_signal():
+    text = (SUPABASE / RENAME_SCRIPTS[0]).read_text(encoding="utf-8")
+    action = text[text.index("-- ===== Simulation:"):]
+    assert action.index("BEGIN") < action.index("format('ALTER SCHEMA %I RENAME TO %I'")
+    assert action.index("RAISE EXCEPTION USING ERRCODE = 'GN009'") < action.index("EXCEPTION WHEN SQLSTATE 'GN009' THEN")
+    assert action.count("EXCEPTION WHEN") == 1 and "WHEN OTHERS" not in text
+    # The flag is set right before the internal signal and checked after the handler: a GN009 raised
+    # elsewhere (an event trigger) can never read as a successful simulation.
+    assert action.index("rename_tested := true;") < action.index("RAISE EXCEPTION USING ERRCODE = 'GN009'")
+    assert action.index("format('COMMENT ON SCHEMA %I IS %L'") < action.index("rename_tested := true;")
+    assert action.index("EXCEPTION WHEN SQLSTATE 'GN009'") < action.index("IF NOT rename_tested THEN")
+    assert "rename_tested := true" not in _region(text, "Guard (identical")
+    assert "ETAT NON RESTAURE" in action                         # Checked after the subtransaction rollback.
+    assert action.rstrip().endswith("END $$;")
+    assert "RAISE EXCEPTION 'GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE'" in action
+    assert CONFIRMATION not in text                               # Nothing to edit in the simulation.
+
+
+@pytest.mark.parametrize("name", RENAME_SCRIPTS[1:])
+def test_application_and_rollback_refuse_to_run_until_the_instance_is_confirmed(name):
+    """The committed file always stops first: the operator types the start time read in 08 line -3."""
+    text = (SUPABASE / name).read_text(encoding="utf-8")
+    assert text.count(CONFIRMATION) == 1
+    body = text[text.index("BEGIN\n"):]
+    assert body.index(f"IF confirmation IS DISTINCT FROM {START_FORMAT} THEN") < body.index("RAISE EXCEPTION")
+    assert body.index("REFUSE") < body.index("format('ALTER SCHEMA")
+    # Same value and format as the line -3 of 08 (and of the fingerprint), so it can be copied as is.
+    for reference in ("08_inspect_legacy_schema.sql", "09_legacy_schema_fingerprint.sql"):
+        assert START_FORMAT in (SUPABASE / reference).read_text(encoding="utf-8"), reference
+
+
+def test_application_mark_keeps_the_exact_initial_comment_and_the_rollback_restores_it():
+    simulation, application, rollback = ((SUPABASE / n).read_text(encoding="utf-8") for n in RENAME_SCRIPTS)
+    mark = "mark := mark_prefix || initial_separator || coalesce(to_jsonb(initial_comment)::text, 'null');"
+    assert mark in _region(application, "Guard (identical") and mark in simulation
+    assert "mark_prefix constant text := 'geonaf-legacy: " in rollback     # 10 l.3 checks this prefix.
+    for step in ("substr(current_mark, length(mark_prefix || initial_separator) + 1)::jsonb",
+                 "jsonb_typeof(initial_json) NOT IN ('null', 'string')", "initial_comment := initial_json #>> '{}'",
+                 "format('COMMENT ON SCHEMA %I IS NULL', old_name)", "format('COMMENT ON SCHEMA %I IS %L', old_name, initial_comment)",
+                 "format('ALTER SCHEMA %I RENAME TO %I', new_name, old_name)",
+                 "to_regnamespace(old_name) IS NOT NULL"):    # Refuses once 0001 has created a new geonaf.
+        assert step in rollback, step
+    assert rollback.index("to_regnamespace(old_name) IS NOT NULL") < rollback.index("format('ALTER SCHEMA")
+
+
+def test_legacy_fingerprint_is_read_only_deterministic_and_never_hashes_with_md5():
+    text = (SUPABASE / "09_legacy_schema_fingerprint.sql").read_text(encoding="utf-8")
+    statements = _statements(text)
+    assert statements[0] == READ_ONLY_GUARD and statements[1] == "SELECT set_config('search_path', '', true);"
+    assert len(statements) == 3 and "sha256(" in statements[2] and "md5" not in statements[2].lower()
+    for column in ("oid_geonaf", "oid_geonaf_legacy_draft", "commentaire_geonaf_json", "empreinte_sha256"):
+        assert f"AS {column}" in statements[2], column
+    for part in ("'schema'", "'relation'", "'column'", "'constraint'", "'index'", "'policy'", "'trigger'"):
+        assert part in statements[2], part
+
+
+def test_09_docs_never_show_a_runnable_rename_back():
+    """The old one-line reverse kept the legacy mark on geonaf: it must not be copied from the docs again."""
+    for doc in ("supabase_legacy_schema_plan.md", "supabase_security_d2_2.md"):
+        text = (ROOT / "docs" / doc).read_text(encoding="utf-8")
+        assert not re.search(r"ALTER\s+SCHEMA\s+geonaf_legacy_draft\s+RENAME", text, re.I), doc
+        assert "09_rename_legacy_schema_rollback.sql" in text, doc
 
 
 def test_destructive_scripts_are_guarded_and_tests_always_cancel():
