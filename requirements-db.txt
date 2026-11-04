@@ -1,0 +1,7 @@
+# Optional PostgreSQL/PostGIS dependencies (D2-a); not used by Streamlit Cloud, never imported by the
+# file backend. Install only in a dedicated environment, see docs/postgis_registry.md.
+-r requirements.txt
+psycopg[binary]==3.2.3
+psycopg-pool==3.2.4
+SQLAlchemy==2.0.36
+alembic==1.14.0
