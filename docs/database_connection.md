@@ -143,8 +143,10 @@ python -m pytest tests/test_database_integration.py -m postgis
 ## Limites
 
 - Aucun test n'a encore été exécuté contre Supabase (ports fermés depuis le poste).
-- Divergence connue : le schéma déployé sur `geonaf-dev` et `geonaf-test` compterait 8 tables, le
-  dépôt en attend 10. Tant qu'elle n'est pas expliquée, le contrôle « tables » du diagnostic doit
+- Divergence expliquée (2026-11-04) : les 8 tables déployées forment un schéma hérité sans rapport
+  avec la migration 0001 (`docs/supabase_legacy_schema_plan.md`). Option A validée : renommer ce
+  schéma en `geonaf_legacy_draft`, puis appliquer 0001. `EXPECTED_TABLES` reste aligné sur 0001
+  (10 tables) ; d'ici là, le contrôle « tables » du diagnostic doit
   échouer ; `EXPECTED_TABLES` ne sera aligné qu'après comparaison détaillée des deux schémas.
 - `GEONAF_DB_BACKEND=postgres` est accepté mais n'est branché sur aucun usage : l'application reste
   sur les fichiers. Le registre PostGIS de D2-a (`src/data/postgis_territory_registry.py`) ouvre

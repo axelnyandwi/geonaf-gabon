@@ -217,14 +217,43 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
     assert [p.name for p in scripts] == [
         "00_preflight.sql", "01_roles.sql", "02_migration_0001_application.sql", "02_migration_0001_simulation.sql",
         "03_mark_environment_dev.sql", "03_mark_environment_test.sql", "04_verify_schema.sql",
-        "07_export_parity.sql", "90_test_constraints.sql", "99_drop_schema_test.sql"]
+        "07_export_parity.sql", "08_inspect_legacy_schema.sql", "09_rename_legacy_schema_application.sql",
+        "09_rename_legacy_schema_simulation.sql", "90_test_constraints.sql", "99_drop_schema_test.sql"]
     for path in scripts:
         text = path.read_text(encoding="utf-8")
         assert not TRANSACTION_CONTROL.search(text) and "\u2014" not in text
         assert not re.search(r"PASSWORD", statements_outside_comments(text), re.I)
     writes = re.compile(r"\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|GRANT|REVOKE|TRUNCATE|COMMENT)\b", re.I)
-    for name in ("00_preflight.sql", "04_verify_schema.sql", "07_export_parity.sql"):
+    for name in ("00_preflight.sql", "04_verify_schema.sql", "07_export_parity.sql", "08_inspect_legacy_schema.sql"):
         assert not writes.search(code_only((SUPABASE / name).read_text(encoding="utf-8"))), name
+
+
+LEGACY_TABLES = ("acquisitions,analysis_acquisitions,analysis_runs,indicator_definitions,indicator_results,sources,"
+                 "territories,territory_versions")
+
+
+def test_legacy_rename_is_guarded_never_drops_and_its_simulation_writes_nothing():
+    """09 renames only the exact legacy schema seen on 2026-11-03; the simulation differs only by its ending."""
+    application = (SUPABASE / "09_rename_legacy_schema_application.sql").read_text(encoding="utf-8")
+    simulation = (SUPABASE / "09_rename_legacy_schema_simulation.sql").read_text(encoding="utf-8")
+    inventory = (SUPABASE / "08_inspect_legacy_schema.sql").read_text(encoding="utf-8")
+    code = code_only(application)
+    assert not re.search(r"\b(DROP|DELETE|TRUNCATE|INSERT|UPDATE|GRANT|REVOKE)\b", code, re.I)
+    assert re.findall(r"\bALTER\b[^;]*;", code) == ["ALTER SCHEMA geonaf RENAME TO geonaf_legacy_draft;"]
+    statements = statements_outside_comments(application)
+    guard_end = statements.index("END $$;")
+    for check in ("IS DISTINCT FROM expected", "obj_description(legacy, 'pg_namespace') IS NOT NULL",
+                  "row_count > 0", "cardinality(blockers) > 0", "to_regnamespace('geonaf_legacy_draft') IS NOT NULL"):
+        assert statements.index(check) < guard_end < statements.index("ALTER SCHEMA"), check
+    assert f"'{LEGACY_TABLES}'" in application and f"'{LEGACY_TABLES}'" in inventory
+    marker = "-- ===== Result ====="
+    assert application.split(marker)[0].splitlines()[1:] == simulation.split(marker)[0].splitlines()[1:]
+    ending = simulation.split(marker)[1]
+    assert "RAISE EXCEPTION 'GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE'" in ending
+    assert simulation.rstrip().endswith("END $$;")
+    # The renamed schema must never pass the D2.1 environment guard.
+    assert "COMMENT ON SCHEMA geonaf_legacy_draft IS 'geonaf-legacy:" in application
+    assert "geonaf-environment:" not in code_only(application)
 
 
 def test_destructive_scripts_are_guarded_and_tests_always_cancel():

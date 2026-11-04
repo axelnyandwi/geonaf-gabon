@@ -43,6 +43,8 @@ local et pour Supabase ; les fichiers `02_migration_0001_*.sql` l'incluent sans 
 | `05_import_lot_NN_simulation.sql` / `_application.sql` | Générés hors du dépôt ; la simulation n'écrit rien | dev (et test) |
 | `06_verify_import.sql` | Généré ; lecture seule, valeurs attendues incluses | dev (et test) |
 | `db/supabase/07_export_parity.sql` | Lecture seule ; export CSV | dev |
+| `db/supabase/08_inspect_legacy_schema.sql` | Lecture seule ; inventaire et dépendances du schéma `geonaf` hérité | dev et test, **avant 00** |
+| `db/supabase/09_rename_legacy_schema_simulation.sql` / `_application.sql` | Renomme le schéma hérité en `geonaf_legacy_draft`, sans rien supprimer ; refuse s'il ne correspond pas exactement à l'inventaire | dev et test, **avant 00**, une fois |
 | `db/supabase/90_test_constraints.sql` | Destructif mais toujours annulé ; refuse de tourner hors `test` | **test uniquement** |
 | `db/supabase/99_drop_schema_test.sql` | Supprime le schéma ; refuse de tourner hors `test` | **test uniquement** |
 | `scripts/build_supabase_sql.py` | Génère la migration (`migration`) et les lots (`import`) | poste |
@@ -53,6 +55,11 @@ local et pour Supabase ; les fichiers `02_migration_0001_*.sql` l'incluent sans 
 Règles générales : un fichier = un collage complet dans une **nouvelle** requête du SQL Editor, puis
 « Run ». Ne jamais sélectionner une partie du texte. Lire le résultat avant de passer au fichier
 suivant ; en cas d'erreur inattendue, s'arrêter (rien n'a été écrit par la requête en erreur).
+
+**Préalable (2026-11-04)** : les deux projets portent déjà un schéma `geonaf` hérité de 8 tables, qui
+ne provient pas de 0001. Sur chaque projet, exécuter d'abord 08, puis 09 (simulation, puis
+application), selon `docs/supabase_legacy_schema_plan.md`. Sans cela, 02 échoue sur
+`CREATE SCHEMA geonaf` (sans rien écrire).
 
 ### A. Projet de test `geonaf-test` (environnement isolé, à créer d'abord)
 
