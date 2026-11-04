@@ -35,11 +35,12 @@ avant de passer à l'étape suivante.
 
 | # | Fichier | Écrit ? | Attendu |
 |---|---|---|---|
-| 1 | `08_inspect_legacy_schema.sql` | Non | Toutes les lignes `conforme = true`. Exporter le résultat en CSV, nommé d'après le projet |
+| 1 | `08_inspect_legacy_schema.sql` | Non (lecture seule imposée) | Toutes les lignes `conforme = true`. Exporter le résultat en CSV, nommé d'après le projet ; procédure détaillée dans `docs/supabase_security_d2_2.md` |
 | 2 | `09_rename_legacy_schema_simulation.sql` | Non (annulé) | Erreur « GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE ». Toute autre erreur : arrêt |
 | 3 ✋ | `09_rename_legacy_schema_application.sql` | Oui (renommage) | `geonaf_libere = true`, `tables_conservees = 8` |
 | 4 | `00_preflight.sql` | Non | Toutes les lignes conformes ; schéma geonaf « absent (migration à appliquer) » |
 | 5 ✋ | `01_roles.sql` | Oui (rôles `NOLOGIN`) | Deux rôles |
+| 5 bis | `10_security_precheck.sql`, puis contrôles manuels S2 à S8 | Non (lecture seule imposée) | Toutes les lignes conformes ; voir `docs/supabase_security_d2_2.md`. Sinon, ne pas appliquer 0001 |
 | 6 | `02_migration_0001_simulation.sql` | Non (annulé) | « GEONAF SIMULATION DE MIGRATION REUSSIE, AUCUNE ECRITURE » |
 | 7 ✋ | `02_migration_0001_application.sql` | Oui | Une ligne `0001_territorial_registry` |
 | 8 ✋ | `03_mark_environment_test.sql` (ou `_dev`) | Oui (commentaire) | `geonaf-environment:test` (ou `dev`) |

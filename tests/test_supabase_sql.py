@@ -218,14 +218,53 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
         "00_preflight.sql", "01_roles.sql", "02_migration_0001_application.sql", "02_migration_0001_simulation.sql",
         "03_mark_environment_dev.sql", "03_mark_environment_test.sql", "04_verify_schema.sql",
         "07_export_parity.sql", "08_inspect_legacy_schema.sql", "09_rename_legacy_schema_application.sql",
-        "09_rename_legacy_schema_simulation.sql", "90_test_constraints.sql", "99_drop_schema_test.sql"]
+        "09_rename_legacy_schema_simulation.sql", "10_security_precheck.sql", "90_test_constraints.sql",
+        "99_drop_schema_test.sql"]
     for path in scripts:
         text = path.read_text(encoding="utf-8")
         assert not TRANSACTION_CONTROL.search(text) and "\u2014" not in text
         assert not re.search(r"PASSWORD", statements_outside_comments(text), re.I)
-    writes = re.compile(r"\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|GRANT|REVOKE|TRUNCATE|COMMENT)\b", re.I)
-    for name in ("00_preflight.sql", "04_verify_schema.sql", "07_export_parity.sql", "08_inspect_legacy_schema.sql"):
+    writes = re.compile(r"\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|GRANT|REVOKE|TRUNCATE|COMMENT|LOCK|SET\s+ROLE)\b",
+                        re.I)
+    for name in ("00_preflight.sql", "04_verify_schema.sql", "07_export_parity.sql", "08_inspect_legacy_schema.sql",
+                 "10_security_precheck.sql"):
         assert not writes.search(code_only((SUPABASE / name).read_text(encoding="utf-8"))), name
+
+
+READ_ONLY_GUARD = "SELECT set_config('transaction_read_only', 'on', true);"
+
+
+@pytest.mark.parametrize("name", ["08_inspect_legacy_schema.sql", "10_security_precheck.sql"])
+def test_d2_2_diagnostics_enforce_read_only_and_identify_the_server(name):
+    """Read only is enforced by PostgreSQL (first statement), not only by review; the server is identified."""
+    statements = [s.strip() for s in statements_outside_comments((SUPABASE / name).read_text(encoding="utf-8"))
+                  .split(";\n") if s.strip()]
+    assert statements[0] + ";" == READ_ONLY_GUARD
+    text = (SUPABASE / name).read_text(encoding="utf-8")
+    assert re.search(r"'transaction en lecture seule'( AS verification)?, 'on'", text)
+    assert "pg_control_system()" in text and "md5(" in text    # Hashed server identifier, never the raw value.
+    assert "has_function_privilege('pg_control_system()', 'EXECUTE')" in text
+
+
+def test_no_script_reads_a_setting_that_may_hold_a_secret():
+    """Role and database settings are printed only for search_path and pgrst.db_schemas (pgrst.jwt_secret...)."""
+    for path in sorted(SUPABASE.glob("*.sql")):
+        code = statements_outside_comments(path.read_text(encoding="utf-8"))
+        prefixes = set(re.findall(r"strpos\(s\.setting, '([^']+)'\) = 1", code))
+        assert prefixes <= {"search_path=", "pgrst.db_schemas="}, (path.name, prefixes)
+        assert not re.search(r"jwt|app\.settings|vault\.|decrypted_secrets|current_setting\('pgrst", code, re.I), path.name
+
+
+def test_d2_2_ownership_and_rls_checks_are_exact():
+    """Owner rights need inheritance (USAGE, not MEMBER); FORCE ROW LEVEL SECURITY binds the owner too."""
+    for name in ("08_inspect_legacy_schema.sql", "09_rename_legacy_schema_application.sql",
+                 "09_rename_legacy_schema_simulation.sql"):
+        code = code_only((SUPABASE / name).read_text(encoding="utf-8"))
+        assert "MEMBER" not in code, name
+        assert "relforcerowsecurity" in code, name
+    statements = statements_outside_comments((SUPABASE / "09_rename_legacy_schema_application.sql")
+                                             .read_text(encoding="utf-8"))
+    assert statements.index("IN SHARE ROW EXCLUSIVE MODE NOWAIT") < statements.index("ALTER SCHEMA")
 
 
 LEGACY_TABLES = ("acquisitions,analysis_acquisitions,analysis_runs,indicator_definitions,indicator_results,sources,"

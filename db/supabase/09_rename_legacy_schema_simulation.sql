@@ -31,12 +31,20 @@ BEGIN
   IF found IS DISTINCT FROM expected THEN
     RAISE EXCEPTION 'GEONAF: tables inattendues dans geonaf' USING DETAIL = coalesce(found, 'aucune');
   END IF;
-  IF NOT (SELECT pg_has_role(current_user, nspowner, 'MEMBER') FROM pg_namespace WHERE oid = legacy) THEN
-    RAISE EXCEPTION 'GEONAF: le role courant n''est pas proprietaire du schema geonaf';
+  IF NOT (SELECT pg_has_role(current_user, nspowner, 'USAGE') FROM pg_namespace WHERE oid = legacy) THEN
+    RAISE EXCEPTION 'GEONAF: le role courant n''a pas les droits du proprietaire du schema geonaf';
   END IF;
 
-  FOR t IN SELECT relname, relowner FROM pg_class WHERE relnamespace = legacy AND relkind IN ('r', 'p') LOOP
-    IF NOT (pg_has_role(current_user, t.relowner, 'USAGE')
+  -- The 8 tables are locked until the end of the request: between these checks and the rename nobody can
+  -- write into them nor add a trigger or a foreign key to them (a new view is not prevented; the risk is
+  -- accepted, the window lasts milliseconds). NOWAIT: fails at once if another session holds a lock.
+  FOR t IN SELECT relname FROM pg_class WHERE relnamespace = legacy AND relkind IN ('r', 'p') LOOP
+    EXECUTE 'LOCK TABLE geonaf.' || quote_ident(t.relname) || ' IN SHARE ROW EXCLUSIVE MODE NOWAIT';
+  END LOOP;
+
+  FOR t IN SELECT relname, relowner, relforcerowsecurity FROM pg_class
+           WHERE relnamespace = legacy AND relkind IN ('r', 'p') LOOP
+    IF NOT ((pg_has_role(current_user, t.relowner, 'USAGE') AND NOT t.relforcerowsecurity)
             OR (SELECT rolbypassrls FROM pg_roles WHERE rolname = current_user)) THEN
       blockers := blockers || ('comptage filtre par la RLS sur ' || t.relname);
     END IF;
