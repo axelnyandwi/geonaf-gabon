@@ -24,12 +24,12 @@ SELECT objet, table_name, nom, definition FROM (
   SELECT 2, 'colonne', t.relname, lpad(a.attnum::text, 2, '0') || ' ' || a.attname,
          format_type(a.atttypid, a.atttypmod)
          || CASE WHEN a.attnotnull THEN ' NOT NULL' ELSE '' END
-         || CASE WHEN a.attidentity <> '' THEN ' IDENTITY(' || a.attidentity || ')' ELSE '' END
+         || CASE WHEN a.attidentity <> '' THEN ' IDENTITY(' || a.attidentity::text || ')' ELSE '' END
          || coalesce(' DEFAULT ' || pg_get_expr(d.adbin, d.adrelid), '')
   FROM t JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum > 0 AND NOT a.attisdropped
   LEFT JOIN pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
   UNION ALL
-  SELECT 3, 'contrainte', t.relname, k.contype || ' ' || k.conname,
+  SELECT 3, 'contrainte', t.relname, k.contype::text || ' ' || k.conname,
          pg_get_constraintdef(k.oid) || CASE WHEN k.condeferrable THEN ' (deferrable)' ELSE '' END
          || CASE WHEN NOT k.convalidated THEN ' (NOT VALID)' ELSE '' END
   FROM t JOIN pg_constraint k ON k.conrelid = t.oid

@@ -109,7 +109,7 @@ FROM (
                    FROM pg_auth_members m
                    WHERE m.roleid::regrole::text IN ('pg_read_all_data', 'pg_write_all_data', 'pg_maintain')), 'aucun')
   UNION ALL SELECT 32, 'droits par defaut globaux pour les roles API ou PUBLIC (proprietaire:type:beneficiaire)', 'information',
-         coalesce((SELECT string_agg(DISTINCT d.defaclrole::regrole::text || ':' || d.defaclobjtype || ':'
+         coalesce((SELECT string_agg(DISTINCT d.defaclrole::regrole::text || ':' || d.defaclobjtype::text || ':'
                                      || CASE WHEN a.grantee = 0 THEN 'PUBLIC' ELSE a.grantee::regrole::text END, ', ')
                    FROM pg_default_acl d, aclexplode(d.defaclacl) a
                    WHERE d.defaclnamespace = 0

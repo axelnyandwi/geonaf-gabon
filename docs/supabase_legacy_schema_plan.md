@@ -38,6 +38,7 @@ avant de passer à l'étape suivante.
 | 1 | `08_inspect_legacy_schema.sql` | Non (lecture seule imposée) | Toutes les lignes `conforme = true`. Exporter le résultat en CSV, nommé d'après le projet ; procédure détaillée dans `docs/supabase_security_d2_2.md` |
 | 2 | `09_legacy_schema_fingerprint.sql`, `09_rename_legacy_schema_simulation.sql`, puis de nouveau l'empreinte et 08 | Non (annulé) | Erreur « GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE » ; empreinte et 08 identiques avant et après. Toute autre erreur : arrêt. Procédure : `docs/supabase_security_d2_2.md`, section 6 |
 | 3 ✋ | `09_rename_legacy_schema_application.sql`, après saisie de la confirmation (08 l.`-3`) | Oui (renommage) | `geonaf_libere = true`, `tables_conservees = 8`, marque `geonaf-legacy: ... ; commentaire initial (JSON) : null` |
+| 3 bis | `10_verify_legacy_schema_rename.sql` (valeurs attendues de `geonaf-test` : OID 18655, empreinte de l'export D) | Non (lecture seule imposée) | Verdict `GO` en dernière ligne. Ne vaut pas application de 0001 |
 | 4 | `00_preflight.sql` | Non | Toutes les lignes conformes ; schéma geonaf « absent (migration à appliquer) » |
 | 5 ✋ | `01_roles.sql` | Oui (rôles `NOLOGIN`) | Deux rôles |
 | 5 bis | `10_security_precheck.sql`, puis contrôles manuels S2 à S8 | Non (lecture seule imposée) | Toutes les lignes conformes ; voir `docs/supabase_security_d2_2.md`. Sinon, ne pas appliquer 0001 |

@@ -1,9 +1,12 @@
 # D2.2 - Sécurité de la migration Supabase
 
 Complète `docs/supabase_legacy_schema_plan.md` (ordre des étapes) et `docs/supabase_registry.md`.
-**Rien n'a été exécuté sur Supabase.** Les scripts sont vérifiés hors ligne : analyse syntaxique par
-le parseur de PostgreSQL 17 (`pglast`) et tests statiques. Les noms de colonnes des catalogues, les
-droits réels et le comportement de l'éditeur ne seront confirmés qu'à l'exécution sur `geonaf-test`.
+À sa rédaction (D2.2), rien n'avait été exécuté sur Supabase. Les scripts étaient alors vérifiés hors
+ligne par analyse syntaxique (`pglast`) et tests statiques. **Une analyse syntaxique ne résout pas les
+types** : elle ne pouvait pas détecter l'erreur 42725 de 10 l.32 (section 7). Depuis D2.10a, les scripts
+sont exécutés réellement sur un PostgreSQL local jetable (16.2, sans PostGIS ni libxml), avec `EXPLAIN`
+de chaque requête pour la résolution des types : **PostgreSQL 17 n'est pas validé localement**. Les
+droits réels et le comportement de l'éditeur ne sont confirmés qu'à l'exécution sur `geonaf-test`.
 
 ## 1. Procédure manuelle : script 08 sur chaque projet
 
@@ -237,3 +240,20 @@ Après le retour arrière, l'empreinte doit être identique à celle exportée a
 
 L'ancienne commande d'une ligne (renommage inverse seul) laissait la marque `geonaf-legacy:` sur
 `geonaf` : 08 et 09 auraient ensuite refusé le schéma. Elle n'est plus documentée (test).
+
+## 7. Écarts entre scripts versionnés et exécutions (D2.10a, 2026-11-04)
+
+Erreur PostgreSQL 42725 (opérateur non unique) : `text || "char"` est ambigu. Toute colonne de catalogue de
+type `"char"` (`relkind`, `contype`, `defaclobjtype`...) doit être convertie (`::text`) avant `||`.
+`concat_ws`, `format` et les comparaisons ne sont pas concernés. Garde-fou :
+`tests/test_sql_char_concatenation.py`. Ce test liste les 42 colonnes `"char"` du catalogue, contrôle tous
+les SQL suivis par Git et fait un `EXPLAIN` de chaque requête des scripts en lecture seule.
+
+| Script | Écart | Preuve | Statut |
+|---|---|---|---|
+| `10_security_precheck.sql` l.32 | `d.defaclobjtype \|\| ':'` (42725) | Reproduit en local ; présent depuis `5693659` (D2.2) | **Corrigé** (`::text`). Sur `geonaf-test`, une correction manuelle a donné le CSV favorable : son texte exact n'est pas connu |
+| `10_security_precheck.sql`, exécution anticipée du 2026-11-04 (09:16:32 UTC, `geonaf-test` et `geonaf-dev`) | Résultats rapportés (lignes 2, 3, 20 et 21 fausses) alors que la version versionnée échoue à l'analyse | Commit `5693659` (08:36 UTC) antérieur à l'exécution ; 42725 avant toute exécution | **Prouvé, non reconstituable** : une variante modifiée dans l'éditeur a été exécutée. Relancer la version corrigée avant 02 (S1) |
+| `docs/sql/inspect_geonaf_schema.sql` l.27 et l.32 | `a.attidentity`, `k.contype` concaténés (42725) | Reproduit en local ; fichier versionné le 2026-11-04 (`8b1eafb`), export cité du 2026-11-03 | **Corrigé**. L'export du 2026-11-03 provient d'une version non versionnée, **non reconstituable** |
+| `09_rename_legacy_schema_application.sql` | Seule la ligne de confirmation différait dans la copie de travail | `git diff` : 1 ligne, horodatage au format attendu | Restauré depuis `HEAD` (D2.9d) ; aucune autre correction |
+| 08, 09 (simulation, empreinte), `legacy_structure.sql` (export D), 00 | Aucune concaténation `"char"` | `EXPLAIN` local ; exécutions rapportées sans erreur | Cohérent |
+| Autres corrections éventuelles dans l'éditeur | Inconnues | Aucun historique du SQL Editor | **Non reconstituables**. Règle : n'exécuter que les fichiers versionnés, sans modification, et signaler toute erreur avant de corriger |
