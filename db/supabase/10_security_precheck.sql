@@ -3,8 +3,11 @@
 -- Run on each project after 09 (rename) and 01 (roles), before 02. Every line must read conforme = true;
 -- the informative lines (attendu = 'information') are read by a person against
 -- docs/supabase_security_d2_2.md, section "Lecture des lignes d'information". A false line: do not apply 0001.
+-- Early run (read only, allowed before 09 and 01): line 0 shows the phase; lines 2, 3, 20 and 21 are then
+-- expected to be false, every other non-informative line must already be true.
 -- Writes nothing: the first statement makes the whole request a read-only transaction.
 -- Output: structure, role names and settings only; never a password, a key or a data value.
+-- Identity (lines -4 to -1): same lines as 08; no SQL value identifies the project (see 08).
 SELECT set_config('transaction_read_only', 'on', true);
 
 WITH api_roles AS (
@@ -20,15 +23,24 @@ WITH api_roles AS (
 SELECT verification, attendu, obtenu,
        CASE WHEN attendu = 'information' THEN NULL ELSE attendu = obtenu END AS conforme
 FROM (
-  SELECT -3 AS ordre, 'transaction en lecture seule' AS verification, 'on' AS attendu,
+  SELECT -5 AS ordre, 'transaction en lecture seule' AS verification, 'on' AS attendu,
          current_setting('transaction_read_only') AS obtenu
-  UNION ALL SELECT -2, 'empreinte du serveur (meme valeur que la ligne 0b de 08 sur ce projet)', 'information',
-         CASE WHEN has_function_privilege('pg_control_system()', 'EXECUTE')
-              THEN left(md5((xpath('/row/s/text()', query_to_xml(
-                     'SELECT system_identifier AS s FROM pg_control_system()', false, true, '')))[1]::text), 12)
-              ELSE 'non disponible (droit EXECUTE absent)' END
-  UNION ALL SELECT -1, 'demarrage du serveur et version', 'information',
-         pg_postmaster_start_time()::text || ' ; ' || current_setting('server_version')
+  UNION ALL SELECT -4, 'identite du projet Supabase (aucune valeur SQL fiable : reference a relever dans l''URL du tableau de bord)',
+         'information', 'a relever manuellement'::text
+  UNION ALL SELECT -3, 'instance en cours : demarrage UTC (change a chaque redemarrage ; ne prouve pas l''identite)',
+         'information', to_char(pg_postmaster_start_time() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US')
+  UNION ALL SELECT -2, 'execution de cette requete (UTC)', 'information',
+         to_char(transaction_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
+  UNION ALL SELECT -1, 'version PostgreSQL', 'information', current_setting('server_version')
+  UNION ALL SELECT 0, 'phase detectee', 'information',
+         CASE WHEN to_regnamespace('geonaf') IS NOT NULL
+                   AND strpos(coalesce(obj_description(to_regnamespace('geonaf'), 'pg_namespace'), ''),
+                              'geonaf-environment:') = 1 THEN '0001 appliquee et marquee'
+              WHEN to_regclass('geonaf.schema_migrations') IS NOT NULL THEN '0001 appliquee, marque absente (03 a executer)'
+              WHEN to_regnamespace('geonaf') IS NOT NULL THEN 'avant renommage (09 non applique) : lignes 2 et 3 attendues fausses'
+              ELSE 'apres renommage, avant 0001' END
+         || CASE WHEN (SELECT count(*) FROM geonaf_roles) = 0
+                 THEN ' ; roles GEONAF absents (01 non applique) : lignes 20 et 21 attendues fausses' ELSE '' END
 
   -- Target state before 0001.
   UNION ALL SELECT 1, 'role courant', 'postgres', current_user::text

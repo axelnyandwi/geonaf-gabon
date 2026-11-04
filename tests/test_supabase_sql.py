@@ -234,16 +234,60 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
 READ_ONLY_GUARD = "SELECT set_config('transaction_read_only', 'on', true);"
 
 
-@pytest.mark.parametrize("name", ["08_inspect_legacy_schema.sql", "10_security_precheck.sql"])
-def test_d2_2_diagnostics_enforce_read_only_and_identify_the_server(name):
-    """Read only is enforced by PostgreSQL (first statement), not only by review; the server is identified."""
+IDENTITY_SCRIPTS = ["08_inspect_legacy_schema.sql", "10_security_precheck.sql"]
+
+
+@pytest.mark.parametrize("name", IDENTITY_SCRIPTS)
+def test_d2_2_diagnostics_enforce_read_only(name):
+    """Read only is enforced by PostgreSQL (first statement), not only by review."""
     statements = [s.strip() for s in statements_outside_comments((SUPABASE / name).read_text(encoding="utf-8"))
                   .split(";\n") if s.strip()]
     assert statements[0] + ";" == READ_ONLY_GUARD
     text = (SUPABASE / name).read_text(encoding="utf-8")
     assert re.search(r"'transaction en lecture seule'( AS verification)?, 'on'", text)
-    assert "pg_control_system()" in text and "md5(" in text    # Hashed server identifier, never the raw value.
-    assert "has_function_privilege('pg_control_system()', 'EXECUTE')" in text
+
+
+def test_no_script_presents_the_postgresql_system_identifier_as_a_project_identity():
+    """D2.4: geonaf-test and geonaf-dev returned the same system identifier (32f20b4465de, 2026-11-04) while
+    their instances had started 41 minutes apart: Supabase projects share it. It must never come back as an
+    identity, hashed or not."""
+    for path in sorted(SUPABASE.glob("*.sql")):
+        code = code_only(path.read_text(encoding="utf-8"))
+        assert not re.search(r"pg_control_system|system_identifier", code, re.I), path.name
+        assert not re.search(r"md5\(", code, re.I), path.name
+
+
+@pytest.mark.parametrize("name", IDENTITY_SCRIPTS)
+def test_identity_lines_state_their_limits_and_carry_the_instance_evidence(name):
+    """The project identity is read in the dashboard; SQL only gives the running instance and the run time."""
+    text = (SUPABASE / name).read_text(encoding="utf-8")
+    identity = re.search(r"SELECT -4, '([^']|'')*'", text).group(0)
+    assert "aucune valeur SQL fiable" in identity and "URL du tableau de bord" in identity
+    assert "'a relever manuellement'" in text
+    start = re.search(r"SELECT -3, '([^']|'')*'", text).group(0)
+    assert "change a chaque redemarrage" in start and "ne prouve pas l''identite" in start
+    assert "pg_postmaster_start_time() AT TIME ZONE 'UTC'" in text           # Comparable across exports.
+    assert "transaction_timestamp() AT TIME ZONE 'UTC'" in text               # Needed by criterion I1.
+    # Identity lines are information only: they can never turn a check into conforme = true.
+    for order in (-4, -3, -2, -1):
+        line = re.search(rf"SELECT {order}, '(?:[^']|'')*',\s*'([^']*)'", text)
+        assert line and line.group(1) == "information", (name, order)
+
+
+@pytest.mark.parametrize("name", ["00_preflight.sql", "08_inspect_legacy_schema.sql", "10_security_precheck.sql"])
+def test_information_lines_are_never_counted_as_validations(name):
+    """conforme is NULL (neither true nor false) for every line whose expected value is 'information'."""
+    code = re.sub(r"\s+", " ", statements_outside_comments((SUPABASE / name).read_text(encoding="utf-8")))
+    assert code.count("CASE WHEN attendu = 'information' THEN NULL ELSE attendu = obtenu END AS conforme") == 1
+    assert "AS conforme" in code and code.count("AS conforme") == 1    # No second, unguarded verdict column.
+
+
+def test_security_precheck_reports_its_phase_for_an_early_read_only_run():
+    text = (SUPABASE / "10_security_precheck.sql").read_text(encoding="utf-8")
+    for phase in ("avant renommage (09 non applique) : lignes 2 et 3 attendues fausses",
+                  "apres renommage, avant 0001", "0001 appliquee, marque absente", "0001 appliquee et marquee",
+                  "roles GEONAF absents (01 non applique) : lignes 20 et 21 attendues fausses"):
+        assert phase in text, phase
 
 
 def test_no_script_reads_a_setting_that_may_hold_a_secret():

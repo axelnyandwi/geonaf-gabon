@@ -7,8 +7,11 @@
 -- (attendu = 'information'). A false line blocks the rename; 09 repeats the blocking checks and refuses.
 -- Writes nothing: the first statement makes the whole request a read-only transaction, so any write
 -- attempt fails. Row counts read the geonaf tables only; cron jobs are read only if pg_cron is installed.
--- Lines 0a-0c identify the server: export one CSV per project, named after the project shown in the
--- dashboard; the fingerprints of geonaf-test and geonaf-dev must differ.
+-- Identity (lines -4 to -1): no SQL value readable here identifies a Supabase project. The PostgreSQL
+-- system identifier was dropped on 2026-11-04: geonaf-test and geonaf-dev share it (projects are created
+-- from the same initialised image). The project is identified in the dashboard (reference in the URL);
+-- the start time of the running instance plus the execution time only show whether two exports come
+-- from two instances running at the same time (docs/supabase_security_d2_2.md, criteria I1-I5).
 SELECT set_config('transaction_read_only', 'on', true);
 
 WITH legacy AS (
@@ -20,15 +23,15 @@ WITH legacy AS (
 SELECT verification, attendu, obtenu,
        CASE WHEN attendu = 'information' THEN NULL ELSE attendu = obtenu END AS conforme
 FROM (
-  SELECT -3 AS ordre, 'transaction en lecture seule' AS verification, 'on' AS attendu,
+  SELECT -5 AS ordre, 'transaction en lecture seule' AS verification, 'on' AS attendu,
          current_setting('transaction_read_only') AS obtenu
-  UNION ALL SELECT -2, 'empreinte du serveur (12 premiers caracteres du md5 de l''identifiant systeme)', 'information',
-         CASE WHEN has_function_privilege('pg_control_system()', 'EXECUTE')
-              THEN left(md5((xpath('/row/s/text()', query_to_xml(
-                     'SELECT system_identifier AS s FROM pg_control_system()', false, true, '')))[1]::text), 12)
-              ELSE 'non disponible (droit EXECUTE absent)' END
-  UNION ALL SELECT -1, 'demarrage du serveur et version', 'information',
-         pg_postmaster_start_time()::text || ' ; ' || current_setting('server_version')
+  UNION ALL SELECT -4, 'identite du projet Supabase (aucune valeur SQL fiable : reference a relever dans l''URL du tableau de bord)',
+         'information', 'a relever manuellement'::text
+  UNION ALL SELECT -3, 'instance en cours : demarrage UTC (change a chaque redemarrage ; ne prouve pas l''identite)',
+         'information', to_char(pg_postmaster_start_time() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS.US')
+  UNION ALL SELECT -2, 'execution de cette requete (UTC)', 'information',
+         to_char(transaction_timestamp() AT TIME ZONE 'UTC', 'YYYY-MM-DD HH24:MI:SS')
+  UNION ALL SELECT -1, 'version PostgreSQL', 'information', current_setting('server_version')
   UNION ALL SELECT 1, 'schema geonaf present', 'true',
          (to_regnamespace('geonaf') IS NOT NULL)::text
   UNION ALL SELECT 2, 'marque d''environnement (aucune pour le schema herite)', '(aucune)',

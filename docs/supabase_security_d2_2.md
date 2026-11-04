@@ -19,20 +19,41 @@ droits réels et le comportement de l'éditeur ne seront confirmés qu'à l'exé
 3. SQL Editor > **New query** (une requête vide, jamais une requête existante).
 4. Ouvrir `db/supabase/08_inspect_legacy_schema.sql` dans l'éditeur local. Tout sélectionner, copier,
    coller, puis **Run**. Ne jamais exécuter une partie du texte seulement.
-5. Résultat attendu : une seule grille. Ligne `-3` « transaction en lecture seule » = `on`. Si cette
+5. Résultat attendu : une seule grille. Ligne `-5` « transaction en lecture seule » = `on`. Si cette
    ligne manque ou vaut `off`, s'arrêter : l'éditeur n'a pas exécuté le texte en une seule
    transaction.
-6. Exporter le résultat (**Export > CSV**) sous `geonaf-test_08_<AAAAMMJJ>.csv` (ou `geonaf-dev_...`).
+6. Recopier dans la fiche d'exécution (hors dépôt, hors OneDrive) les lignes `-3` (démarrage de
+   l'instance, UTC) et `-2` (exécution, UTC), à côté du nom et de la référence relevés à l'étape 2.
+7. Exporter le résultat (**Export > CSV**) sous `geonaf-test_08_<AAAAMMJJ>.csv` (ou `geonaf-dev_...`).
    Le ranger dans `%USERPROFILE%\.geonaf\exports\`, hors OneDrive et hors dépôt.
-7. Fermer l'onglet de requête. Ne pas enregistrer la requête dans Studio.
-8. Recommencer de 2 à 7 sur l'autre projet.
+8. Fermer l'onglet de requête. Ne pas enregistrer la requête dans Studio.
+9. Recommencer de 2 à 8 sur l'autre projet, **dans les 30 minutes**, pour que le critère I1
+   s'applique.
 
-**Distinguer les deux projets** : la ligne `-2` (empreinte de l'identifiant système, md5 tronqué)
-doit **différer** entre les deux exports. Si elle vaut « non disponible », comparer la ligne `-1`
-(démarrage du serveur et version) et l'identification manuelle de l'étape 2. Deux exports
-identiques, comme ceux du 2026-11-03, signifient que le même projet a été inventorié deux fois.
-Après la migration 0001, la marque `geonaf-environment:<env>` (script 03) prend le relais et la
-couche D2.1 la vérifie à chaque session.
+### Identité des environnements (révisée le 2026-11-04, D2.4)
+
+**Aucune valeur SQL lisible depuis l'éditeur n'identifie un projet Supabase.** L'identifiant système
+de PostgreSQL (`pg_control_system().system_identifier`), utilisé jusqu'en D2.3, est le même pour
+`geonaf-test` et `geonaf-dev`. Les exports du 2026-11-04 ont la même empreinte (`32f20b4465de`)
+alors que leurs instances ont démarré à 16:08:10 et 16:49:52 UTC le 2026-11-02 et ont été
+interrogées dans la même minute. Les projets sont visiblement créés à partir d'une même image déjà
+initialisée. Cet identifiant a été retiré de 08 et de 10, et un test empêche de le réintroduire. La
+référence du projet, la date de création et le nom ne sont pas exposés en SQL. Les paramètres qui
+pourraient les contenir sont des secrets (`app.settings.*`, `pgrst.jwt_secret`) et ne sont jamais
+lus. Les deux exports identiques du 2026-11-03 ne prouvent donc pas qu'un seul projet a été
+inventorié : deux schémas hérités identiques donnent le même inventaire.
+
+| # | Critère | Ce qu'il établit | Statut |
+|---|---|---|---|
+| I1 | Heures de démarrage (`-3`) différentes **et** les deux démarrages antérieurs aux deux exécutions (`-2`) | Deux instances PostgreSQL fonctionnaient en même temps, donc deux projets distincts (un projet = une instance ; offre gratuite sans réplique de lecture). Une même instance redémarrée entre les deux exécutions aurait une heure de démarrage postérieure à la première exécution | **Nécessaire** ; ne dit pas lequel est `test` |
+| I2 | Nom et référence du projet relevés dans le tableau de bord au moment de chaque exécution, références différentes, fiche consignée | Quel export correspond à quel projet | **Décisif** pour l'attribution `test` / `dev` |
+| I3 | Fichiers non identiques à l'octet près | Contrôle de cohérence | Nécessaire, pas suffisant |
+| I4 | Même heure de démarrage dans 08 puis dans 10 (ou 09) sur un projet | Même instance entre les deux scripts. Si l'heure a changé (redémarrage), refaire I2 et relancer 08 | Continuité, pas identité |
+| I5 | Après 03 : marque `geonaf-environment:<env>` écrite une fois, lue par 10, 04 et la couche D2.1 | Identité persistante dans la base | Seule preuve en base ; inexistante avant 0001 |
+
+Remplacent C1 à C4 (D2.3). C1 (empreintes différentes) **n'était pas techniquement justifié** : il
+reposait sur une valeur partagée par les projets. Aucun de ces critères ne dit que le renommage
+est sans risque : ce sont les lignes de contrôle de 08 et 09 qui le disent.
 
 **Critère de passage vers 09** : toutes les lignes non informatives sont `conforme = true` sur le
 projet concerné, et les lignes d'information ont été relues (section 3).
@@ -45,7 +66,7 @@ ci-dessous doivent être faits. Sinon, ne pas appliquer 0001.
 
 | # | Contrôle | Où | Attendu |
 |---|---|---|---|
-| S1 | `10_security_precheck.sql` | SQL Editor | Toutes les lignes non informatives conformes ; empreinte (ligne `-2`) identique à celle de 08 sur ce projet |
+| S1 | `10_security_precheck.sql` | SQL Editor | Toutes les lignes non informatives conformes ; ligne 0 « après renommage, avant 0001 » ; critères I2 et I4 vérifiés pour ce projet |
 | S2 | Schémas exposés par la Data API | Tableau de bord : Settings > API (Data API), *Exposed schemas* et *Extra search path* | Ni `geonaf` ni `geonaf_legacy_draft`. Le contrôle SQL (ligne 41) ne voit que les paramètres de rôle, pas la configuration de la plateforme |
 | S3 | Membres de l'organisation et du projet | Organization > Team | Liste nominative connue ; authentification multifacteur activée pour chacun ; aucun compte partagé |
 | S4 | Mot de passe de la base `postgres` | Database > Settings | Jamais copié dans le dépôt, un `.env` suivi, un ticket ou un message ; changé s'il a circulé |
@@ -53,6 +74,22 @@ ci-dessous doivent être faits. Sinon, ne pas appliquer 0001.
 | S6 | Usage externe du schéma hérité | Auteur du schéma | Confirmation qu'aucune Edge Function, requête enregistrée, tâche ou outil externe n'utilise `geonaf` par son nom |
 | S7 | Lignes d'information de 08 et 10 | Section 3 | Relues et consignées dans le rapport d'exécution |
 | S8 | Résultat de `00_preflight.sql` | SQL Editor | Première ligne (une seule transaction) conforme |
+
+### Exécution anticipée de 10 (lecture seule, avant 09 et 01)
+
+Elle permet de repérer un problème de sécurité avant toute décision de renommage, sans rien écrire.
+Même procédure que 08 (section 1, étapes 1 à 9), fichier `geonaf-<env>_10_<AAAAMMJJ>.csv`.
+
+- La ligne 0 doit indiquer « avant renommage (09 non appliqué) » et « rôles GEONAF absents (01 non
+  appliqué) ». Les lignes 2, 3, 20 et 21 sont alors attendues fausses.
+- **Toute autre ligne non informative fausse bloque la suite.** C'est particulièrement vrai pour
+  l.11 et l.12 (masquage de PostGIS), l.14 (droit `CREATE` sur `extensions`) et l.41 (Data API).
+- Cohérence avec 08 : mêmes heures `-3` (critère I4), PostGIS dans `extensions`, mêmes déclencheurs
+  d'événement (l.34 et 08 l.27).
+- R5 et R5 bis ne sont pas appliqués. La ligne 11 reste bloquante dans tous les cas : même avec le
+  chemin `pg_catalog, extensions, pg_temp` dans les scripts, la couche Python (R5 bis) utilise le
+  chemin par défaut de la connexion, qui contient `public`.
+- Après 09 et 01, relancer 10 : toutes les lignes non informatives doivent être conformes (S1).
 
 Après 0001 : `04_verify_schema.sql` (aucun droit pour les rôles API ni pour `PUBLIC`, RLS partout,
 fonctions à `search_path` fixe, vues en `security_invoker`), puis le diagnostic D2.1 depuis un réseau
@@ -91,7 +128,7 @@ autorisé.
 | R10 | Data API | Paramètres `pgrst.*` pouvant contenir un secret (`pgrst.jwt_secret`) | 10 n'affiche que `pgrst.db_schemas` ; test qui interdit toute autre lecture | - |
 | R11 | Déclencheurs d'événement | Ils s'exécutent pendant `ALTER SCHEMA` et 0001, avec les droits de leur fonction | Listés en 08 l.27 et 10 l.34 | Relecture humaine (section 3) |
 | R12 | Renommage | Les références **par nom** (fonctions, `search_path`, `pg_cron`, code externe) viseraient, après 0001, les nouvelles tables `territories`/`territory_versions` | Bloquants en 08 et 09 ; verrou des 8 tables pendant 09 | S6 (code externe, invisible depuis SQL) |
-| R13 | Identification | Coller un script dans le mauvais projet. 08 et 09 ne peuvent pas s'appuyer sur une marque : les deux schémas hérités n'en ont pas | Empreinte du serveur, triple vérification manuelle, ordre test puis dev | Consigner l'empreinte de chaque projet dans le rapport d'exécution, pas dans le dépôt |
+| R13 | Identification | Coller un script dans le mauvais projet. 08 et 09 ne peuvent pas s'appuyer sur une marque : les deux schémas hérités n'en ont pas | Critères I1 à I4 (section 1), triple vérification manuelle, ordre test puis dev. L'identifiant système de PostgreSQL est partagé entre projets et n'est plus utilisé | Fiche d'exécution hors dépôt (référence, nom, heures `-3` et `-2`) ; envisager une marque d'identité posée avant 09 (décision à prendre : c'est une écriture) |
 | R14 | Éditeur | Si l'éditeur n'exécute pas tout en une transaction, un échec pourrait laisser un état partiel | Sonde de 00 ; lecture seule imposée (08, 10) | - |
 | R15 | Poste | Exports CSV et futur `.env` de connexion | Worktree hors OneDrive ; `.env` ignoré par Git | Exports dans `%USERPROFILE%\.geonaf\exports\` |
 | R16 | Dépôt | Le `.git` du dépôt principal est dans OneDrive : objets synchronisés (aucun secret suivi, vérifié), risque de corruption par la synchronisation | - | Décision séparée : déplacer le dépôt hors OneDrive |
