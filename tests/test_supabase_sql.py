@@ -212,6 +212,92 @@ def test_verify_script_reads_the_csv_export(registry, tmp_path, capsys):
 # --- Static scripts ------------------------------------------------------------------------------
 
 
+def test_r5_search_path_never_reaches_public_and_lists_pg_temp_last():
+    """R5: scripts that resolve PostGIS names use pg_catalog, extensions, then pg_temp (last, explicit)."""
+    assert s.SEARCH_PATH == "SELECT set_config('search_path', 'pg_catalog, extensions, pg_temp', true);"
+    for name in ("02_migration_0001_application.sql", "02_migration_0001_simulation.sql",
+                 "07_export_parity.sql", "90_test_constraints.sql"):
+        text = (SUPABASE / name).read_text(encoding="utf-8")
+        assert s.SEARCH_PATH in text and "public, extensions" not in statements_outside_comments(text), name
+
+
+def test_r5_generated_import_and_verification_set_the_search_path(registry):
+    plan = plan_import(registry)
+    batch = s.import_batches(plan, source_label="registre", code_version="t", apply=True)[0]
+    assert batch.lstrip().startswith("--") and s.SEARCH_PATH in batch
+    assert batch.index(s.SEARCH_PATH) < batch.index("CREATE TEMP TABLE")
+    verify = s.verify_import_sql(plan)
+    assert verify.index(s.SEARCH_PATH) < verify.index("SELECT verification")
+
+
+# --- Non-regression: search path and PostGIS references (D2.7) -----------------------------------
+
+BODY_0001_SHA256 = "719e7e847f28404255491c0c00923f130cbd35151cd63488ed1ba3391c0bf971"   # Reviewed body, D2-a.
+POSTGIS_USE = re.compile(r"\b(ST_\w+|geometrytype)\s*\(|::\s*geometry\b|\bgeometry\s*\(", re.I)
+SEARCH_PATH_SETTING = re.compile(r"set_config\(\s*'search_path'\s*,\s*'([^']*)'|SET\s+search_path\s*(?:=|TO)\s*('[^']*'|[^;\n]+)",
+                                 re.I)
+
+
+def test_migration_0001_body_is_the_reviewed_one():
+    """Any change to the body of 0001 (beyond line endings) must be a new reviewed migration, not an edit."""
+    body = s.MIGRATION_0001.read_text(encoding="utf-8")
+    assert hashlib.sha256(body.encode("utf-8")).hexdigest() == BODY_0001_SHA256
+    for name in ("02_migration_0001_application.sql", "02_migration_0001_simulation.sql"):
+        text = (SUPABASE / name).read_text(encoding="utf-8")
+        assert f"-- Body SHA-256: {BODY_0001_SHA256}" in text
+        assert f"'0001_territorial_registry', '{BODY_0001_SHA256}'" in text
+
+
+def without_documents(sql: str) -> str:
+    """Drop the dollar-quoted JSON documents of the import batches: their apostrophes (« zone d'acquisition »)
+    would otherwise unbalance the quoted-literal stripping of code_only and hide real code."""
+    return re.sub(r"(\$g[0-9a-f]+\$).*?\1", "''", sql, flags=re.S)
+
+
+def _supabase_requests(registry) -> dict[str, str]:
+    """Every request pasted in the SQL Editor: static scripts and the generated import and verification."""
+    plan = plan_import(registry)
+    requests = {p.name: p.read_text(encoding="utf-8") for p in sorted(SUPABASE.glob("*.sql"))}
+    for apply in (False, True):
+        for number, batch in enumerate(s.import_batches(plan, source_label="registre", code_version="t",
+                                                        apply=apply), 1):
+            requests[f"05_lot_{number:02d}_{'application' if apply else 'simulation'}"] = batch
+    requests["06_verify_import"] = s.verify_import_sql(plan)
+    return requests
+
+
+def test_every_request_using_postgis_sets_the_r5_path_first(registry):
+    """A request that resolves a PostGIS name sets pg_catalog, extensions, pg_temp before the first use."""
+    users = []
+    for name, text in _supabase_requests(registry).items():
+        code = code_only(without_documents(text))
+        first = POSTGIS_USE.search(code)
+        if first is None:
+            continue
+        users.append(name)
+        assert s.SEARCH_PATH in text, name
+        assert code.index(code_only(s.SEARCH_PATH)) < first.start(), name   # Literals blanked in both.
+    assert {"02_migration_0001_application.sql", "07_export_parity.sql", "90_test_constraints.sql",
+            "05_lot_01_application", "06_verify_import"} <= set(users)
+
+
+def test_no_request_ever_searches_public_or_puts_pg_temp_first(registry):
+    """Only two search paths exist in the scripts: the R5 path, and the empty path of GEONAF functions."""
+    for name, text in _supabase_requests(registry).items():
+        for match in SEARCH_PATH_SETTING.finditer(statements_outside_comments(without_documents(text))):
+            value = (match.group(1) if match.group(1) is not None else match.group(2)).strip().strip("'")
+            assert value in ("pg_catalog, extensions, pg_temp", ""), (name, value)
+
+
+def test_python_postgis_calls_are_inventoried_until_r5_bis():
+    """R5 bis is not implemented: the Python layer runs these PostGIS calls with the connection's default
+    search path (which holds public on Supabase). A new call must update this list and the R5 bis note."""
+    source = (ROOT / "src" / "data" / "postgis_territory_registry.py").read_text(encoding="utf-8")
+    assert set(re.findall(r"\b(ST_\w+)\(", source)) == {"ST_Intersects", "ST_MakeEnvelope", "ST_AsBinary",
+                                                         "ST_GeomFromWKB"}
+    assert "search_path" not in source      # Turns red when R5 bis lands: then replace this test by its own.
+
+
 def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
     scripts = sorted(SUPABASE.glob("*.sql"))
     assert [p.name for p in scripts] == [

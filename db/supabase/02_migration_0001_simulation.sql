@@ -4,7 +4,7 @@
 -- One request, no BEGIN/COMMIT: any error cancels everything. Writes nothing.
 -- Body SHA-256: 719e7e847f28404255491c0c00923f130cbd35151cd63488ed1ba3391c0bf971
 
-SELECT set_config('search_path', 'pg_catalog, public, extensions', true);
+SELECT set_config('search_path', 'pg_catalog, extensions, pg_temp', true);
 
 -- ===== Body of db/sql/0001_territorial_registry.up.sql (unchanged) =====
 -- GEONAF migration 0001: territorial registry (read-only copy of the file registry, D2-a).

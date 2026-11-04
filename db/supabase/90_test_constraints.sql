@@ -7,7 +7,7 @@
 -- Each case expects a precise SQLSTATE: 23514 check, 23503 foreign key, 23505 unique, P0001 GEONAF
 -- trigger, 22 data exception (wrong geometry type); 'accepte' for the control rows.
 
-SELECT set_config('search_path', 'pg_catalog, public, extensions', true);
+SELECT set_config('search_path', 'pg_catalog, extensions, pg_temp', true);
 
 DO $$
 BEGIN

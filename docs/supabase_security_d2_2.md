@@ -86,9 +86,9 @@ Même procédure que 08 (section 1, étapes 1 à 9), fichier `geonaf-<env>_10_<A
   l.11 et l.12 (masquage de PostGIS), l.14 (droit `CREATE` sur `extensions`) et l.41 (Data API).
 - Cohérence avec 08 : mêmes heures `-3` (critère I4), PostGIS dans `extensions`, mêmes déclencheurs
   d'événement (l.34 et 08 l.27).
-- R5 et R5 bis ne sont pas appliqués. La ligne 11 reste bloquante dans tous les cas : même avec le
-  chemin `pg_catalog, extensions, pg_temp` dans les scripts, la couche Python (R5 bis) utilise le
-  chemin par défaut de la connexion, qui contient `public`.
+- R5 est appliqué aux scripts (D2.7) ; R5 bis ne l'est pas. La ligne 11 reste bloquante dans tous
+  les cas : la couche Python (R5 bis) utilise le chemin par défaut de la connexion, qui contient
+  `public` (relevé sur les deux projets le 2026-11-04 : `postgres` a `"$user", public, extensions`).
 - Après 09 et 01, relancer 10 : toutes les lignes non informatives doivent être conformes (S1).
 
 Après 0001 : `04_verify_schema.sql` (aucun droit pour les rôles API ni pour `PUBLIC`, RLS partout,
@@ -120,7 +120,8 @@ autorisé.
 | R2 | Rôles | `01_roles.sql` est idempotent : un rôle `geonaf_*` préexistant (LOGIN, BYPASSRLS, membre d'un rôle privilégié) serait réutilisé en silence | 10 l.20 à l.23 bloquantes | - |
 | R3 | RLS | RLS activée sans politique : le propriétaire la contourne, sauf FORCE RLS. Un comptage peut afficher 0 alors que la table contient des lignes | 08 l.4 et la garde de 09 tiennent compte de `relforcerowsecurity` | - |
 | R4 | RLS | `service_role` et les rôles `BYPASSRLS` ignorent la RLS : seuls les droits de table protègent `geonaf` | 0001 révoque tout aux rôles API ; 04 le vérifie | Vérifier 04 après toute future migration |
-| R5 | search_path | Le wrapper Supabase de 0001 utilise `pg_catalog, public, extensions`. Un objet `geometry` ou `st_*` placé dans `public` (ou dans `pg_temp`) serait lié **définitivement** aux contraintes et index de 0001 | 10 l.11 et l.12 bloquantes ; fonctions de 0001 à `search_path = ''` | **Correction proposée, à valider** : `pg_catalog, extensions` dans `src/data/supabase_sql.py` (le corps de 0001 n'utilise rien de `public`), puis régénération des fichiers 02. Le hash du corps resterait inchangé |
+| R5 | search_path | Avec `pg_catalog, public, extensions`, un objet `geometry` ou `st_*` placé dans `public` (ou dans `pg_temp`) serait lié **définitivement** aux contraintes et index de 0001 | **Appliqué en D2.7** : tout script qui résout un nom PostGIS (02, lots 05, 06, 07, 90) fixe d'abord `pg_catalog, extensions, pg_temp`. `public` n'est jamais parcouru et `pg_temp` vient en dernier (les lots trouvent leurs tables temporaires). Corps de 0001 inchangé (`719e7e84...`). Tests de non-régression ; 10 l.11 et l.12 restent bloquantes | Valider sur `geonaf-test` par la simulation 02 |
+| R5 bis | search_path (Python) | `PostgisTerritoryRegistry` et `read_only_session()` utilisent le chemin par défaut de la connexion, qui contient `public` : `ST_Intersects`, `ST_MakeEnvelope`, `ST_AsBinary` et `ST_GeomFromWKB` pourraient être masqués. `geometry()` est protégé par l'empreinte recalculée, **`intersecting()` ne l'est pas** | Aucune connexion possible depuis le poste (ports fermés) ; inventaire des appels figé par un test | Lot dédié : chemin local à la transaction construit depuis `pg_extension`, passage du registre par `read_only_session()` |
 | R6 | Privilèges hérités | Les droits par défaut globaux s'appliquent à tout nouvel objet. Les droits par défaut d'un schéma s'ajoutent aux globaux sans pouvoir les retirer | 0001 révoque après création (tables, séquences, fonctions) | Règle pour 0002 et suivantes : `REVOKE` explicite après chaque création, contrôle 04 étendu |
 | R7 | Privilèges hérités | Les membres de `pg_read_all_data` lisent toutes les tables sans droit de table | Liste en 10 l.31 | Décider si ces rôles de la plateforme sont acceptables (avis de l'administrateur) |
 | R8 | Fonctions | Droit `EXECUTE` à `PUBLIC` par défaut sur toute nouvelle fonction | 0001 : `REVOKE ALL ON ALL FUNCTIONS ... FROM PUBLIC` et rôles API | Même règle en 0002 |
@@ -137,7 +138,57 @@ autorisé.
 
 1. ✋ Application de 09 (renommage), projet par projet, après 08 conforme.
 2. ✋ `01_roles.sql`, puis ✋ application de 02 (migration 0001), puis ✋ 03 (marque).
-3. Correction R5 du `search_path` du wrapper : modifie les fichiers 02 relus.
+3. Commit de la correction R5 (appliquée dans le worktree en D2.7, non commitée).
 4. Décision sur les rôles de la plateforme listés en 10 l.30 et l.31.
 5. Activation future de `LOGIN` pour les rôles GEONAF et choix d'un rôle de migration distinct.
 6. Suppression éventuelle de `geonaf_legacy_draft` : hors périmètre, autorisation séparée.
+7. ✋ Simulation de 09 sur `geonaf-test` (section 6). Elle n'écrit rien, mais exécute un DDL annulé
+   et pose des verrous sur les 8 tables pendant la requête.
+
+## 6. Simulation 09 sur geonaf-test (préparée, non exécutée)
+
+**Prérequis**, tous requis :
+
+- 08 et 10 du 2026-11-04 conformes. C'est le cas sur les deux projets : 08 sans aucune ligne fausse ;
+  10 en exécution anticipée, seules les lignes 2, 3, 20 et 21 sont fausses, comme attendu.
+- I1, I3 et I4 satisfaits :
+  - `geonaf-test` : démarrage 2026-11-02 16:49:52, exécutions à 09:12:39 (08) et 09:16:32 (10) ;
+  - `geonaf-dev` : démarrage 16:08:10, exécutions à 09:17:25 et 09:18:28.
+- I2 consigné dans la fiche (nom et référence du projet `geonaf-test`).
+- S2 : Data API désactivée sur les deux projets (constat déclaré le 2026-11-04).
+- Autorisation explicite de la simulation.
+
+**La simulation n'écrit rien, mais elle :**
+
+- exécute toute la garde, puis `ALTER SCHEMA ... RENAME` et `COMMENT`, avant d'annuler la requête
+  par une erreur volontaire ;
+- pose `SHARE ROW EXCLUSIVE` sur les 8 tables vides pendant quelques millisecondes ;
+- déclenche les déclencheurs d'événement de la plateforme (`pgrst_ddl_watch` émet un `NOTIFY`,
+  annulé avec la transaction).
+
+**Procédure** (`geonaf-test` seulement) :
+
+1. Tableau de bord avec authentification multifacteur. Vérifier le nom et la référence du projet
+   `geonaf-test` et les noter dans la fiche, avec l'heure (I2).
+2. SQL Editor > New query : exécuter `08_inspect_legacy_schema.sql`. Toutes les lignes doivent être
+   conformes, et la ligne `-3` doit être égale à 2026-11-02 16:49:52 (I4). Sinon, s'arrêter.
+3. New query : coller **en entier** `09_rename_legacy_schema_simulation.sql`, puis Run.
+4. Lire le résultat :
+
+   | Message | Signification | Suite |
+   |---|---|---|
+   | `GEONAF SIMULATION DE RENOMMAGE REUSSIE, AUCUNE ECRITURE` | Garde franchie, renommage possible, tout est annulé | Étape 5 |
+   | `GEONAF: renommage refuse` + `DETAIL` | Un bloquant est apparu depuis 08 | S'arrêter ; transmettre le `DETAIL` |
+   | `lock not available` (code 55P03) | Une autre session tient un verrou sur une table héritée (`NOWAIT`) | Une seule nouvelle tentative quelques minutes plus tard ; sinon s'arrêter |
+   | `schema geonaf marque`, `tables inattendues`, `geonaf_legacy_draft existe deja`, `droits du proprietaire` | L'état ne correspond plus à l'inventaire | S'arrêter |
+   | Toute autre erreur (`must be owner`, `permission denied`, erreur de syntaxe) | Non prévu | S'arrêter, ne rien relancer |
+
+5. New query : relancer `08_inspect_legacy_schema.sql`. Il doit être **identique** au résultat de
+   l'étape 2, à l'exception de la ligne `-2` (heure d'exécution) et éventuellement de la ligne 25
+   (sessions). Le schéma `geonaf` est toujours présent et `geonaf_legacy_draft` absent : c'est la
+   preuve que rien n'a été écrit.
+6. Exporter les deux 08 et le message de 09 sous `geonaf-test_09sim_<AAAAMMJJ>.*`, hors dépôt et
+   hors OneDrive. Fermer les onglets sans les enregistrer.
+
+**Ne pas simuler sur `geonaf-dev` ni appliquer 09 sans une nouvelle autorisation, après examen du
+résultat.**

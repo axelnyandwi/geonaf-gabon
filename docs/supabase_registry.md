@@ -15,7 +15,7 @@ sont pas modifiées ; aucun indicateur n'est calculé.
 | D2-a1 | Problème sur Supabase | Traitement |
 |---|---|---|
 | `CREATE EXTENSION IF NOT EXISTS postgis` | PostGIS est déjà dans le schéma `extensions` ; si l'extension manquait, elle serait créée dans `public` | Supprimé ; précondition qui vérifie PostgreSQL ≥ 15, PostGIS ≥ 3.3 et la résolution du type `geometry` |
-| Type et fonctions PostGIS non qualifiés | Résolus seulement si `extensions` est dans le `search_path` | Chaque script commence par `set_config('search_path', 'pg_catalog, public, extensions', true)` (local à la requête) |
+| Type et fonctions PostGIS non qualifiés | Résolus seulement si `extensions` est dans le `search_path` | Chaque script commence par `set_config('search_path', 'pg_catalog, extensions, pg_temp', true)` (local à la requête ; `public` jamais parcouru, `pg_temp` en dernier : R5) |
 | Fonctions sans `search_path` fixé | Avertissement du linter Supabase ; risque de détournement | `SET search_path = ''` sur les trois fonctions (tout est qualifié) |
 | Vues par défaut | Exécutées avec les droits du propriétaire (alerte « security definer view ») | `WITH (security_invoker = true)` |
 | Rôles API `anon`, `authenticated`, `service_role` | Doivent n'avoir aucun accès | `REVOKE` explicite sur le schéma, les tables, séquences et fonctions ; schéma non exposé par la Data API (vérifié) |

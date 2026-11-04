@@ -4,7 +4,7 @@
 -- The local check rebuilds every record from record_document, recomputes its fingerprint, compares it
 -- with the file registry and compares the SHA-256 of the WKB returned by PostGIS with the local
 -- MultiPolygon conversion. The export holds public geoBoundaries data only (no secret).
-SELECT set_config('search_path', 'pg_catalog, public, extensions', true);
+SELECT set_config('search_path', 'pg_catalog, extensions, pg_temp', true);
 
 SELECT v.territory_id, v.version, v.kind, v.label, v.legal_status, v.geometry_sha256, v.file_sha256,
        v.storage_key, v.supersedes, v.record_fingerprint, v.record_document::text AS record_document,

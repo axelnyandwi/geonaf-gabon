@@ -56,7 +56,8 @@ FROM (
          coalesce((SELECT bool_or(has_schema_privilege(rolname, 'geonaf_legacy_draft', 'USAGE')) FROM api_roles
                    WHERE to_regnamespace('geonaf_legacy_draft') IS NOT NULL), false)::text
 
-  -- search_path: the migration resolves PostGIS through 'pg_catalog, public, extensions'. An object of
+  -- search_path: the scripts resolve PostGIS through 'pg_catalog, extensions, pg_temp' (R5), but the Python
+  -- layer still uses the connection default, which holds public (R5 bis). An object of
   -- the same name in public (searched before extensions) or in pg_temp would be bound for good to the
   -- constraints and indexes of 0001.
   UNION ALL SELECT 10, 'schema de PostGIS', 'extensions',
