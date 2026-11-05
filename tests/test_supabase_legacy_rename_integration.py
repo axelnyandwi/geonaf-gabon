@@ -12,12 +12,17 @@ What is proved here, on the PostgreSQL version of the test database (D2.9):
   the exact initial comment (NULL or not);
 - event triggers: a NOTIFY is cancelled with the simulation, a sequence increment is not (residual risk).
 What is not proved: the behaviour of the Supabase SQL Editor itself, the Supabase event triggers and roles.
+Destructive fixtures additionally require GEONAF_ALLOW_DESTRUCTIVE_TESTS=1, an exact
+GEONAF_TEST_DATABASE_NAME and GEONAF_TEST_INSTANCE_ID matching the database comment.
+See tests/postgis_support.py; a _test suffix alone never authorizes access.
 """
 
 import os
 from pathlib import Path
 
 import pytest
+
+from tests.postgis_support import isolated_connection
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPABASE = ROOT / "db" / "supabase"
@@ -40,9 +45,6 @@ FROM pg_namespace n WHERE n.nspname NOT LIKE 'pg\\_%' AND n.nspname <> 'informat
 """
 
 
-def conninfo() -> str:
-    return "postgresql://" + TEST_URL.split("://", 1)[1] if TEST_URL.startswith("postgresql+psycopg://") else TEST_URL
-
 
 def script(name: str) -> str:
     return (SUPABASE / name).read_text(encoding="utf-8")
@@ -51,14 +53,10 @@ def script(name: str) -> str:
 @pytest.fixture
 def connect():
     """Autocommit connection factory on an empty copy of the legacy schema (the SQL Editor runs in autocommit)."""
-    psycopg = pytest.importorskip("psycopg")
-    from psycopg.conninfo import conninfo_to_dict
-
-    if not str(conninfo_to_dict(conninfo()).get("dbname", "")).endswith("_test"):
-        pytest.fail("La base de test doit se terminer par « _test » (les schémas geonaf y sont supprimés).")
+    pytest.importorskip("psycopg")
 
     def factory(autocommit=True):
-        return psycopg.connect(conninfo(), autocommit=autocommit)
+        return isolated_connection(TEST_URL, autocommit=autocommit)
 
     with factory() as c:
         c.execute("DROP SCHEMA IF EXISTS geonaf CASCADE")

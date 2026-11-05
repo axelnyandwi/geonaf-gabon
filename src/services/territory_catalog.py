@@ -225,18 +225,37 @@ def stored_observations(option: TerritoryOption, store) -> StoredObservations:
     return StoredObservations(sha, acquisitions, store.indicators.results(sha))
 
 
-def referential_pairs(data_dir, level: str, iso3: str = "GAB", *, registry=None):
-    """(pairs, unmatched gbOpen, unmatched gbHumanitarian) by normalized name; nothing is merged or hidden."""
+def referential_pairs(data_dir, level: str, iso3: str = "GAB", *, registry=None, options=None):
+    """(pairs, unmatched gbOpen, unmatched gbHumanitarian) by normalized name; nothing is merged or hidden.
+
+    ``options``: {"gbOpen": ..., "gbHumanitarian": ...} already read in this rerun (no second read).
+    """
     from src.services.territory_comparison import match_by_normalized_name
 
-    registry = territory_registry(data_dir, registry)
-    open_ = admin_territories(data_dir, "gbOpen", level, iso3, registry=registry)
-    humanitarian = admin_territories(data_dir, "gbHumanitarian", level, iso3, registry=registry)
+    if options is None:
+        registry = territory_registry(data_dir, registry)
+        options = {release: admin_territories(data_dir, release, level, iso3, registry=registry)
+                   for release in ("gbOpen", "gbHumanitarian")}
+    open_, humanitarian = options["gbOpen"], options["gbHumanitarian"]
     pairs = match_by_normalized_name(open_, humanitarian)
     matched_a = {a.key for a, _ in pairs}
     matched_b = {b.key for _, b in pairs}
     return (pairs, tuple(o for o in open_ if o.key not in matched_a),
             tuple(o for o in humanitarian if o.key not in matched_b))
+
+
+def compare_options(a: TerritoryOption, b: TerritoryOption):
+    """Compare the two versions shown, read from the registry they come from; never another storage.
+
+    Both options must come from the same registry object (the store selected for this page): a file
+    record is never compared with a PostGIS record, and no registry is opened behind the caller's back.
+    """
+    from src.services.territory_comparison import compare_territories
+
+    if a.record is None or b.record is None or a.registry is None or a.registry is not b.registry:
+        raise ValueError("Comparaison refusée : les deux territoires doivent venir du même stockage.")
+    return compare_territories(a.registry, a.territory_id, b.territory_id, version_a=a.record.version,
+                               version_b=b.record.version)
 
 
 def import_custom_zone(data_dir, content: bytes, *, label: str, author: str, license_spdx: str, source_date: str,

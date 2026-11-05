@@ -19,7 +19,7 @@ when the store is opened: the first read does.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Mapping
 
@@ -32,7 +32,7 @@ MODE_LABELS = {FILE: "fichiers locaux", POSTGRES: "base PostGIS"}
 @dataclass(frozen=True)
 class DataStore:
     mode: str
-    description: str           # For logs and tools only (user@host): never shown in the interface.
+    description: str = field(repr=False)   # user@host for logs and tools only: never shown nor in repr.
     territories: object        # TerritoryRegistry | PostgisTerritoryRegistry (same read methods)
     acquisitions: object       # FileAcquisitionCatalog | PostgisAcquisitionCatalog
     indicators: object         # IndicatorResultStore | PostgisIndicatorStore

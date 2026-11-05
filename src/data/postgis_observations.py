@@ -3,7 +3,8 @@
 Import (:func:`apply_acquisition_import`, :func:`apply_indicator_import`), same rules as the territory
 import (``src.data.postgis_territory_registry.apply_import``):
 
-* one transaction under an advisory lock, R5 bis search path set before any PostGIS call;
+* one transaction under an advisory lock; the environment mark (``expected_environment``, mandatory) is
+  checked inside it before the first write; R5 bis search path set before any PostGIS call;
 * one journal row in ``geonaf.data_imports`` (scope, label, code version, counts, aggregate fingerprint);
 * what is missing is inserted, what is already identical is counted as existing, any divergence (same
   identity, other content) stops everything: nothing is overwritten;
@@ -27,7 +28,7 @@ from typing import Iterable
 from src.data.observations import (
     AcquisitionRecord, AcquisitionScan, IndicatorResult, acquisition_record, result_from_envelope,
 )
-from src.data.postgis_session import plain_read_transaction, set_postgis_search_path
+from src.data.postgis_session import check_environment, plain_read_transaction, set_postgis_search_path
 
 OBSERVATION_LOCK = "geonaf.observation_import"
 
@@ -51,10 +52,11 @@ def aggregate_sha256(fingerprints: Iterable[str]) -> str:
     return hashlib.sha256("\n".join(sorted(fingerprints)).encode("ascii")).hexdigest()
 
 
-def _open_journal(cursor, scope: str, source_label: str, code_version: str) -> int:
+def _open_journal(cursor, scope: str, source_label: str, code_version: str, expected_environment: str) -> int:
     if any(mark in source_label for mark in ("/", "\\", ":")):
         raise ObservationImportError("Le libellé de source ne doit pas être un chemin.")
     cursor.execute("SELECT pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtext(%s))", (OBSERVATION_LOCK,))
+    check_environment(cursor, expected_environment)        # Identity before any write.
     set_postgis_search_path(cursor)
     cursor.execute("INSERT INTO geonaf.data_imports (scope, source_label, code_version) VALUES (%s, %s, %s) "
                    "RETURNING import_id", (scope, source_label, code_version))
@@ -71,7 +73,8 @@ def _close_journal(cursor, import_id: int, seen: int, inserted: int, existing: i
 
 
 def apply_acquisition_import(connection, records: Iterable[AcquisitionRecord], *, source_label: str,
-                             code_version: str, apply: bool = False) -> ObservationImportReport:
+                             code_version: str, expected_environment: str,
+                             apply: bool = False) -> ObservationImportReport:
     """Insert missing products and manifests in one transaction; without ``apply`` everything is rolled back."""
     import psycopg
     from psycopg.types.json import Jsonb
@@ -82,7 +85,7 @@ def apply_acquisition_import(connection, records: Iterable[AcquisitionRecord], *
     aggregate = aggregate_sha256(r.manifest_sha256 for r in records)
     inserted = existing = 0
     with connection.transaction(), connection.cursor() as cursor:
-        import_id = _open_journal(cursor, "acquisitions", source_label, code_version)
+        import_id = _open_journal(cursor, "acquisitions", source_label, code_version, expected_environment)
         for record in records:
             cursor.execute("INSERT INTO geonaf.acquisitions (collection, product_id, acquired_at) VALUES (%s, %s, %s) "
                            "ON CONFLICT (collection, product_id) DO NOTHING",
@@ -141,7 +144,8 @@ def result_row(result: IndicatorResult) -> dict:
 
 
 def apply_indicator_import(connection, results: Iterable[IndicatorResult], *, source_label: str,
-                           code_version: str, apply: bool = False) -> ObservationImportReport:
+                           code_version: str, expected_environment: str,
+                           apply: bool = False) -> ObservationImportReport:
     """Insert missing definitions and results; the geometries must already be in the database."""
     import psycopg
     from psycopg.types.json import Jsonb
@@ -152,7 +156,7 @@ def apply_indicator_import(connection, results: Iterable[IndicatorResult], *, so
     aggregate = aggregate_sha256(r.result_sha256 for r in results)
     inserted = existing = 0
     with connection.transaction(), connection.cursor() as cursor:
-        import_id = _open_journal(cursor, "indicators", source_label, code_version)
+        import_id = _open_journal(cursor, "indicators", source_label, code_version, expected_environment)
         wanted = sorted({r.geometry_sha256 for r in results})
         cursor.execute("SELECT geometry_sha256 FROM geonaf.geometries WHERE geometry_sha256 = ANY(%s)", (wanted,))
         missing = sorted(set(wanted) - {row[0] for row in cursor.fetchall()})

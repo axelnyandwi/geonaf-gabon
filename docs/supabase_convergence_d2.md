@@ -19,7 +19,7 @@ dans l'éditeur (section 7 de `supabase_security_d2_2.md`). Ses résultats ne va
 | État | Signification | Prochaine étape (✋ = autorisation explicite) |
 |---|---|---|
 | S0 | Schéma hérité `geonaf` en place | 08, simulation 09, ✋ 09 application, puis 10_verify (verdict GO) |
-| S1 | Hérité renommé et marqué, 0001 absente | 10_verify (GO) ; 00_preflight ; ✋ 01_roles si les rôles manquent ; 10_security_precheck dans sa version versionnée et contrôles S2 à S8 ; simulation 02 ; ✋ 02 application |
+| S1 | Hérité renommé et marqué, 0001 absente | 10_verify (GO) ; 00_preflight ; ✋ 01_roles si les rôles manquent ; 10_security_precheck dans sa version versionnée et contrôles S2 à S8 ; si 10 l.50 ou l.51 restent fausses après 01 : ✋ 01b_grant_postgis_usage puis 10 à nouveau ; simulation 02 ; ✋ 02 application |
 | S3 | 0001 appliquée, schéma non marqué | ✋ 03_mark_environment_<test\|dev>, puis 04_verify_schema |
 | S4 | 0001 appliquée et marquée | 04_verify_schema ; ✋ import des territoires (05/06) ; simulation 12 ; ✋ 12 application |
 | S5 | 0001 et 0002 appliquées | ✋ imports D3 (générateur SQL Editor à écrire, voir section 4) |
@@ -33,8 +33,30 @@ Deux points de reconnaissance :
 - 0001 est reconnue à `geonaf.source_releases` et 0002 à `geonaf.acquisition_manifests`. Le schéma
   hérité possède aussi des tables `territory_versions` et `indicator_results` : ces noms ne prouvent
   rien (défaut trouvé par le test d'intégration de 11).
-- 12 refuse de s'exécuter si 0001 n'est pas inscrite avec son corps revu (`719e7e84…`), si 0002 est
-  déjà inscrite, ou si le schéma n'est pas marqué.
+- 12 refuse de s'exécuter si le schéma est absent, **non marqué** ou porte une autre marque que
+  `geonaf-environment:dev|test`, si 0001 n'est pas inscrite avec son corps revu (`719e7e84…`), ou si
+  0002 est déjà inscrite. Correction de l'audit D2-D4 : la version précédente utilisait
+  `NOT IN (...)`, et un commentaire `NULL` laissait passer un schéma non marqué. Ce défaut a été
+  reproduit sur un PostgreSQL réel, puis chaque refus a été testé sur ce serveur.
+
+### Conséquences pour les déploiements (audit D2-D4, 2026-11-05)
+
+- **0002 n'a été appliquée nulle part** à notre connaissance : ni Supabase (aucun accès), ni base locale
+  avec PostGIS. Modifier son corps reste donc sans conflit. Seule modification : la vue
+  `acquisitions_latest` départage les ingestions de même date par la plus grande empreinte, comme le
+  code Python.
+- Les scripts 12 ont été **régénérés**. Toute copie antérieure (téléchargée, collée ou archivée) est
+  périmée et ne doit pas être utilisée. Empreintes SHA-256 :
+  - simulation : `e8ab13ed…` ;
+  - application : `68597154…`.
+  Le corps de 0001 et les scripts 02 sont inchangés.
+- Les rôles GEONAF doivent pouvoir utiliser le schéma de PostGIS : 10 l.50 à l.52 et 11 le mesurent.
+  `01b_grant_postgis_usage.sql` accorde **USAGE seul**, et seulement si le droit effectif manque. On ne
+  suppose rien des droits par défaut de Supabase.
+- Les outils d'import et le mode PostGIS exigent `GEONAF_DB_ENV`, `verify-full` et
+  `GEONAF_DB_SSLROOTCERT` pour un hôte distant. L'autorité de certification de Supabase est à fournir
+  par l'administrateur ; la compatibilité de `verify-full` avec le pooler Supabase n'est pas encore
+  prouvée.
 
 ## 3. Comparer test et dev
 

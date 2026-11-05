@@ -329,3 +329,14 @@ def test_import_tool_refuses_a_partial_batch(acquisitions, monkeypatch, capsys):
     code, out, err = run_tool(["--data-dir", str(acquisitions), "--source-label", "poste", "--scope", "acquisitions"],
                               monkeypatch, capsys)
     assert code == 1 and "S2A_EARLIER" in err and "aucun import partiel" in err
+
+
+def test_latest_breaks_equal_ingestion_dates_by_the_greatest_digest_like_the_view(acquisitions):
+    """Parity with geonaf.acquisitions_latest (ORDER BY ingested_at DESC, manifest_sha256 DESC)."""
+    record = obs.FileAcquisitionCatalog(acquisitions).scan().records[0]
+    twin = obs.acquisition_record({**record.document, "stac": {**record.document["stac"],
+                                                                "source": "https://stac-bis.example/v1"}})
+    assert twin.ingested_at_utc == record.ingested_at_utc and twin.manifest_sha256 != record.manifest_sha256
+    for order in ((record, twin), (twin, record)):
+        latest = obs.AcquisitionScan(order, ()).latest()
+        assert [r.manifest_sha256 for r in latest] == [max(record.manifest_sha256, twin.manifest_sha256)]

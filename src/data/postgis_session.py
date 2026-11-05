@@ -14,8 +14,15 @@ Two guarantees are given to every transaction that runs a PostGIS function:
   transaction is ``READ ONLY`` with a local statement timeout, the ``geonaf`` schema must carry the mark of
   the declared environment, and the transaction is always rolled back and the connection closed.
 
+* **Connections** (:func:`connect_target`): the only way GEONAF opens a psycopg connection, for the
+  application and for the import tools alike. TLS keywords come from the validated target (remote:
+  ``verify-full`` with an explicit CA file) and override anything weaker left in the URL.
+* **Writes** (:func:`check_environment`): the import functions verify the environment mark inside their
+  own transaction, before their first write.
+
 Driver errors are converted to :class:`~src.data.database.DatabaseConnectionError` whose message names
-only the error type: no URL, password, host or user (a Supabase host and user name the project). ``psycopg`` is imported inside functions only: the file backend never loads it.
+only the kind of failure: no URL, password, host or user (a Supabase host and user name the project).
+``psycopg`` is imported inside functions only: the file backend never loads it.
 """
 
 from __future__ import annotations
@@ -23,7 +30,9 @@ from __future__ import annotations
 from contextlib import contextmanager
 from typing import Callable, Iterator
 
-from src.data.database import SCHEMA, DatabaseConnectionError, DatabaseTarget, check_identity
+from src.data.database import (
+    ENVIRONMENTS, SCHEMA, DatabaseConfigError, DatabaseConnectionError, DatabaseTarget, check_identity, connection_parameters,
+)
 
 POSTGIS_SCHEMA_QUERY = ("SELECT n.nspname FROM pg_catalog.pg_extension AS e "
                         "JOIN pg_catalog.pg_namespace AS n ON n.oid = e.extnamespace WHERE e.extname = 'postgis'")
@@ -53,17 +62,28 @@ def set_postgis_search_path(cursor) -> str:
     return schema
 
 
-def _driver_connect(target: DatabaseTarget):
-    """psycopg 3 connection to ``target`` (no server-side prepared statements: Supavisor transaction mode)."""
+def check_environment(cursor, environment: str) -> None:
+    """Refuse the database unless its ``geonaf`` schema carries the mark of ``environment``.
+
+    Called inside the transaction that will write, before the first write: an absent, unexpected or
+    other environment's mark stops everything (EnvironmentIdentityError).
+    """
+    if environment not in ENVIRONMENTS:
+        raise DatabaseConfigError("Environnement attendu invalide : " + " ou ".join(ENVIRONMENTS) + " seulement.")
+    cursor.execute(MARK_QUERY, (SCHEMA,))
+    row = cursor.fetchone()
+    check_identity(row[0] if row else None, environment)
+
+
+def connect_target(target: DatabaseTarget):
+    """psycopg 3 connection to a validated target (no server-side prepared statements: Supavisor)."""
     import psycopg
 
-    from src.data.postgis_territory_registry import psycopg_conninfo
-
-    options = {"connect_timeout": target.connect_timeout_s, "application_name": "geonaf",
-               "prepare_threshold": None}
-    if target.sslmode:
-        options["sslmode"] = target.sslmode
-    return psycopg.connect(psycopg_conninfo(target.url), **options)
+    parameters = connection_parameters(target)
+    try:
+        return psycopg.connect(**parameters)
+    except psycopg.Error as error:
+        raise DatabaseConnectionError(driver_error_message(error)) from None
 
 
 class PostgisSessions:
@@ -71,7 +91,7 @@ class PostgisSessions:
 
     def __init__(self, target: DatabaseTarget, *, connect: Callable | None = None):
         self.target = target
-        self._connect = connect or (lambda: _driver_connect(target))
+        self._connect = connect or (lambda: connect_target(target))
 
     def describe(self) -> str:
         return self.target.describe()
@@ -92,9 +112,7 @@ class PostgisSessions:
             connection.read_only = True
             with connection.cursor() as cursor:
                 cursor.execute(TIMEOUT_QUERY, (f"{self.target.statement_timeout_ms}ms",))
-                cursor.execute(MARK_QUERY, (SCHEMA,))
-                row = cursor.fetchone()
-                check_identity(row[0] if row else None, self.target.environment)
+                check_environment(cursor, self.target.environment)
                 set_postgis_search_path(cursor)
             yield connection
         except driver_errors as error:
@@ -108,9 +126,20 @@ class PostgisSessions:
     def _message(self, error) -> str:
         """User message: no host, user or driver text (they name the Supabase project).
 
-        The driver error stays attached as ``__context__`` for the server log, which masks it.
+        A refused privilege or a cancelled statement is not an unavailable database: each gets its own
+        message. The driver error stays attached as ``__context__`` for the server log, which masks it.
         """
-        return f"Base PostGIS indisponible ({type(error).__name__}). Réessayer plus tard."
+        return driver_error_message(error)
+
+
+def driver_error_message(error) -> str:
+    """Public message for a psycopg error, by SQLSTATE class only (never the driver text)."""
+    sqlstate = str(getattr(error, "sqlstate", "") or "")
+    if sqlstate == "42501":
+        return "Droits insuffisants sur la base PostGIS pour cette lecture (InsufficientPrivilege)."
+    if sqlstate == "57014":
+        return "Délai maximal de requête dépassé sur la base PostGIS (QueryCanceled)."
+    return f"Base PostGIS indisponible ({type(error).__name__}). Réessayer plus tard."
 
 
 @contextmanager

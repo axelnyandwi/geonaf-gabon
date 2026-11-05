@@ -330,8 +330,9 @@ def test_file_backend_never_imports_the_database_driver():
     users = [p.relative_to(ROOT).as_posix() for p in (ROOT / "src").rglob("*.py")
              if re.search(r"^(import|from)\s+(psycopg|sqlalchemy|alembic)", p.read_text(encoding="utf-8"), re.M)]
     assert users == []                       # Imported lazily, inside functions of the PostGIS module only.
-    lazy = (ROOT / "src" / "data" / "postgis_territory_registry.py").read_text(encoding="utf-8")
-    assert "        import psycopg" in lazy
+    for name in ("postgis_territory_registry.py", "postgis_session.py", "postgis_observations.py"):
+        lazy = (ROOT / "src" / "data" / name).read_text(encoding="utf-8")
+        assert re.search(r"^ {4,}import psycopg$", lazy, re.M), name        # Inside a function only.
 
 
 def test_database_dependencies_stay_out_of_requirements_txt():

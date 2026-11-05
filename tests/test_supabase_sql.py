@@ -307,7 +307,8 @@ def test_r5_bis_every_python_module_calling_postgis_sets_the_transaction_search_
 def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
     scripts = sorted(SUPABASE.glob("*.sql"))
     assert [p.name for p in scripts] == [
-        "00_preflight.sql", "01_roles.sql", "02_migration_0001_application.sql", "02_migration_0001_simulation.sql",
+        "00_preflight.sql", "01_roles.sql", "01b_grant_postgis_usage.sql", "02_migration_0001_application.sql",
+        "02_migration_0001_simulation.sql",
         "03_mark_environment_dev.sql", "03_mark_environment_test.sql", "04_verify_schema.sql",
         "07_export_parity.sql", "08_inspect_legacy_schema.sql", "09_legacy_schema_fingerprint.sql",
         "09_rename_legacy_schema_application.sql", "09_rename_legacy_schema_rollback.sql",
@@ -611,10 +612,15 @@ def test_migration_0002_scripts_are_generated_from_the_unchanged_body(name, appl
     body = s.MIGRATION_0002.read_text(encoding="utf-8")
     assert body.rstrip() in text and f"-- Body SHA-256: {hashlib.sha256(body.encode()).hexdigest()}" in text
     assert text.index(s.SEARCH_PATH) < text.index("-- ===== Body of db/sql/0002")
-    # Preconditions before the body: 0001 recorded with the reviewed body, no 0002 yet, schema marked.
+    # Preconditions before the body (their behaviour is executed in test_supabase_corrections_integration.py):
+    # schema marked dev or test, 0001 recorded with the reviewed body, no 0002 yet.
     preconditions = text.split("-- ===== Body of")[0]
-    assert f"'0001_territorial_registry' AND body_sha256 = '{BODY_0001_SHA256}'" in preconditions
-    assert "migration 0002 deja enregistree" in preconditions and "03 a executer avant 0002" in preconditions
+    assert f"USING '0001_territorial_registry', '{BODY_0001_SHA256}'" in preconditions
+    for refusal in ("schema geonaf absent", "schema geonaf non marque (03 a executer avant 0002)",
+                    "marque inattendue sur le schema geonaf", "migration 0001 non enregistree",
+                    "migration 0001 absente ou differente du corps revu", "migration 0002 deja enregistree"):
+        assert refusal in preconditions, refusal
+    assert " NOT IN (" not in preconditions          # Three-valued NOT IN let a NULL mark through (D2-D4 audit).
     assert ("GEONAF SIMULATION DE MIGRATION 0002 REUSSIE, AUCUNE ECRITURE" in text) is (not apply)
     assert not TRANSACTION_CONTROL.search(text)
 

@@ -8,6 +8,9 @@ dropped and recreated there). Two levels, each skip names what is missing:
 * PostGIS available (``CREATE EXTENSION postgis`` done by an administrator): migrations 0001 and 0002 with
   Alembic, idempotent imports of acquisitions and indicator results, parity between the file and PostGIS
   stores, R5 bis against a shadowing function, GiST index usable by the spatial queries.
+Destructive fixtures additionally require GEONAF_ALLOW_DESTRUCTIVE_TESTS=1, an exact
+GEONAF_TEST_DATABASE_NAME and GEONAF_TEST_INSTANCE_ID matching the database comment.
+See tests/postgis_support.py; a _test suffix alone never authorizes access.
 """
 
 from datetime import datetime, timezone
@@ -25,20 +28,16 @@ from src.data.postgis_session import PostgisSessions, PostgisUnavailableError
 from tests.test_observations import acquisitions, make_indicator, zone_file  # noqa: F401  (fixture)
 from tests.test_postgis_territory_unit import assert_parity, registry  # noqa: F401  (fixture)
 
+from tests.postgis_support import isolated_connection, configure_alembic
+
 ROOT = Path(__file__).resolve().parents[1]
 TEST_URL = os.environ.get("GEONAF_TEST_DATABASE_URL", "").strip()
 pytestmark = [pytest.mark.postgis,
               pytest.mark.skipif(not TEST_URL, reason="GEONAF_TEST_DATABASE_URL non défini : base locale requise.")]
 
 
-def conninfo() -> str:
-    return pg.psycopg_conninfo(TEST_URL if "://" in TEST_URL else "postgresql://" + TEST_URL)
-
-
-def connect(**options):
-    import psycopg
-
-    return psycopg.connect(conninfo(), **options)
+def connect(*, autocommit=False):
+    return isolated_connection(TEST_URL, autocommit=autocommit)
 
 
 def has_postgis() -> bool:
@@ -49,11 +48,6 @@ def has_postgis() -> bool:
 @pytest.fixture
 def local():
     pytest.importorskip("psycopg")
-    from psycopg.conninfo import conninfo_to_dict
-
-    info = conninfo_to_dict(conninfo())
-    if not str(info.get("dbname", "")).endswith("_test") or info.get("host") not in ("127.0.0.1", "localhost", "::1"):
-        pytest.fail("Base locale dont le nom se termine par « _test » exigée.")
     with connect(autocommit=True) as c:
         c.execute("DROP SCHEMA IF EXISTS geonaf CASCADE")
     yield
@@ -89,10 +83,8 @@ def test_session_on_a_marked_database_without_postgis_says_so(local):
 
 
 def test_connection_error_names_no_host_user_or_password(local):
-    from psycopg.conninfo import conninfo_to_dict
-
-    info = conninfo_to_dict(conninfo())
-    url = f"postgresql+psycopg://geonaf_reader:Secret-Value-123@127.0.0.1:1/{info['dbname']}"
+    target = parse_target(TEST_URL, "test")
+    url = f"postgresql+psycopg://geonaf_reader:Secret-Value-123@127.0.0.1:1/{target.database}"
     with pytest.raises(DatabaseConnectionError) as caught:
         with sessions(url=url).read():
             pass
@@ -113,7 +105,7 @@ def migrated(local, monkeypatch):
     from alembic import command
     from alembic.config import Config
 
-    monkeypatch.setenv(pg.URL_VARIABLE, TEST_URL)
+    configure_alembic(monkeypatch, TEST_URL)
     with connect(autocommit=True) as c:
         c.execute("DROP TABLE IF EXISTS public.alembic_version")
     config = Config(str(ROOT / "db" / "alembic.ini"))
@@ -142,11 +134,11 @@ def test_acquisition_import_is_idempotent_journaled_and_immutable(migrated, acqu
 
     records = obs.FileAcquisitionCatalog(acquisitions).scan().records
     with connect() as c:
-        dry = pgo.apply_acquisition_import(c, records, source_label="lot de test", code_version="t")
+        dry = pgo.apply_acquisition_import(c, records, source_label="lot de test", code_version="t", expected_environment="test")
         assert (dry.applied, dry.inserted, dry.import_id) == (False, 2, None)
         assert c.execute("SELECT count(*) FROM geonaf.acquisition_manifests").fetchone()[0] == 0
-        first = pgo.apply_acquisition_import(c, records, source_label="lot de test", code_version="t", apply=True)
-        again = pgo.apply_acquisition_import(c, records, source_label="lot de test", code_version="t", apply=True)
+        first = pgo.apply_acquisition_import(c, records, source_label="lot de test", code_version="t", expected_environment="test", apply=True)
+        again = pgo.apply_acquisition_import(c, records, source_label="lot de test", code_version="t", expected_environment="test", apply=True)
         assert (first.inserted, again.inserted, again.existing) == (2, 0, 2)
         journal = c.execute("SELECT scope, records_seen, records_inserted, finished_at IS NOT NULL "
                             "FROM geonaf.data_imports ORDER BY import_id").fetchall()
@@ -169,16 +161,16 @@ def test_indicator_import_needs_the_geometry_then_reads_back_identically(migrate
                         computed_at=datetime(2026, 11, 5, tzinfo=timezone.utc))
     with connect() as c:
         with pytest.raises(pgo.ObservationImportError, match="registre de territoires"):
-            pgo.apply_indicator_import(c, [result], source_label="lot", code_version="t", apply=True)
-        pg.apply_import(c, pg.plan_import(registry), source_label="registre", code_version="t", apply=True)
-        assert pgo.apply_indicator_import(c, [result], source_label="lot", code_version="t", apply=True).inserted == 1
-        assert pgo.apply_indicator_import(c, [result], source_label="lot", code_version="t", apply=True).existing == 1
+            pgo.apply_indicator_import(c, [result], source_label="lot", code_version="t", expected_environment="test", apply=True)
+        pg.apply_import(c, pg.plan_import(registry), source_label="registre", code_version="t", expected_environment="test", apply=True)
+        assert pgo.apply_indicator_import(c, [result], source_label="lot", code_version="t", expected_environment="test", apply=True).inserted == 1
+        assert pgo.apply_indicator_import(c, [result], source_label="lot", code_version="t", expected_environment="test", apply=True).existing == 1
     assert pgo.PostgisIndicatorStore(sessions=sessions()).results() == store.results()
 
 
 def test_postgis_store_reads_what_the_file_store_reads(migrated, registry, monkeypatch):  # noqa: F811
     with connect() as c:
-        pg.apply_import(c, pg.plan_import(registry), source_label="registre", code_version="t", apply=True)
+        pg.apply_import(c, pg.plan_import(registry), source_label="registre", code_version="t", expected_environment="test", apply=True)
     environ = {"GEONAF_DB_BACKEND": "postgres", "GEONAF_DB_ENV": "test",
                "GEONAF_DATABASE_URL": TEST_URL.replace("postgresql://", "postgresql+psycopg://", 1)}
     store = storage.open_store(registry.data_dir, environ)
@@ -193,13 +185,21 @@ def test_postgis_store_reads_what_the_file_store_reads(migrated, registry, monke
 
 def test_r5_bis_a_shadowing_function_on_the_default_path_is_never_used(migrated, registry):  # noqa: F811
     with connect() as c:
-        pg.apply_import(c, pg.plan_import(registry), source_label="registre", code_version="t", apply=True)
+        pg.apply_import(c, pg.plan_import(registry), source_label="registre", code_version="t", expected_environment="test", apply=True)
     with connect(autocommit=True) as c:
         c.execute("CREATE SCHEMA IF NOT EXISTS geonaf_shadow")
         c.execute("CREATE OR REPLACE FUNCTION geonaf_shadow.st_makeenvelope(float8, float8, float8, float8, integer) "
                   "RETURNS geometry LANGUAGE sql AS 'SELECT NULL::geometry'")
     try:
-        shadowed = lambda: connect(options="-c search_path=geonaf_shadow,public,extensions")  # noqa: E731
+        def shadowed():
+            connection = connect(autocommit=True)
+            try:
+                connection.execute("SET search_path = geonaf_shadow, public, extensions")
+                connection.autocommit = False
+                return connection
+            except BaseException:
+                connection.close()
+                raise
         with shadowed() as c:     # Without R5 bis the shadow wins: the envelope is NULL, nothing intersects.
             assert c.execute("SELECT st_makeenvelope(0, 0, 1, 1, 4326) IS NULL").fetchone()[0] is True
         database = pg.PostgisTerritoryRegistry(shadowed, registry.data_dir)
@@ -296,6 +296,9 @@ def test_migration_0002_constraints_triggers_and_view_on_a_real_server(stand_in_
         c.execute(INSERT_MANIFEST, _manifest_row("a" * 64, "2025-01-26T12:00:00+00") + (journal,))
         c.execute(INSERT_MANIFEST, _manifest_row("b" * 64, "2025-02-01T00:00:00+00") + (journal,))
         assert c.execute("SELECT manifest_sha256 FROM geonaf.acquisitions_latest").fetchall() == [("b" * 64,)]
+        # Equal ingestion dates: the greatest digest wins, as in AcquisitionScan.latest() (audit, parity).
+        c.execute(INSERT_MANIFEST, _manifest_row("e" * 64, "2025-02-01T00:00:00+00") + (journal,))
+        assert c.execute("SELECT manifest_sha256 FROM geonaf.acquisitions_latest").fetchall() == [("e" * 64,)]
         refused = [
             ("UPDATE geonaf.acquisitions SET acquired_at = now()", None, "immuables"),
             ("DELETE FROM geonaf.acquisition_manifests", None, "immuables"),

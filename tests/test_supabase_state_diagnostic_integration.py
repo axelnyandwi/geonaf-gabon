@@ -7,12 +7,17 @@ Proved here (PostgreSQL of the test server): the request is read only and writes
 reachable without PostGIS are recognised: V (no GEONAF schema), S0 (legacy schema in place), S1 (renamed and
 marked), INCOHERENT (anything else). States S3 to S5 need migration 0001, hence PostGIS: they are covered by
 the static test of tests/test_supabase_state_diagnostic.py only, and by the run on geonaf-test.
+Destructive fixtures additionally require GEONAF_ALLOW_DESTRUCTIVE_TESTS=1, an exact
+GEONAF_TEST_DATABASE_NAME and GEONAF_TEST_INSTANCE_ID matching the database comment.
+See tests/postgis_support.py; a _test suffix alone never authorizes access.
 """
 
 import os
 from pathlib import Path
 
 import pytest
+
+from tests.postgis_support import isolated_connection
 
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPT = (ROOT / "db" / "supabase" / "11_state_diagnostic.sql").read_text(encoding="utf-8")
@@ -25,19 +30,11 @@ MARK = "geonaf-legacy: schema herite trouve le 2026-11-03, renomme avant la migr
        "commentaire initial (JSON) : null"
 
 
-def conninfo() -> str:
-    return "postgresql://" + TEST_URL.split("://", 1)[1] if TEST_URL.startswith("postgresql+psycopg://") else TEST_URL
-
 
 @pytest.fixture
 def db():
-    psycopg = pytest.importorskip("psycopg")
-    from psycopg.conninfo import conninfo_to_dict
-
-    info = conninfo_to_dict(conninfo())
-    if not str(info.get("dbname", "")).endswith("_test") or info.get("host") not in ("127.0.0.1", "localhost", "::1"):
-        pytest.fail("Base locale dont le nom se termine par « _test » exigée.")
-    with psycopg.connect(conninfo(), autocommit=True) as c:
+    pytest.importorskip("psycopg")
+    with isolated_connection(TEST_URL, autocommit=True) as c:
         for schema in ("geonaf", "geonaf_legacy_draft"):
             c.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
         yield c

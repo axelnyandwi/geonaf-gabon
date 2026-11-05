@@ -8,6 +8,9 @@ under the data directory.
     python scripts/import_territories_postgis.py --data-dir <data> --source-label "registre local" --apply
 
 * without a database URL (or with ``--offline``): verification and plan only;
+* with a URL, ``GEONAF_DB_ENV`` (dev or test) is mandatory: the target is validated (remote host:
+  ``verify-full`` and ``GEONAF_DB_SSLROOTCERT``), and the schema mark is checked inside the import
+  transaction before any write;
 * with ``GEONAF_DATABASE_URL`` and without ``--apply``: the import runs in a transaction that is
   rolled back, and the report gives what would be inserted;
 * with ``--apply``: the transaction is committed; a second run inserts nothing.
@@ -26,8 +29,11 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from src.data.database import (  # noqa: E402
+    DatabaseConfigError, EnvironmentIdentityError, load_target,
+)
 from src.data.postgis_territory_registry import (  # noqa: E402
-    URL_VARIABLE, TerritoryImportError, apply_import, connect_from_env, plan_import,
+    URL_VARIABLE, TerritoryImportError, apply_import, plan_import,
 )
 from src.data.territory_registry import TerritoryRegistry  # noqa: E402
 
@@ -75,11 +81,23 @@ def main(argv=None) -> int:
         print("Mode vérification seule : aucune connexion à une base.")
         return 0
     try:
-        with connect_from_env()() as connection:
+        target = load_target()
+    except DatabaseConfigError as error:
+        print(f"Configuration refusée : {error}", file=sys.stderr)
+        return 2
+    from src.data.postgis_session import connect_target, driver_error_message
+
+    try:
+        with connect_target(target) as connection:
             report = apply_import(connection, plan, source_label=arguments.source_label,
-                                  code_version=arguments.code_version or code_version(), apply=arguments.apply)
-    except TerritoryImportError as error:
+                                  code_version=arguments.code_version or code_version(),
+                                  expected_environment=target.environment, apply=arguments.apply)
+    except (TerritoryImportError, EnvironmentIdentityError, DatabaseConfigError) as error:
         print(f"Import refusé, base inchangée : {error}", file=sys.stderr)
+        return 1
+    except Exception as error:  # noqa: BLE001 - driver errors name the host: SQLSTATE class only.
+        message = driver_error_message(error) if hasattr(error, "sqlstate") else type(error).__name__
+        print(f"Import refusé, base inchangée : {message}", file=sys.stderr)
         return 1
     verb = "insérées" if report.applied else "à insérer (transaction annulée)"
     print(f"Versions {verb} : {report.inserted} ; déjà présentes et identiques : {report.existing}.")

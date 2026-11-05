@@ -149,7 +149,9 @@ def _stored(data_dir, option):
             "Grille": f"{a.grid_crs}, {a.grid_resolution_m:g} m"} for a in found.acquisitions]),
             hide_index=True, width="stretch")
     else:
-        st.info("Aucune acquisition enregistrée dont la grille recoupe cette zone.")
+        st.info("Aucune acquisition à manifeste d'ingestion strict dont la grille recoupe cette zone. Les "
+                "extraits du paquet de démonstration (subset_manifest.json) ne sont pas listés ici : voir la "
+                "page des acquisitions.")
     if found.results:
         st.dataframe(pd.DataFrame([{
             "Indicateur": r.indicator.label,
@@ -221,13 +223,16 @@ def _comparison(data_dir):
                "changement temporel réel. Les deux contours restent distincts.")
     level = st.selectbox("Niveau", list(catalog.LEVELS), index=2, format_func=catalog.LEVELS.get,
                          key="compare_level")
-    missing = [release for release in catalog.REFERENTIALS if not catalog.admin_territories(data_dir, release, level)]
+    registry = active_store(data_dir).territories        # One store for the whole tab: no mixed sources.
+    options = {release: catalog.admin_territories(data_dir, release, level, registry=registry)
+               for release in catalog.REFERENTIALS}
+    missing = [release for release, found in options.items() if not found]
     for release in missing:
         st.info(f"{catalog.REFERENTIALS[release]} non chargé à ce niveau.")
         _load_button(data_dir, release, level, f"compare_load_{release}_{level}")
     if missing:
         return
-    pairs, only_open, only_humanitarian = catalog.referential_pairs(data_dir, level)
+    pairs, only_open, only_humanitarian = catalog.referential_pairs(data_dir, level, options=options)
     if not pairs:
         st.info("Aucune paire d'unités de même nom normalisé.")
         return
@@ -235,10 +240,7 @@ def _comparison(data_dir):
     index = names.index("Libreville") if "Libreville" in names else 0
     a, b = pairs[st.selectbox("Unité (paires par nom normalisé, à vérifier)", range(len(pairs)), index=index,
                                 format_func=lambda i: names[i], key="compare_pair")]
-    from src.services.territory_comparison import compare_territories
-    from src.data.territory_registry import TerritoryRegistry
-
-    result = compare_territories(TerritoryRegistry(Path(data_dir)), a.territory_id, b.territory_id)
+    result = catalog.compare_options(a, b)
     metrics = st.columns(5)
     metrics[0].metric("gbOpen (km²)", format_surface(result.area_a_km2))
     metrics[1].metric("gbHumanitarian (km²)", format_surface(result.area_b_km2))

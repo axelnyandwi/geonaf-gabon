@@ -194,12 +194,13 @@ CREATE TRIGGER acquisition_manifests_check BEFORE INSERT ON geonaf.acquisition_m
 -- Views -----------------------------------------------------------------------------------------
 
 -- Latest ingestion of every product (the most recent manifest), with the age of the observation
--- left to the reader: acquired_at and ingested_at are both given, never merged.
+-- left to the reader: acquired_at and ingested_at are both given, never merged. Equal ingestion
+-- dates are broken by the greatest manifest digest, exactly as AcquisitionScan.latest() in Python.
 CREATE VIEW geonaf.acquisitions_latest WITH (security_invoker = true) AS
   SELECT DISTINCT ON (collection, product_id) collection, product_id, acquired_at, ingested_at, grid_crs,
          grid_resolution_m, footprint, integrity_mode, manifest_sha256
   FROM geonaf.acquisition_manifests
-  ORDER BY collection, product_id, ingested_at DESC, manifest_sha256;
+  ORDER BY collection, product_id, ingested_at DESC, manifest_sha256 DESC;
 
 -- Privileges (same model as 0001) -------------------------------------------------------------------
 REVOKE ALL ON geonaf.data_imports, geonaf.acquisitions, geonaf.acquisition_manifests, geonaf.indicator_result_kinds,

@@ -6,6 +6,9 @@ Database part (marker ``postgis``): on a LOCAL throwaway PostgreSQL only (``GEON
 name ending with ``_test``; the geonaf and geonaf_legacy_draft schemas are dropped and recreated there). The
 rename is done directly here with the mark of 09, so these tests never depend on the working copy of
 09_rename_legacy_schema_application.sql (whose confirmation line may hold a value typed for a real run).
+Destructive fixtures additionally require GEONAF_ALLOW_DESTRUCTIVE_TESTS=1, an exact
+GEONAF_TEST_DATABASE_NAME and GEONAF_TEST_INSTANCE_ID matching the database comment.
+See tests/postgis_support.py; a _test suffix alone never authorizes access.
 """
 
 import os
@@ -13,6 +16,8 @@ from pathlib import Path
 import re
 
 import pytest
+
+from tests.postgis_support import isolated_connection
 
 ROOT = Path(__file__).resolve().parents[1]
 VERIFY = ROOT / "db" / "supabase" / "10_verify_legacy_schema_rename.sql"
@@ -68,9 +73,6 @@ needs_db = [pytest.mark.postgis,
             pytest.mark.skipif(not TEST_URL, reason="GEONAF_TEST_DATABASE_URL non défini : base locale requise.")]
 
 
-def conninfo() -> str:
-    return "postgresql://" + TEST_URL.split("://", 1)[1] if TEST_URL.startswith("postgresql+psycopg://") else TEST_URL
-
 
 def run(c, sql: str):
     cursor = c.execute(sql.encode("utf-8"))
@@ -83,13 +85,8 @@ def run(c, sql: str):
 @pytest.fixture
 def db():
     """Autocommit connection on a legacy schema shaped like geonaf-test: 8 empty tables, RLS on, no policy."""
-    psycopg = pytest.importorskip("psycopg")
-    from psycopg.conninfo import conninfo_to_dict
-
-    info = conninfo_to_dict(conninfo())
-    if not str(info.get("dbname", "")).endswith("_test") or info.get("host") not in ("127.0.0.1", "localhost", "::1"):
-        pytest.fail("Base locale dont le nom se termine par « _test » exigée.")
-    with psycopg.connect(conninfo(), autocommit=True) as c:
+    pytest.importorskip("psycopg")
+    with isolated_connection(TEST_URL, autocommit=True) as c:
         for schema in ("geonaf", "geonaf_legacy_draft", "geonaf_autre"):
             c.execute(f"DROP SCHEMA IF EXISTS {schema} CASCADE")
         c.execute("DROP VIEW IF EXISTS public.lit_legacy")

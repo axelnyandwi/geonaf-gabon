@@ -4,6 +4,9 @@ Requires ``GEONAF_TEST_DATABASE_URL`` (``postgresql+psycopg://geonaf_migrator@12
 ``requirements-db.txt`` and the PostGIS extension created by an administrator. The database name must
 end with ``_test``: each test drops and recreates the ``geonaf`` schema there. See
 docs/postgis_registry.md. Nothing is written to the file registry or to the demo pack.
+Destructive fixtures additionally require GEONAF_ALLOW_DESTRUCTIVE_TESTS=1, an exact
+GEONAF_TEST_DATABASE_NAME and GEONAF_TEST_INSTANCE_ID matching the database comment.
+See tests/postgis_support.py; a _test suffix alone never authorizes access.
 """
 
 import os
@@ -21,6 +24,8 @@ from tests.test_postgis_territory_unit import (  # noqa: F401  (registry is a fi
     DEPARTMENT, NOW, assert_parity, real_registry_dir, registry, snapshot,
 )
 
+from tests.postgis_support import isolated_connection, configure_alembic
+
 ROOT = Path(__file__).resolve().parents[1]
 TEST_VARIABLE = "GEONAF_TEST_DATABASE_URL"
 TEST_URL = os.environ.get(TEST_VARIABLE, "").strip()
@@ -28,25 +33,21 @@ pytestmark = [pytest.mark.postgis,
               pytest.mark.skipif(not TEST_URL, reason=f"{TEST_VARIABLE} non défini : tests PostGIS non exécutés.")]
 
 
-def connect():
-    import psycopg
-
-    return psycopg.connect(pg.psycopg_conninfo(TEST_URL))
+def connect(*, autocommit=False):
+    return isolated_connection(TEST_URL, autocommit=autocommit)
 
 
 @pytest.fixture
 def database():
     """Empty geonaf schema created by migration 0001, on a database whose name ends with _test."""
-    psycopg = pytest.importorskip("psycopg")
-    from psycopg.conninfo import conninfo_to_dict
-
-    if not str(conninfo_to_dict(pg.psycopg_conninfo(TEST_URL)).get("dbname", "")).endswith("_test"):
-        pytest.fail("La base de test doit se terminer par « _test » (le schéma geonaf y est supprimé).")
-    with psycopg.connect(pg.psycopg_conninfo(TEST_URL), autocommit=True) as connection:
+    pytest.importorskip("psycopg")
+    with connect(autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS geonaf CASCADE")
         connection.execute((ROOT / "db" / "sql" / "0001_territorial_registry.up.sql").read_text(encoding="utf-8"))
+        # Imports check the environment mark before any write (D2-D4 audit, P0.2).
+        connection.execute("COMMENT ON SCHEMA geonaf IS 'geonaf-environment:test'")
     yield connect
-    with psycopg.connect(pg.psycopg_conninfo(TEST_URL), autocommit=True) as connection:
+    with connect(autocommit=True) as connection:
         connection.execute("DROP SCHEMA IF EXISTS geonaf CASCADE")
 
 
@@ -58,7 +59,7 @@ def scalar(sql, params=()):
 def run_import(registry, apply=True):
     with connect() as connection:
         return pg.apply_import(connection, pg.plan_import(registry), source_label="registre de test",
-                               code_version="test", apply=apply)
+                               code_version="test", expected_environment="test", apply=apply)
 
 
 def test_alembic_upgrade_downgrade_upgrade(monkeypatch):
@@ -67,7 +68,7 @@ def test_alembic_upgrade_downgrade_upgrade(monkeypatch):
     from alembic import command
     from alembic.config import Config
 
-    monkeypatch.setenv(pg.URL_VARIABLE, TEST_URL)
+    configure_alembic(monkeypatch, TEST_URL)
     with connect() as connection:
         connection.execute("DROP SCHEMA IF EXISTS geonaf CASCADE")
         connection.execute("DROP TABLE IF EXISTS public.alembic_version")
@@ -79,7 +80,7 @@ def test_alembic_upgrade_downgrade_upgrade(monkeypatch):
         command.downgrade(config, "base")
         assert scalar("SELECT count(*) FROM pg_namespace WHERE nspname = 'geonaf'") == 0
         command.upgrade(config, "head")
-        assert scalar("SELECT version_num FROM public.alembic_version") == "0001_territorial_registry"
+        assert scalar("SELECT version_num FROM public.alembic_version") == "0002_observations"
     finally:
         command.downgrade(config, "base")
 

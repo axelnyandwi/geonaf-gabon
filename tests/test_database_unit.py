@@ -24,6 +24,21 @@ def assert_no_secret(text):
     assert PASSWORD not in text and "s3cr@t-pw" not in text and REMOTE not in text
 
 
+@pytest.fixture(scope="module")
+def ca_file(tmp_path_factory):
+    """Synthetic PEM CA; no remote TLS handshake is performed."""
+    trustme = pytest.importorskip("trustme")
+    path = tmp_path_factory.mktemp("ca") / "geonaf-test-ca.pem"
+    trustme.CA().cert_pem.write_to_path(path)
+    return str(path)
+
+
+@pytest.fixture
+def remote(ca_file):
+    """Remote target as the policy requires it: verify-full (default) and an explicit CA file."""
+    return lambda environment="dev", url=REMOTE: db.parse_target(url, environment, sslrootcert=ca_file)
+
+
 # --- Backend selection ---------------------------------------------------------------------------
 
 
@@ -46,16 +61,41 @@ def test_selected_backend_reads_the_real_environment_by_default(monkeypatch):
 # --- Target parsing ------------------------------------------------------------------------------
 
 
-def test_remote_target_is_parsed_and_tls_is_required_by_default():
-    target = db.parse_target(REMOTE, "dev")
+def test_remote_target_is_parsed_and_server_verification_is_required_by_default(remote, ca_file):
+    target = remote("dev")
     assert (target.host, target.port, target.database, target.user) == (
         "aws-0-eu-west-3.pooler.supabase.com", 6543, "postgres", "postgres.abcdref")
-    assert target.sslmode == "require"
+    assert (target.sslmode, target.sslrootcert) == ("verify-full", ca_file)
     assert target.password == "s3cr@t-pw"
+    assert db.tls_options(target) == {"sslmode": "verify-full", "sslrootcert": ca_file}
 
 
-def test_plain_postgresql_scheme_is_normalised_to_psycopg3():
-    target = db.parse_target(REMOTE.replace("postgresql+psycopg://", "postgresql://"), "test")
+@pytest.mark.parametrize("mode", ["require", "verify-ca", "disable", "allow", "prefer"])
+def test_remote_target_refuses_any_mode_weaker_than_verify_full(remote, mode):
+    """require encrypts without authenticating the server; verify-ca skips the host name check."""
+    with pytest.raises(db.DatabaseConfigError, match="verify-full") as raised:
+        remote("dev", REMOTE + f"?sslmode={mode}")
+    assert_no_secret(str(raised.value))
+
+
+def test_remote_target_refuses_a_missing_or_unreadable_ca_file_without_naming_the_path(tmp_path):
+    with pytest.raises(db.DatabaseConfigError, match=db.SSLROOTCERT_VARIABLE):
+        db.parse_target(REMOTE, "dev")
+    absent = tmp_path / "absent-ca.pem"
+    with pytest.raises(db.DatabaseConfigError) as raised:
+        db.parse_target(REMOTE, "dev", sslrootcert=str(absent))
+    assert str(absent) not in str(raised.value) and "absent-ca" not in str(raised.value)
+    with pytest.raises(db.DatabaseConfigError):                       # libpq 14: "system" is not a keyword.
+        db.parse_target(REMOTE, "dev", sslrootcert="system")
+
+
+def test_ca_file_comes_from_the_environment_and_is_kept_out_of_repr(ca_file):
+    target = db.load_target({db.URL_VARIABLE: REMOTE, db.ENV_VARIABLE: "test", db.SSLROOTCERT_VARIABLE: ca_file})
+    assert target.sslrootcert == ca_file and ca_file not in repr(target) and ca_file not in target.describe()
+
+
+def test_plain_postgresql_scheme_is_normalised_to_psycopg3(remote):
+    target = remote("test", REMOTE.replace("postgresql+psycopg://", "postgresql://"))
     assert target.url.startswith("postgresql+psycopg://")
 
 
@@ -84,22 +124,26 @@ def test_missing_url_names_the_variable_only():
         db.load_target({db.ENV_VARIABLE: "dev"})
 
 
-def test_local_database_may_run_without_tls_and_explicit_sslmode_is_kept():
+def test_local_database_may_run_without_tls_and_explicit_sslmode_is_kept(remote):
+    """Policy: TLS optional on loopback only (throwaway test servers); never a weaker remote rule."""
     local = db.parse_target("postgresql+psycopg://geonaf@127.0.0.1:5433/geonaf_test", "test")
-    assert local.sslmode is None
-    verified = db.parse_target(REMOTE + "?sslmode=verify-full", "dev")
+    assert local.sslmode is None and local.sslrootcert is None and db.tls_options(local) == {}
+    kept = db.parse_target("postgresql+psycopg://geonaf@localhost:5433/geonaf_test?sslmode=require", "test")
+    assert kept.sslmode == "require"
+    verified = remote("dev", REMOTE + "?sslmode=verify-full")
     assert verified.sslmode == "verify-full"
 
 
-def test_password_never_appears_in_repr_or_description():
-    target = db.parse_target(REMOTE, "dev")
+def test_password_never_appears_in_repr_or_description(remote):
+    target = remote("dev")
     assert_no_secret(repr(target))
     assert_no_secret(target.describe())
-    assert "postgres.abcdref@aws-0-eu-west-3.pooler.supabase.com:6543/postgres" in target.describe()
+    for value in (target.host, target.user, target.database, target.sslrootcert):
+        assert value not in target.describe() and value not in repr(target)
 
 
-def test_redact_removes_url_and_password():
-    target = db.parse_target(REMOTE, "dev")
+def test_redact_removes_url_and_password(remote):
+    target = remote("dev")
     message = f"failed for {target.url} with password s3cr@t-pw"
     assert_no_secret(db.redact(message, target))
 
@@ -109,7 +153,7 @@ def test_redact_removes_url_and_password():
 
 def test_identity_accepts_only_the_declared_environment_mark():
     db.check_identity("geonaf-environment:dev", "dev")
-    with pytest.raises(db.EnvironmentIdentityError, match="trouvée : « geonaf-environment:test »"):
+    with pytest.raises(db.EnvironmentIdentityError, match="DB_ENV_MISMATCH"):
         db.check_identity("geonaf-environment:test", "dev")
     with pytest.raises(db.EnvironmentIdentityError, match="aucune marque"):
         db.check_identity(None, "test")
@@ -236,29 +280,33 @@ def drivers():
     pytest.importorskip("psycopg", minversion="3.1")
 
 
-def test_engine_uses_no_client_pool_and_pooler_safe_options(drivers):
+def test_engine_uses_no_client_pool_and_pooler_safe_options(drivers, remote):
     from sqlalchemy.pool import NullPool
 
-    engine = db.create_engine(db.parse_target(REMOTE, "dev"))
+    engine = db.create_engine(remote("dev"))
     try:
         assert isinstance(engine.pool, NullPool)
         assert engine.dialect.driver == "psycopg"
         assert engine.hide_parameters
-        _, params = engine.dialect.create_connect_args(engine.url)
-        assert params["host"] == "aws-0-eu-west-3.pooler.supabase.com"
+        assert engine.url.host is None and engine.url.username is None
+        assert "pooler.supabase.com" not in repr(engine)
         assert_no_secret(repr(engine))
     finally:
         engine.dispose()
 
 
-def test_connect_args_carry_timeout_tls_and_no_prepared_statements(drivers, monkeypatch):
+def test_connect_args_carry_timeout_tls_and_no_prepared_statements(drivers, monkeypatch, remote, ca_file):
     import sqlalchemy
+    import psycopg
 
-    seen = {}
+    seen, received = {}, {}
     monkeypatch.setattr(sqlalchemy, "create_engine", lambda url, **kwargs: seen.update(kwargs) or "engine")
-    assert db.create_engine(db.parse_target(REMOTE, "dev")) == "engine"
-    assert seen["connect_args"] == {"connect_timeout": db.CONNECT_TIMEOUT_S, "prepare_threshold": None,
-                                    "application_name": "geonaf", "sslmode": "require"}
+    monkeypatch.setattr(psycopg, "connect", lambda **kwargs: received.update(kwargs))
+    assert db.create_engine(remote("dev")) == "engine"
+    seen["creator"]()
+    assert received["connect_timeout"] == db.CONNECT_TIMEOUT_S
+    assert received["prepare_threshold"] is None and received["application_name"] == "geonaf"
+    assert received["sslmode"] == "verify-full" and received["sslrootcert"] == ca_file
 
 
 def test_unreachable_database_raises_a_redacted_connection_error(drivers):
@@ -317,26 +365,26 @@ class FakeEngine:
         return self.connection
 
 
-def test_session_is_read_only_rolled_back_and_closed(drivers):
+def test_session_is_read_only_rolled_back_and_closed(drivers, remote):
     connection = FakeConnection("geonaf-environment:dev")
-    with db.read_only_session(db.parse_target(REMOTE, "dev"), engine=FakeEngine(connection)) as session:
+    with db.read_only_session(remote("dev"), engine=FakeEngine(connection)) as session:
         assert session is connection
     assert connection.statements[:3] == ["BEGIN", "SET TRANSACTION READ ONLY",
                                          "SELECT set_config('statement_timeout', :timeout, true)"]
     assert connection.rolled_back and connection.closed
 
 
-def test_session_refuses_a_database_of_another_environment(drivers):
+def test_session_refuses_a_database_of_another_environment(drivers, remote):
     connection = FakeConnection("geonaf-environment:dev")
     with pytest.raises(db.EnvironmentIdentityError):
-        with db.read_only_session(db.parse_target(REMOTE, "test"), engine=FakeEngine(connection)):
+        with db.read_only_session(remote("test"), engine=FakeEngine(connection)):
             pytest.fail("La connexion ne doit pas être remise.")
     assert connection.rolled_back and connection.closed
 
 
-def test_session_closes_the_connection_when_the_caller_fails(drivers):
+def test_session_closes_the_connection_when_the_caller_fails(drivers, remote):
     connection = FakeConnection("geonaf-environment:dev")
     with pytest.raises(KeyError):
-        with db.read_only_session(db.parse_target(REMOTE, "dev"), engine=FakeEngine(connection)):
+        with db.read_only_session(remote("dev"), engine=FakeEngine(connection)):
             raise KeyError("échec de l'appelant")
     assert connection.rolled_back and connection.closed

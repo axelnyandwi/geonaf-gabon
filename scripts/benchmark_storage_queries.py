@@ -7,7 +7,8 @@ Manual diagnostic, not a test (it reads a real data directory and may reach a da
 * file mode: always measured on ``--data-dir`` (registry, manifests, indicator results);
 * PostGIS mode: measured only when ``GEONAF_DATABASE_URL`` is set (local database advised); the three
   spatial queries are also run under ``EXPLAIN (ANALYZE, BUFFERS)`` inside a read-only transaction with
-  the R5 bis search path, and the plan nodes are printed (index or sequential scan).
+  the R5 bis search path, and the plan nodes are printed (index or sequential scan). ``GEONAF_DB_ENV`` is
+  required and the schema mark checked, as for the application.
 
 Run with ``GEONAF_DEMO_READ_ONLY=1`` to make any accidental write impossible. Paths and URLs are never
 printed; times are medians in milliseconds.
@@ -63,7 +64,8 @@ def measure(label: str, store, data_dir: Path, repeat: int) -> None:
 def explain(repeat: int) -> None:
     from src.data import postgis_observations as pgo
     from src.data import postgis_territory_registry as pg
-    from src.data.postgis_session import plain_read_transaction
+    from src.data.database import load_target
+    from src.data.postgis_session import PostgisSessions
 
     west, south, east, north = AKANDA
     params = {"west": west, "south": south, "east": east, "north": north, "kind": None, "geometry_sha256": None}
@@ -71,7 +73,7 @@ def explain(repeat: int) -> None:
                "acquisitions recoupant": pgo.QUERIES["manifests_intersecting"],
                "résultats": pgo.QUERIES["results"]}
     print("\nPlans PostGIS (EXPLAIN ANALYZE, transaction en lecture seule)")
-    with plain_read_transaction(pg.connect_from_env()) as connection:
+    with PostgisSessions(load_target()).read() as connection:     # Mark, read only, timeout, R5 bis.
         for name, query in queries.items():
             lines = [row[0] for row in connection.execute("EXPLAIN (ANALYZE, BUFFERS) " + query, params).fetchall()]
             nodes = [line.strip() for line in lines if "Scan" in line or "Execution Time" in line]

@@ -25,6 +25,20 @@ ROOT = Path(__file__).resolve().parents[1]
 REMOTE = "postgresql+psycopg://geonaf_reader:s3cret-Pa55@aws-0-eu.pooler.supabase.com:6543/postgres"
 
 
+@pytest.fixture(scope="module")
+def ca_file(tmp_path_factory):
+    """Synthetic PEM CA; no remote TLS handshake is performed."""
+    trustme = pytest.importorskip("trustme")
+    path = tmp_path_factory.mktemp("ca") / "geonaf-test-ca.pem"
+    trustme.CA().cert_pem.write_to_path(path)
+    return str(path)
+
+
+@pytest.fixture
+def remote(ca_file):
+    return parse_target(REMOTE, "dev", sslrootcert=ca_file)
+
+
 class FakeCursor:
     def __init__(self, connection):
         self.connection = connection
@@ -85,9 +99,9 @@ def test_missing_postgis_is_reported_and_no_path_is_set():
     assert len(connection.executed) == 1
 
 
-def test_application_session_is_read_only_timed_marked_and_always_rolled_back():
+def test_application_session_is_read_only_timed_marked_and_always_rolled_back(remote):
     connection = FakeConnection()
-    sessions = PostgisSessions(parse_target(REMOTE, "dev"), connect=lambda: connection)
+    sessions = PostgisSessions(remote, connect=lambda: connection)
     with sessions.read() as session:
         assert session is connection and connection.read_only is True
     statements = [sql for sql, _ in connection.executed]
@@ -97,30 +111,30 @@ def test_application_session_is_read_only_timed_marked_and_always_rolled_back():
     assert connection.rolled_back and connection.closed
 
 
-def test_application_session_refuses_another_environment_before_handing_out_the_connection():
+def test_application_session_refuses_another_environment_before_handing_out_the_connection(remote):
     connection = FakeConnection(mark="geonaf-environment:test")
-    sessions = PostgisSessions(parse_target(REMOTE, "dev"), connect=lambda: connection)
+    sessions = PostgisSessions(remote, connect=lambda: connection)
     with pytest.raises(EnvironmentIdentityError):
         with sessions.read():
             pytest.fail("connexion remise malgré une marque différente")
     assert connection.rolled_back and connection.closed
 
 
-def test_session_is_closed_when_the_query_fails():
+def test_session_is_closed_when_the_query_fails(remote):
     connection = FakeConnection()
-    sessions = PostgisSessions(parse_target(REMOTE, "dev"), connect=lambda: connection)
+    sessions = PostgisSessions(remote, connect=lambda: connection)
     with pytest.raises(KeyError), sessions.read():
         raise KeyError("échec de la requête")
     assert connection.rolled_back and connection.closed
 
 
-def test_connection_error_message_names_no_host_user_or_password():
+def test_connection_error_message_names_no_host_user_or_password(remote):
     psycopg = pytest.importorskip("psycopg")
 
     def refuse():
         raise psycopg.OperationalError('connection to server at "aws-0-eu.pooler.supabase.com" failed: '
                                        'password authentication failed for user "geonaf_reader" s3cret-Pa55')
-    sessions = PostgisSessions(parse_target(REMOTE, "dev"), connect=refuse)
+    sessions = PostgisSessions(remote, connect=refuse)
     with pytest.raises(DatabaseConnectionError) as caught:
         with sessions.read():
             pass
@@ -154,7 +168,8 @@ def test_file_mode_is_the_default_and_keeps_the_current_readers(tmp_path):
     ({"GEONAF_DB_BACKEND": "postgres"}, "GEONAF_DB_ENV"),
     ({"GEONAF_DB_BACKEND": "postgres", "GEONAF_DB_ENV": "prod", "GEONAF_DATABASE_URL": REMOTE}, "GEONAF_DB_ENV"),
     ({"GEONAF_DB_BACKEND": "postgres", "GEONAF_DB_ENV": "dev",
-      "GEONAF_DATABASE_URL": REMOTE + "?sslmode=disable"}, "TLS"),
+      "GEONAF_DATABASE_URL": REMOTE + "?sslmode=disable"}, "verify-full"),
+    ({"GEONAF_DB_BACKEND": "postgres", "GEONAF_DB_ENV": "dev", "GEONAF_DATABASE_URL": REMOTE}, "GEONAF_DB_SSLROOTCERT"),
 ])
 def test_postgis_mode_refuses_an_incomplete_or_unsafe_configuration(tmp_path, environ, fragment):
     with pytest.raises(DatabaseConfigError) as caught:
@@ -162,9 +177,10 @@ def test_postgis_mode_refuses_an_incomplete_or_unsafe_configuration(tmp_path, en
     assert fragment in str(caught.value) and "s3cret" not in str(caught.value)
 
 
-def test_postgis_store_opens_without_connecting_and_exposes_only_the_environment(tmp_path):
+def test_postgis_store_opens_without_connecting_and_exposes_only_the_environment(tmp_path, ca_file):
     calls = []
-    environ = {"GEONAF_DB_BACKEND": "postgres", "GEONAF_DB_ENV": "test", "GEONAF_DATABASE_URL": REMOTE}
+    environ = {"GEONAF_DB_BACKEND": "postgres", "GEONAF_DB_ENV": "test", "GEONAF_DATABASE_URL": REMOTE,
+               "GEONAF_DB_SSLROOTCERT": ca_file}
     store = storage.postgis_store(tmp_path, environ, connect=lambda: calls.append(1))
     assert calls == [] and store.is_postgis and not store.writable and store.environment == "test"
     assert "s3cret" not in repr(store) and "s3cret" not in store.description
@@ -247,7 +263,56 @@ def test_territory_comparison_reads_geometries_through_the_registry(registry):  
     assert compare_territories(registry, a, b) == compare_territories(database, a, b)
 
 
+def test_compare_options_refuses_options_from_two_storages(registry):  # noqa: F811
+    database = _postgis_like(registry)
+    files = {o.label: o for o in catalog.admin_territories(registry.data_dir, "gbOpen", "ADM2", registry=registry)}
+    rows = {o.label: o for o in catalog.admin_territories(registry.data_dir, "gbHumanitarian", "ADM2",
+                                                          registry=database)}
+    with pytest.raises(ValueError, match="même stockage"):
+        catalog.compare_options(files["Unité A"], rows["Unité A"])
+
+
 # --- Interface ------------------------------------------------------------------------------------
+
+
+def test_comparison_tab_in_postgis_mode_never_reads_the_file_registry(registry, tmp_path, monkeypatch):  # noqa: F811
+    """D2-D4 audit: the tab used to compute areas from data/territories whatever the selected storage."""
+    from streamlit.testing.v1 import AppTest
+
+    import src.config
+    from src.data import territory_registry as files_module
+    from src.services.territory_comparison import compare_territories
+
+    expected = compare_territories(registry, "gab-gbopen-adm2-a", "gab-gbhumanitarian-adm2-a")
+    database = _postgis_like(registry)
+    reads = []
+    original_rows = database._rows
+    database._rows = lambda query, params: reads.append(query) or original_rows(query, params)
+    empty = tmp_path / "donnees_vides"                       # No territories/ folder: PostGIS only.
+    empty.mkdir()
+    monkeypatch.setattr(src.config, "DATA_DIR", empty)
+    fake = storage.DataStore(storage.POSTGRES, "masqué", database, None, None, "test")
+    monkeypatch.setattr(storage, "open_store", lambda data_dir, environ=None: fake)
+
+    def forbidden(*_, **__):
+        raise AssertionError("registre fichier lu en mode PostGIS")
+    monkeypatch.setattr(files_module.TerritoryRegistry, "versions", forbidden)
+    monkeypatch.setattr(files_module.TerritoryRegistry, "geometry_path", forbidden)
+    app = AppTest.from_file(str(ROOT / "app.py"))
+    app.run(timeout=60)
+    reads.clear()
+    app = app.switch_page("views/territoires.py").run(timeout=60)
+    assert not app.exception and not app.error
+    metrics = {m.label: m.value for m in app.metric}
+    from src.components.formatting import format_percent, format_surface
+
+    assert metrics["gbOpen (km²)"] == format_surface(expected.area_a_km2)
+    assert metrics["gbHumanitarian (km²)"] == format_surface(expected.area_b_km2)
+    assert metrics["Recouvrement (%)"] == format_percent(expected.overlap_percent)
+    # Measured reads on the first rerun of the page (one connection each): 2 lists (read once, reused for the
+    # pairs instead of read again), 2 versions, 2 geometries for the metrics, 2 for the comparison map, which
+    # is then served by its cache.
+    assert reads == ["latest", "latest", "versions", "versions", "geometry", "geometry", "geometry", "geometry"]
 
 
 def test_postgis_mode_disables_every_write_of_the_territory_page(registry, monkeypatch):  # noqa: F811
@@ -323,7 +388,8 @@ def test_territory_page_shows_the_stored_panel_on_demand_only(tmp_path, monkeypa
     app.toggle(key="stored_aoi:akanda").set_value(True).run(timeout=60)
     assert not app.exception and calls == [1]
     shown = [e.value for e in app.info]
-    assert "Aucune acquisition enregistrée dont la grille recoupe cette zone." in shown
+    assert any(t.startswith("Aucune acquisition à manifeste d'ingestion strict") and "subset_manifest.json" in t
+               for t in shown)
     assert "Aucun résultat d'indicateur enregistré pour cette géométrie exacte." in shown
 
 
@@ -351,3 +417,27 @@ def test_stored_results_are_shown_with_their_scientific_status(tmp_path, monkeyp
     table = app.dataframe[-1].value
     assert table.iloc[0]["Statut scientifique"] == "expérimental (méthode non validée)"
     assert table.iloc[0]["Valeur"] == "12.5 km²" and table.iloc[0]["Calculé le (UTC)"] == "2026-11-05 00:00"
+
+
+def test_driver_errors_are_named_by_kind_never_by_their_text():
+    psycopg = pytest.importorskip("psycopg")
+    from src.data.postgis_session import driver_error_message
+
+    secret = 'connection to "aws-0-eu.pooler.supabase.com" user "geonaf_reader" s3cret-Pa55'
+    denied = psycopg.errors.InsufficientPrivilege(secret)
+    cancelled = psycopg.errors.QueryCanceled(secret)
+    other = psycopg.OperationalError(secret)
+    assert driver_error_message(denied).startswith("Droits insuffisants")
+    assert driver_error_message(cancelled).startswith("Délai maximal de requête dépassé")
+    assert driver_error_message(other).startswith("Base PostGIS indisponible")
+    for error in (denied, cancelled, other):
+        message = driver_error_message(error)
+        assert not any(part in message for part in ("supabase", "geonaf_reader", "s3cret"))
+
+
+def test_store_repr_holds_neither_host_nor_user(tmp_path, ca_file):
+    environ = {"GEONAF_DB_BACKEND": "postgres", "GEONAF_DB_ENV": "test", "GEONAF_DATABASE_URL": REMOTE,
+               "GEONAF_DB_SSLROOTCERT": ca_file}
+    store = storage.postgis_store(tmp_path, environ, connect=lambda: None)
+    assert "pooler.supabase.com" not in repr(store) and "geonaf_reader" not in repr(store)
+    assert "pooler.supabase.com" not in store.description and "geonaf_reader" not in store.description

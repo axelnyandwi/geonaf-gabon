@@ -3,23 +3,39 @@
 -- Run as the postgres role of the SQL Editor, on a project in state S4 of 11_state_diagnostic.sql
 -- (migration 0001 recorded with its reviewed body, schema marked). One request, no BEGIN/COMMIT: any
 -- error cancels everything. Run once only.
--- Body SHA-256: 59bda5c75482407ff0483febf5802f8d056843ba6903d3b57eba6eb6e46a8f97
+-- Body SHA-256: 08f8864de525b335c6724e0a895a0e566e564677d59507435f1e28166884e2a5
 
 SELECT set_config('search_path', 'pg_catalog, extensions, pg_temp', true);
 
+-- Preconditions, each refused explicitly (a NULL comment never passes: no three-valued NOT IN).
+-- schema_migrations is read with EXECUTE so that its absence is a clear refusal, not a parse error.
 DO $$
+DECLARE
+  mark text := obj_description(to_regnamespace('geonaf'), 'pg_namespace');
+  recorded_0001 bigint;
+  recorded_0002 bigint;
 BEGIN
-  IF to_regclass('geonaf.schema_migrations') IS NULL OR NOT EXISTS (
-       SELECT 1 FROM geonaf.schema_migrations
-       WHERE version = '0001_territorial_registry' AND body_sha256 = '719e7e847f28404255491c0c00923f130cbd35151cd63488ed1ba3391c0bf971') THEN
+  IF to_regnamespace('geonaf') IS NULL THEN
+    RAISE EXCEPTION 'GEONAF: schema geonaf absent, 0002 refusee';
+  END IF;
+  IF mark IS NULL THEN
+    RAISE EXCEPTION 'GEONAF: schema geonaf non marque (03 a executer avant 0002)';
+  END IF;
+  IF mark <> 'geonaf-environment:dev' AND mark <> 'geonaf-environment:test' THEN
+    RAISE EXCEPTION 'GEONAF: marque inattendue sur le schema geonaf, 0002 refusee' USING DETAIL = mark;
+  END IF;
+  IF to_regclass('geonaf.schema_migrations') IS NULL THEN
+    RAISE EXCEPTION 'GEONAF: migration 0001 non enregistree (geonaf.schema_migrations absente), 0002 refusee';
+  END IF;
+  EXECUTE 'SELECT count(*) FROM geonaf.schema_migrations WHERE version = $1 AND body_sha256 = $2'
+    INTO recorded_0001 USING '0001_territorial_registry', '719e7e847f28404255491c0c00923f130cbd35151cd63488ed1ba3391c0bf971';
+  IF recorded_0001 <> 1 THEN
     RAISE EXCEPTION 'GEONAF: migration 0001 absente ou differente du corps revu, 0002 refusee';
   END IF;
-  IF EXISTS (SELECT 1 FROM geonaf.schema_migrations WHERE version = '0002_observations') THEN
+  EXECUTE 'SELECT count(*) FROM geonaf.schema_migrations WHERE version = $1'
+    INTO recorded_0002 USING '0002_observations';
+  IF recorded_0002 <> 0 THEN
     RAISE EXCEPTION 'GEONAF: migration 0002 deja enregistree';
-  END IF;
-  IF obj_description('geonaf'::regnamespace, 'pg_namespace') NOT IN ('geonaf-environment:dev',
-                                                                     'geonaf-environment:test') THEN
-    RAISE EXCEPTION 'GEONAF: schema geonaf non marque (03 a executer avant 0002)';
   END IF;
 END $$;
 
@@ -220,12 +236,13 @@ CREATE TRIGGER acquisition_manifests_check BEFORE INSERT ON geonaf.acquisition_m
 -- Views -----------------------------------------------------------------------------------------
 
 -- Latest ingestion of every product (the most recent manifest), with the age of the observation
--- left to the reader: acquired_at and ingested_at are both given, never merged.
+-- left to the reader: acquired_at and ingested_at are both given, never merged. Equal ingestion
+-- dates are broken by the greatest manifest digest, exactly as AcquisitionScan.latest() in Python.
 CREATE VIEW geonaf.acquisitions_latest WITH (security_invoker = true) AS
   SELECT DISTINCT ON (collection, product_id) collection, product_id, acquired_at, ingested_at, grid_crs,
          grid_resolution_m, footprint, integrity_mode, manifest_sha256
   FROM geonaf.acquisition_manifests
-  ORDER BY collection, product_id, ingested_at DESC, manifest_sha256;
+  ORDER BY collection, product_id, ingested_at DESC, manifest_sha256 DESC;
 
 -- Privileges (same model as 0001) -------------------------------------------------------------------
 REVOKE ALL ON geonaf.data_imports, geonaf.acquisitions, geonaf.acquisition_manifests, geonaf.indicator_result_kinds,
@@ -291,7 +308,7 @@ END $$;
 -- ===== End of body =====
 
 INSERT INTO geonaf.schema_migrations (version, body_sha256, channel)
-VALUES ('0002_observations', '59bda5c75482407ff0483febf5802f8d056843ba6903d3b57eba6eb6e46a8f97', 'supabase-sql-editor');
+VALUES ('0002_observations', '08f8864de525b335c6724e0a895a0e566e564677d59507435f1e28166884e2a5', 'supabase-sql-editor');
 
 SELECT 'tables 0002' AS controle, count(*)::text AS valeur, '6' AS attendu
   FROM pg_catalog.pg_class WHERE relnamespace = 'geonaf'::regnamespace AND relkind = 'r'

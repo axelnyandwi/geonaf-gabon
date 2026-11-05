@@ -207,19 +207,35 @@ UNION ALL SELECT 'migrations enregistrees', string_agg(version, ', ' ORDER BY ve
 
 {SEARCH_PATH}
 
+-- Preconditions, each refused explicitly (a NULL comment never passes: no three-valued NOT IN).
+-- schema_migrations is read with EXECUTE so that its absence is a clear refusal, not a parse error.
 DO $$
+DECLARE
+  mark text := obj_description(to_regnamespace('geonaf'), 'pg_namespace');
+  recorded_0001 bigint;
+  recorded_0002 bigint;
 BEGIN
-  IF to_regclass('geonaf.schema_migrations') IS NULL OR NOT EXISTS (
-       SELECT 1 FROM geonaf.schema_migrations
-       WHERE version = '{MIGRATION_VERSION}' AND body_sha256 = '{sha_0001}') THEN
+  IF to_regnamespace('geonaf') IS NULL THEN
+    RAISE EXCEPTION 'GEONAF: schema geonaf absent, 0002 refusee';
+  END IF;
+  IF mark IS NULL THEN
+    RAISE EXCEPTION 'GEONAF: schema geonaf non marque (03 a executer avant 0002)';
+  END IF;
+  IF mark <> 'geonaf-environment:dev' AND mark <> 'geonaf-environment:test' THEN
+    RAISE EXCEPTION 'GEONAF: marque inattendue sur le schema geonaf, 0002 refusee' USING DETAIL = mark;
+  END IF;
+  IF to_regclass('geonaf.schema_migrations') IS NULL THEN
+    RAISE EXCEPTION 'GEONAF: migration 0001 non enregistree (geonaf.schema_migrations absente), 0002 refusee';
+  END IF;
+  EXECUTE 'SELECT count(*) FROM geonaf.schema_migrations WHERE version = $1 AND body_sha256 = $2'
+    INTO recorded_0001 USING '{MIGRATION_VERSION}', '{sha_0001}';
+  IF recorded_0001 <> 1 THEN
     RAISE EXCEPTION 'GEONAF: migration 0001 absente ou differente du corps revu, 0002 refusee';
   END IF;
-  IF EXISTS (SELECT 1 FROM geonaf.schema_migrations WHERE version = '{MIGRATION_0002_VERSION}') THEN
+  EXECUTE 'SELECT count(*) FROM geonaf.schema_migrations WHERE version = $1'
+    INTO recorded_0002 USING '{MIGRATION_0002_VERSION}';
+  IF recorded_0002 <> 0 THEN
     RAISE EXCEPTION 'GEONAF: migration 0002 deja enregistree';
-  END IF;
-  IF obj_description('geonaf'::regnamespace, 'pg_namespace') NOT IN ('geonaf-environment:dev',
-                                                                     'geonaf-environment:test') THEN
-    RAISE EXCEPTION 'GEONAF: schema geonaf non marque (03 a executer avant 0002)';
   END IF;
 END $$;
 

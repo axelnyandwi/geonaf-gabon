@@ -209,3 +209,35 @@ plus une avant chaque migration. Le volume Docker n'est jamais copié à chaud.
 - Les versions de `requirements-db.txt` et la balise d'image sont à confirmer à l'installation.
 - Les droits commerciaux des licences ne sont pas évalués.
 - Les zones d'acquisition historiques ne sont pas encore dans le registre.
+
+## Complément de sécurité Alembic (2026-11-05)
+
+La procédure historique d'installation ci-dessus n'est pas une autorisation d'exécution.
+Avant toute migration ou test destructeur, appliquer les conditions de
+[connexion et initialisation isolée](database_connection.md#sécurisation-alembic-et-bases-de-test-isolées-2026-11-05).
+Une URL locale et un nom terminé par `_test` ne suffisent plus : une autorisation explicite,
+le nom exact et un UUID correspondant au commentaire de la base sont obligatoires.
+
+Pour une base déjà migrée, la marque du schéma et l'historique doivent être cohérents avant
+l'écriture. Pour une nouvelle base, seul le bootstrap local de test explicitement autorisé
+est possible. Aucun `stamp` automatique n'aligne une base Supabase issue du SQL Editor.
+La tête actuelle est `0002_observations`.
+
+Après autorisation de provisionner un **cluster neuf et jetable**, prévoir deux bases séparées :
+
+1. Sans PostGIS : refus de l'extension absente, simulations de diagnostic et tests utilisant
+   un domaine `geometry` substitut. Ces tests ne prouvent aucune propriété spatiale.
+2. Avec PostgreSQL >= 15 et PostGIS >= 3.3 : migrations réelles 0001/0002, rollback vérifié depuis
+   une seconde connexion, droits/RLS avec plusieurs rôles, imports atomiques et idempotents,
+   parité fichiers/PostGIS, R5 bis et GiST. Répéter avec PostGIS dans `public` et `extensions`.
+
+Ne pas lancer tous les tests marqués `postgis` indistinctement contre une seule base : certains
+nécessitent l'absence de PostGIS. Les tests de diagnostic distant restent désactivés
+(`GEONAF_DB_INTEGRATION` non défini). Garder données scientifiques en lecture seule et sorties
+pytest dans un répertoire temporaire unique, sans cache dans le dépôt.
+
+Avant de comparer les performances, vérifier la parité ; utiliser ensuite
+`scripts/benchmark_storage_queries.py` sur les données de test, avec `GEONAF_DEMO_READ_ONLY=1`.
+Consigner versions, volumes, médianes et plans `EXPLAIN (ANALYZE, BUFFERS)`. Le test GiST qui
+désactive le parcours séquentiel prouve l'utilisabilité de l'index, pas un gain de performance.
+Aucune installation, migration réelle ou opération Supabase n'a été exécutée dans ce lot.

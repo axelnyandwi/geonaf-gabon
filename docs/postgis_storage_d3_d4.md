@@ -10,11 +10,15 @@ stockages. Le mode **fichiers** reste le mode par défaut tant que PostGIS n'est
 |---|---|---|
 | `GEONAF_DB_BACKEND` | `file` ou `postgres` | `file` |
 | `GEONAF_DATABASE_URL` | `postgresql+psycopg://<rôle>:<mot de passe>@<hôte>:<port>/<base>` | aucune (mode `postgres` seulement) |
-| `GEONAF_DB_ENV` | `dev` ou `test` | aucune (mode `postgres` seulement) |
+| `GEONAF_DB_ENV` | `dev` ou `test` | aucune (mode `postgres` et outils d'import) |
+| `GEONAF_DB_SSLROOTCERT` | chemin d'un fichier PEM d'autorité de certification, hors dépôt | aucune (exigée pour un hôte distant) |
 
-Les secrets restent hors dépôt : variables d'environnement, ou secrets Streamlit Cloud. Une URL vers un
-hôte distant exige TLS (`sslmode=require` par défaut). Le mode `postgres` exige aussi
-`requirements-db.txt` (psycopg 3).
+Les secrets restent hors dépôt : variables d'environnement, ou secrets Streamlit Cloud.
+
+Pour un hôte distant, TLS est vérifié : `sslmode=verify-full` (certificat et nom d'hôte), avec une
+autorité de certification explicite, car la libpq 14 de psycopg 3.2 ignore `sslrootcert=system`.
+Toute autre valeur de `sslmode` est refusée. Le mode `postgres` exige aussi `requirements-db.txt`
+(psycopg 3).
 
 - **Mode fichiers.** Le comportement actuel est inchangé : `data/territories`, les manifestes stricts
   de `data/raw/sentinel2`, les résultats de `data/indicators`. Aucun pilote de base n'est chargé, ce
@@ -31,7 +35,8 @@ hôte distant exige TLS (`sslmode=require` par défaut). Le mode `postgres` exig
   référentiel sont désactivés avec un message explicatif.
 
 **Aucun repli silencieux.** Si PostGIS est choisi mais inaccessible, la page affiche « Base PostGIS
-indisponible (<type d'erreur>) ». Elle n'affiche pas de données fichiers à la place : cela tromperait
+indisponible (<type d'erreur>) ». Elle affiche « Droits insuffisants » pour un refus de privilège et
+« Délai maximal de requête dépassé » pour une requête annulée. Elle n'affiche pas de données fichiers à la place : cela tromperait
 sur ce qui est montré. Le message ne contient ni hôte, ni utilisateur, ni mot de passe, car l'hôte et
 l'utilisateur Supabase identifient le projet. Le détail reste dans le journal serveur masqué.
 
@@ -96,6 +101,7 @@ python scripts/import_territories_postgis.py --data-dir <data> --source-label "p
 python scripts/import_observations_postgis.py --data-dir <data> --source-label "poste local" --scope all
 # Base LOCALE de test : transaction annulée (simulation), puis application
 $env:GEONAF_DATABASE_URL = (Get-Content "$env:USERPROFILE\.geonaf\importer.url" -Raw).Trim()
+$env:GEONAF_DB_ENV = "test"            # Obligatoire : vérifié contre la marque du schéma avant toute écriture
 python scripts/import_observations_postgis.py --data-dir <data> --source-label "poste local" --scope all
 python scripts/import_observations_postgis.py --data-dir <data> --source-label "poste local" --scope all --apply
 ```
@@ -103,10 +109,15 @@ python scripts/import_observations_postgis.py --data-dir <data> --source-label "
 Ordre : territoires d'abord, car les résultats exigent leurs géométries. Le comportement est
 identique pour les deux outils :
 
-1. une seule transaction par périmètre, sous verrou consultatif ;
-2. ce qui manque est inséré, ce qui est déjà identique est compté ;
-3. toute divergence (même identité, autre contenu) arrête tout ;
-4. un manifeste refusé arrête tout : aucun import partiel.
+1. connexion par la seule fabrique `connect_target` : cible validée, `verify-full` pour un hôte distant ;
+2. dans la transaction, sous verrou consultatif, la marque du schéma doit correspondre à
+   `GEONAF_DB_ENV`, avant toute écriture (`expected_environment` obligatoire). Une marque absente,
+   autre ou invalide arrête tout sans rien écrire ;
+3. ce qui manque est inséré, ce qui est déjà identique est compté ;
+4. toute divergence (même identité, autre contenu) arrête tout ;
+5. un manifeste refusé arrête tout ; `--scope all` est **atomique** : acquisitions et indicateurs
+   sont validés ensemble ou pas du tout, et rien n'est affiché comme importé avant cette validation
+   unique.
 
 Supabase n'est pas joignable par psycopg depuis le poste (ports fermés). L'import vers Supabase passe
 donc par des scripts SQL Editor générés, comme pour les territoires (05/06). Pour les observations,
@@ -122,6 +133,10 @@ ce générateur reste à écrire : voir le plan de convergence.
 | Manifestes, empreintes, emprise ; documents d'indicateurs, aller-retour exact, absence de doublon, falsification refusée | `tests/test_observations.py` |
 | SQL de 0002 sur PostgreSQL 16 : contraintes, déclencheurs, vue, RLS, droits, retour arrière | `tests/test_postgis_storage_integration.py` (substituts explicites pour le seul type `geometry`) |
 | Page Territoires : écritures désactivées en mode PostGIS, panneau « enregistré » chargé à la demande | `tests/test_storage_d4.py` (AppTest) |
+| Comparaison en mode PostGIS sans aucun fichier de registre : surfaces et recouvrement identiques au mode fichiers ; 8 lectures au premier rerun | `tests/test_storage_d4.py` (AppTest, émulation) |
+| R5 bis par comportement : chaque lecture publique et chaque import fixe le chemin avant tout appel `ST_*` ; inventaire figé ; graphe d'imports par AST | `tests/test_postgis_guardrails.py` (pilote enregistreur, contre-épreuves) |
+| Imports : marque vérifiée sous verrou avant la première écriture ; import multi-périmètre atomique | `tests/test_postgis_guardrails.py`, `tests/test_supabase_corrections_integration.py` (serveur réel sans PostGIS) |
+| Préconditions de 12, lignes 50 à 52 de 10, droits PostGIS de 11, refus de 01b | `tests/test_supabase_corrections_integration.py` (serveur réel sans PostGIS) |
 
 Points **non vérifiés sur le poste**, faute de PostGIS local :
 - migrations 0001 et 0002 réelles et Alembic `upgrade` / `downgrade` ;
@@ -140,6 +155,15 @@ Mesures du mode fichiers sur le registre réel (97 territoires, 3 manifestes), a
 - 48 géométries vérifiées : environ 270 ms ;
 - manifestes : environ 7 ms.
 
-Le contrôle d'empreinte de géométrie ajouté par D4 coûte environ 3 ms pour 48 géométries. En mode
-PostGIS, chaque lecture ouvre une connexion (pas de pool côté client) : la latence vers Supabase est à
-mesurer sur `geonaf-test` avant la bêta.
+Le contrôle d'empreinte de géométrie ajouté par D4 coûte environ 3 ms pour 48 géométries.
+
+**Connexions en mode PostGIS (diagnostic de l'audit).** Chaque lecture ouvre puis ferme une connexion
+(TLS, 4 instructions de préparation : délai, marque, schéma de PostGIS, chemin ; puis la requête). Il n'y a ni pool ni cache côté client, et ce
+choix est conservé tant que la latence réelle n'est pas mesurée. Au premier rerun, l'onglet
+Comparaison fait 8 lectures :
+- 2 listes, lues une seule fois au lieu de deux depuis l'audit ;
+- 2 versions ;
+- 4 géométries, dont 2 pour la carte, ensuite servie par le cache.
+
+La carte du tableau de bord fait 1 lecture par rerun, plus 1 par unité au premier calcul. Un pool ou un
+cache court ne sera envisagé qu'après mesure sur `geonaf-test` (non validé).

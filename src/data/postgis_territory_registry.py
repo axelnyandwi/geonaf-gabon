@@ -30,11 +30,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import hashlib
-import os
 from pathlib import Path
 from typing import Callable, Mapping
 
-from src.data.postgis_session import plain_read_transaction, set_postgis_search_path
+from src.data.postgis_session import check_environment, plain_read_transaction, set_postgis_search_path
 from src.data.territory_registry import (
     _ID, TerritoryRecord, TerritoryRegistry, TerritorySource, record_from_dict, record_to_dict,
 )
@@ -199,18 +198,6 @@ def psycopg_conninfo(url: str) -> str:
     raise ValueError("URL PostgreSQL attendue (postgresql+psycopg://…).")
 
 
-def connect_from_env(variable: str = URL_VARIABLE) -> Callable:
-    """Connection factory reading the URL at each call; the URL is never logged or shown."""
-    def connect():
-        import psycopg
-
-        url = os.environ.get(variable, "").strip()
-        if not url:
-            raise RuntimeError(f"{variable} n'est pas défini.")
-        return psycopg.connect(psycopg_conninfo(url))
-    return connect
-
-
 class PostgisTerritoryRegistry:
     """Same read methods as :class:`TerritoryRegistry`; geometries come from the database (``geometry``).
 
@@ -372,9 +359,13 @@ def _store_geometry(cursor, row: GeometryRow) -> None:
         raise TerritoryImportError("Géométrie déjà présente dans la base avec un autre contenu.")
 
 
-def apply_import(connection, plan: ImportPlan, *, source_label: str, code_version: str,
+def apply_import(connection, plan: ImportPlan, *, source_label: str, code_version: str, expected_environment: str,
                  apply: bool = False) -> ImportReport:
-    """Insert what is missing in one transaction; without ``apply`` everything is rolled back."""
+    """Insert what is missing in one transaction; without ``apply`` everything is rolled back.
+
+    ``expected_environment`` (dev or test) is mandatory: the schema mark is checked inside the transaction,
+    under the import lock, before the first write. Connect with :func:`postgis_session.connect_target`.
+    """
     import psycopg
     from psycopg.types.json import Jsonb
 
@@ -382,6 +373,7 @@ def apply_import(connection, plan: ImportPlan, *, source_label: str, code_versio
     import_id = None
     with connection.transaction(), connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (IMPORT_LOCK,))
+        check_environment(cursor, expected_environment)    # Identity before any write.
         set_postgis_search_path(cursor)                    # R5 bis: ST_GeomFromWKB and ST_AsBinary below.
         cursor.execute("SELECT licence_id, share_alike FROM geonaf.licences WHERE licence_id = ANY(%s)",
                        (list(plan.licence_ids),))

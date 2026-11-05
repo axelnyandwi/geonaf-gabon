@@ -116,6 +116,21 @@ SELECT ordre, rubrique, element, valeur, comparable FROM (
                      THEN has_schema_privilege(a.role, n.oid, 'USAGE') ELSE false END)
          || ' schemas ; PUBLIC ' || (SELECT count(*)::text FROM ns n WHERE has_schema_privilege('public', n.oid, 'USAGE')),
          true
+  -- Effective PostGIS privileges (USAGE on its schema, EXECUTE on the ST_* functions GEONAF calls, no CREATE).
+  -- CASE fixes the order: the privilege functions are never called for an absent role or extension.
+  UNION ALL SELECT 7, 'droits', r.name || ' : PostGIS (usage, execute ST_*, create)',
+         CASE WHEN NOT EXISTS (SELECT 1 FROM pg_catalog.pg_roles WHERE rolname = r.name) THEN 'role absent'
+              WHEN NOT EXISTS (SELECT 1 FROM pg_catalog.pg_extension WHERE extname = 'postgis') THEN 'PostGIS absent'
+              ELSE (SELECT 'usage=' || has_schema_privilege(r.name, e.extnamespace, 'USAGE')::text
+                           || ' execute=' || coalesce(bool_and(has_function_privilege(r.name, p.oid, 'EXECUTE')),
+                                                      false)::text
+                           || ' create=' || has_schema_privilege(r.name, e.extnamespace, 'CREATE')::text
+                    FROM pg_catalog.pg_extension e
+                    LEFT JOIN pg_catalog.pg_proc p ON p.pronamespace = e.extnamespace
+                         AND p.proname IN ('st_intersects', 'st_makeenvelope', 'st_asbinary', 'st_geomfromwkb')
+                    WHERE e.extname = 'postgis' GROUP BY e.extnamespace) END,
+         true
+    FROM (VALUES ('geonaf_reader'), ('geonaf_importer')) AS r(name)
   UNION ALL SELECT 8, 'dependances', 'vues hors des schemas GEONAF qui les lisent',
          (SELECT count(DISTINCT v.oid)::text FROM pg_catalog.pg_depend d
             JOIN pg_catalog.pg_rewrite w ON d.classid = 'pg_catalog.pg_rewrite'::regclass AND d.objid = w.oid

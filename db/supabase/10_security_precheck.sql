@@ -3,8 +3,8 @@
 -- Run on each project after 09 (rename) and 01 (roles), before 02. Every line must read conforme = true;
 -- the informative lines (attendu = 'information') are read by a person against
 -- docs/supabase_security_d2_2.md, section "Lecture des lignes d'information". A false line: do not apply 0001.
--- Early run (read only, allowed before 09 and 01): line 0 shows the phase; lines 2, 3, 20 and 21 are then
--- expected to be false, every other non-informative line must already be true.
+-- Early run (read only, allowed before 09 and 01): line 0 shows the phase; lines 2, 3, 20, 21, 50 and 51 are
+-- then expected to be false, every other non-informative line must already be true.
 -- Writes nothing: the first statement makes the whole request a read-only transaction.
 -- Output: structure, role names and settings only; never a password, a key or a data value.
 -- Identity (lines -4 to -1): same lines as 08; no SQL value identifies the project (see 08).
@@ -130,5 +130,23 @@ FROM (
   UNION ALL SELECT 42, 'pg_graphql installe', 'information',
          coalesce((SELECT extversion || ' dans ' || extnamespace::regnamespace::text FROM pg_extension
                    WHERE extname = 'pg_graphql'), 'absent')
+
+  -- Effective PostGIS privileges of the GEONAF roles (D2-D4 audit). Calling a PostGIS function needs USAGE on
+  -- its schema (name lookup, even qualified) and EXECUTE on the function. has_*_privilege measures what the
+  -- role really holds, PUBLIC and inherited grants included: nothing is assumed about Supabase's defaults.
+  -- Before 01 the roles are absent and lines 50 and 51 are expected false; if they stay false after 01,
+  -- 01b_grant_postgis_usage.sql (explicit validation) grants USAGE only.
+  UNION ALL SELECT 50, 'USAGE sur le schema de PostGIS pour geonaf_reader et geonaf_importer', 'true',
+         coalesce((SELECT bool_and(has_schema_privilege(r.rolname, e.extnamespace, 'USAGE')) AND count(*) = 2
+                   FROM geonaf_roles r, pg_extension e WHERE e.extname = 'postgis'), false)::text
+  UNION ALL SELECT 51, 'EXECUTE de st_intersects, st_makeenvelope, st_asbinary, st_geomfromwkb pour ces roles', 'true',
+         coalesce((SELECT bool_and(has_function_privilege(r.rolname, p.oid, 'EXECUTE'))
+                          AND count(DISTINCT r.rolname) = 2 AND count(DISTINCT p.proname) = 4
+                   FROM geonaf_roles r, pg_proc p JOIN pg_extension e ON e.extnamespace = p.pronamespace
+                   WHERE e.extname = 'postgis'
+                     AND p.proname IN ('st_intersects', 'st_makeenvelope', 'st_asbinary', 'st_geomfromwkb')), false)::text
+  UNION ALL SELECT 52, 'roles GEONAF autorises a creer dans le schema de PostGIS (moindre privilege)', 'aucun',
+         coalesce((SELECT string_agg(r.rolname, ', ' ORDER BY r.rolname) FROM geonaf_roles r, pg_extension e
+                   WHERE e.extname = 'postgis' AND has_schema_privilege(r.rolname, e.extnamespace, 'CREATE')), 'aucun')
 ) AS checks
 ORDER BY ordre;
