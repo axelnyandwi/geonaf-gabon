@@ -1,8 +1,10 @@
 """PostgreSQL/PostGIS connection layer (D2.1): configuration, environment guard, read-only sessions.
 
 Nothing here runs at import time and nothing connects automatically: the Streamlit app keeps its
-file storage (``GEONAF_DB_BACKEND=file`` by default) and never imports this module today.
-SQLAlchemy and psycopg are imported only when an engine is created (``requirements-db.txt``).
+file storage (``GEONAF_DB_BACKEND=file`` by default). Since D4 the application uses this module only
+through ``src.data.storage`` (mode selection, target validation, environment mark) and for its error
+types; its PostGIS reads go through ``src.data.postgis_session``. SQLAlchemy and psycopg are imported
+only when an engine or a session is created (``requirements-db.txt``).
 
 Configuration (read at call time from the environment, never logged):
 

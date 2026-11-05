@@ -31,7 +31,7 @@ def _payload(aoi_id, digest, _zone, _units):
 
 
 def _digest(zone, units) -> str:
-    parts = [hashlib.sha256(zone.geometry_path.read_bytes()).hexdigest()]
+    parts = [zone.file_sha256]
     parts += [unit.record.fingerprint for unit in units]
     return hashlib.sha256("|".join(parts).encode()).hexdigest()
 

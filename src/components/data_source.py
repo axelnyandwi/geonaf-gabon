@@ -17,6 +17,24 @@ def _resolve(configured: str, spec):
     return resolve_data_dir(Path(configured), spec=spec, cache_root=default_cache_root())
 
 
+def active_store(data_dir):
+    """Storage selected by GEONAF_DB_BACKEND (files by default); opening it never connects.
+
+    A configuration error (unknown mode, missing URL, remote URL without TLS) is raised as a
+    database domain error, shown by the page guard without any secret.
+    """
+    from src.data.storage import open_store
+
+    return open_store(data_dir)
+
+
+def show_store_mode(store) -> None:
+    """Caption shown in PostGIS mode only: the file mode keeps the current interface unchanged."""
+    if store.is_postgis:
+        st.caption(f"Stockage : {store.label} (lecture seule, environnement « {store.environment} », "
+                   "vérifié par la marque du schéma à chaque lecture).")
+
+
 def active_data_dir() -> Path:
     """Return the data directory; never shows URLs, paths or exception details."""
     configured = config.DATA_DIR  # Read at call time: honours the effective configuration.

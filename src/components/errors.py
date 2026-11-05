@@ -66,6 +66,8 @@ _SECRET_ENV = re.compile(r"(?i)(secret|token|password|passwd|access_key|api_key)
 def _expected_types() -> tuple[type[BaseException], ...]:
     # Imported lazily: domain modules are heavy and must not depend on the interface.
     from src.data.catalogue import CatalogueError
+    from src.data.database import DatabaseConfigError, DatabaseConnectionError, EnvironmentIdentityError
+    from src.data.postgis_session import PostgisUnavailableError
     from src.demo_mode import DemoReadOnlyError
     from src.data.demo_pack import DemoPackError
     from src.data.download_control import TransferAborted
@@ -78,7 +80,8 @@ def _expected_types() -> tuple[type[BaseException], ...]:
 
     return (LocalPreviewError, CatalogueError, TransferAborted, GeoBoundariesError, DemoPackError,
             ByteBudgetExceeded, IncompleteSTACSearchError, ZoneImportRefused, ComputeBusyError,
-            DemoReadOnlyError)
+            DemoReadOnlyError, DatabaseConfigError, DatabaseConnectionError, EnvironmentIdentityError,
+            PostgisUnavailableError)
 
 
 def is_expected(error: BaseException) -> bool:

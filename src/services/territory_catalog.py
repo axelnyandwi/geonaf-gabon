@@ -8,11 +8,16 @@ Three families stay distinct:
   only after an explicit ``load_referential`` (network, cached snapshot);
 * custom zones imported by the user (``import_custom_zone``), always
   « fourni par l'utilisateur », never official.
+
+Registered territories are read through the store selected by ``GEONAF_DB_BACKEND``
+(``src.data.storage``): the file registry by default, the PostGIS copy when selected. Their geometry
+is always obtained with ``registry.geometry(record)``, which checks it against the record's
+fingerprint; the file digest of a record (``file_sha256``) keys the caches in both modes.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
@@ -46,13 +51,30 @@ class TerritoryOption:
     label: str
     kind: str
     legal_status: str
-    geometry_path: Path
+    geometry_path: Path | None   # None for a territory read from PostGIS (geometry from the database).
     area_km2: float
     record: object | None    # TerritoryRecord for registered territories; None for historical zones.
+    registry: object | None = field(default=None, compare=False, repr=False)   # Where the record was read.
 
     @property
     def status_text(self) -> str:
         return STATUS_TEXT.get(self.legal_status, self.legal_status)
+
+    @property
+    def file_sha256(self) -> str:
+        """Digest of the zone file: verified record digest, or the bytes of a historical zone file."""
+        if self.record is not None:
+            return self.record.file_sha256
+        return hashlib.sha256(self.geometry_path.read_bytes()).hexdigest()
+
+
+def territory_registry(data_dir, registry=None):
+    """The registry passed in, or the one of the store selected by GEONAF_DB_BACKEND (files by default)."""
+    if registry is not None:
+        return registry
+    from src.data.storage import open_store
+
+    return open_store(data_dir).territories
 
 
 def historical_zones(data_dir) -> tuple[TerritoryOption, ...]:
@@ -70,20 +92,22 @@ def historical_zones(data_dir) -> tuple[TerritoryOption, ...]:
 
 
 def _option(registry, record) -> TerritoryOption:
+    path = registry.store.path(record.storage_key) if isinstance(registry, TerritoryRegistry) else None
     return TerritoryOption(f"territory:{record.territory_id}", record.territory_id, record.label, record.kind,
-                           record.legal_status, registry.store.path(record.storage_key), record.area_km2, record)
+                           record.legal_status, path, record.area_km2, record, registry)
 
 
-def admin_territories(data_dir, release: str, level: str, iso3: str = "GAB") -> tuple[TerritoryOption, ...]:
-    registry = TerritoryRegistry(Path(data_dir))
+def admin_territories(data_dir, release: str, level: str, iso3: str = "GAB", *,
+                      registry=None) -> tuple[TerritoryOption, ...]:
+    registry = territory_registry(data_dir, registry)
     prefix = f"{iso3.lower()}-{release.lower()}-{level.lower()}-"
     records = [r for r in registry.territories(ADMIN_UNIT) if r.territory_id.startswith(prefix)
                and r.source.source_id == f"geoboundaries-{release.lower()}" and r.admin.level_code == level]
     return tuple(_option(registry, r) for r in sorted(records, key=lambda r: r.label.lower()))
 
 
-def custom_zones(data_dir) -> tuple[TerritoryOption, ...]:
-    registry = TerritoryRegistry(Path(data_dir))
+def custom_zones(data_dir, *, registry=None) -> tuple[TerritoryOption, ...]:
+    registry = territory_registry(data_dir, registry)
     return tuple(_option(registry, r) for r in sorted(registry.territories(CUSTOM_IMPORT), key=lambda r: r.label))
 
 
@@ -98,8 +122,9 @@ def load_referential(data_dir, release: str, level: str, iso3: str = "GAB", clie
 def geometry_wgs84(option: TerritoryOption):
     import geopandas as gpd
 
-    if option.record is not None:
-        TerritoryRegistry(option.geometry_path.parents[2]).geometry_path(option.record)   # Digest check.
+    if option.record is not None:       # Digest and geometry fingerprint checked by the registry.
+        registry = option.registry or TerritoryRegistry(option.geometry_path.parents[2])
+        return registry.geometry(option.record)
     return gpd.read_file(option.geometry_path).to_crs("EPSG:4326").geometry.union_all()
 
 
@@ -175,12 +200,38 @@ def comparison_payload(a: TerritoryOption, b: TerritoryOption) -> dict:
         attributions=[o.record.source.attribution for o in (a, b) if o.record is not None])
 
 
-def referential_pairs(data_dir, level: str, iso3: str = "GAB"):
+@dataclass(frozen=True)
+class StoredObservations:
+    """What the store holds for one zone; read only, nothing is recomputed."""
+
+    geometry_sha256: str
+    acquisitions: tuple            # AcquisitionRecord, latest ingestion of each product, grid footprint intersects.
+    results: tuple                 # IndicatorResult computed on this exact geometry.
+
+
+def stored_observations(option: TerritoryOption, store) -> StoredObservations:
+    """Acquisitions whose raster grid intersects the zone's bounds, and results recorded on its exact geometry.
+
+    The grid footprint is the extent of the raster, not of its valid pixels: a listed acquisition may
+    still not cover the zone. Results are matched on the normalized geometry fingerprint only, so a
+    value computed on another perimeter (another referential, another version) is never shown here.
+    """
+    from src.geo.aoi_identity import geometry_fingerprint
+
+    geometry = geometry_wgs84(option)
+    sha = option.record.geometry_sha256 if option.record is not None else geometry_fingerprint(geometry)
+    acquisitions = tuple(a for a in store.acquisitions.intersecting(geometry.bounds)
+                         if a.footprint().intersects(geometry))
+    return StoredObservations(sha, acquisitions, store.indicators.results(sha))
+
+
+def referential_pairs(data_dir, level: str, iso3: str = "GAB", *, registry=None):
     """(pairs, unmatched gbOpen, unmatched gbHumanitarian) by normalized name; nothing is merged or hidden."""
     from src.services.territory_comparison import match_by_normalized_name
 
-    open_ = admin_territories(data_dir, "gbOpen", level, iso3)
-    humanitarian = admin_territories(data_dir, "gbHumanitarian", level, iso3)
+    registry = territory_registry(data_dir, registry)
+    open_ = admin_territories(data_dir, "gbOpen", level, iso3, registry=registry)
+    humanitarian = admin_territories(data_dir, "gbHumanitarian", level, iso3, registry=registry)
     pairs = match_by_normalized_name(open_, humanitarian)
     matched_a = {a.key for a, _ in pairs}
     matched_b = {b.key for _, b in pairs}

@@ -210,10 +210,21 @@ def test_importing_the_modules_loads_no_database_driver():
     assert result.stdout.strip() == "[]"
 
 
-def test_application_code_does_not_import_the_database_layer():
+def test_application_code_reaches_the_database_only_through_the_storage_layer():
+    """D4: the interface opens the store of src.data.storage; it never handles sessions, drivers or SQL.
+
+    errors.py may import the database error *types* (lazily) to show their user messages.
+    """
     sources = [ROOT / "app.py", *(ROOT / "views").rglob("*.py"), *(ROOT / "src" / "components").rglob("*.py")]
-    offenders = [p.name for p in sources if "src.data.database" in p.read_text(encoding="utf-8")]
-    assert offenders == []
+    forbidden = re.compile(r"(psycopg|sqlalchemy|src\.data\.postgis_\w+|postgis_session)")
+    assert [p.name for p in sources if forbidden.search(p.read_text(encoding="utf-8"))
+            and p.name != "errors.py"] == []
+    users = sorted(p.name for p in sources if "src.data.database" in p.read_text(encoding="utf-8"))
+    assert users == ["errors.py"]
+    errors = (ROOT / "src" / "components" / "errors.py").read_text(encoding="utf-8")
+    assert "    from src.data.database import DatabaseConfigError" in errors     # Inside a function (lazy).
+    assert sorted(p.name for p in sources if "src.data.storage" in p.read_text(encoding="utf-8")) == [
+        "data_source.py"]
 
 
 # --- Engine and session (need requirements-db.txt; no remote access) -------------------------------

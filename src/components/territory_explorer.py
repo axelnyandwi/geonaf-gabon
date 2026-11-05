@@ -1,11 +1,11 @@
 """Territory selection, boundary comparison and GeoJSON import page; logic lives in services."""
 
-import hashlib
 from pathlib import Path
 
 import pandas as pd
 import streamlit as st
 
+from src.components.data_source import active_store, show_store_mode
 from src.components.errors import is_expected, show_error, show_internal_error
 from src.components.formatting import format_percent, format_surface
 from src.components.resource_panel import assess_geometry, show_assessment
@@ -64,7 +64,7 @@ def _payload(kind, key, digest, _options):
 def _digest(option) -> str:
     if option.record is not None:
         return option.record.fingerprint
-    return option.territory_id + ":" + hashlib.sha256(option.geometry_path.read_bytes()).hexdigest()
+    return option.territory_id + ":" + option.file_sha256
 
 
 def _provenance(option) -> dict:
@@ -100,7 +100,14 @@ def _provenance_table(option):
             st.caption(f"- {limit}")
 
 
+POSTGIS_WRITE_TEXT = ("Mode base PostGIS : l'application ne modifie pas la base. {operation} se fait dans le "
+                     "registre fichier, puis par un import validé par l'administrateur.")
+
+
 def _load_button(data_dir, release, level, key):
+    if not active_store(data_dir).writable:
+        st.info(POSTGIS_WRITE_TEXT.format(operation="Le chargement d'un référentiel"))
+        return
     if read_only():
         st.info(unavailable_text(f"Chargement {catalog.REFERENTIALS[release]} - {catalog.LEVELS[level]}"))
         return
@@ -118,6 +125,45 @@ def _load_button(data_dir, release, level, key):
         for name, reason in report.rejected:
             st.caption(f"Unité rejetée (non réparée) : {name} - {reason}")
         st.rerun()
+
+
+def _stored(data_dir, option):
+    """On demand only (toggle): acquisitions and results held by the store for this zone; nothing recomputed."""
+    if not st.toggle("Acquisitions et résultats enregistrés pour cette zone", key=f"stored_{option.key}"):
+        return
+    store = active_store(data_dir)
+    try:
+        found = catalog.stored_observations(option, store)
+    except Exception as error:  # Never the internal exception type or text.
+        if is_expected(error):
+            show_error(error, context="territoires.stockage", prefix="Lecture impossible : ")
+        else:
+            show_internal_error(error, context="territoires.stockage", message="Lecture du stockage impossible.")
+        return
+    st.caption(f"Source : {store.label}. Emprise d'acquisition = grille raster de la bande rouge, pas l'emprise "
+               "des pixels valides. Dates d'acquisition et d'ingestion distinctes, jamais fusionnées.")
+    if found.acquisitions:
+        st.dataframe(pd.DataFrame([{
+            "Produit": a.product_id, "Acquisition (UTC)": a.acquired_at_utc.strftime("%Y-%m-%d %H:%M"),
+            "Ingestion GEONAF (UTC)": a.ingested_at_utc.strftime("%Y-%m-%d %H:%M"),
+            "Grille": f"{a.grid_crs}, {a.grid_resolution_m:g} m"} for a in found.acquisitions]),
+            hide_index=True, width="stretch")
+    else:
+        st.info("Aucune acquisition enregistrée dont la grille recoupe cette zone.")
+    if found.results:
+        st.dataframe(pd.DataFrame([{
+            "Indicateur": r.indicator.label,
+            "Valeur": "indisponible" if r.indicator.value is None else f"{r.indicator.value:g} {r.indicator.unit}",
+            "Fiabilité": r.indicator.reliability, "Nature": r.indicator.result_kind or MISSING,
+            "Statut scientifique": ("expérimental (méthode non validée)"
+                                    if r.indicator.scientific_status == "experimental" else
+                                    r.indicator.scientific_status or MISSING),
+            "Calculé le (UTC)": r.computed_at_utc[:16].replace("T", " ")} for r in found.results]),
+            hide_index=True, width="stretch")
+        st.caption(f"Résultats calculés sur cette géométrie exacte (empreinte {found.geometry_sha256[:12]}…) ; "
+                   "aucune valeur d'un autre périmètre n'est reprise.")
+    else:
+        st.info("Aucun résultat d'indicateur enregistré pour cette géométrie exacte.")
 
 
 def _guard(option):
@@ -166,6 +212,7 @@ def _selection(data_dir):
         show_map(_payload("selection", option.key, _digest(option), (option,)), option.key)
     with right:
         _provenance_table(option)
+    _stored(data_dir, option)
     _guard(option)
 
 
@@ -220,6 +267,9 @@ def _comparison(data_dir):
 
 
 def _import(data_dir):
+    if not active_store(data_dir).writable:
+        st.info(POSTGIS_WRITE_TEXT.format(operation="L'import d'une zone personnalisée"))
+        return
     if read_only():  # No uploader: nothing is received or stored.
         st.info(unavailable_text("Import de zone personnalisée"))
         return
@@ -260,6 +310,7 @@ def show_territories(data_dir):
     st.caption("Choisir un territoire et comprendre l'origine de ses limites. GEONAF observe toute zone, "
                "qu'une frontière officielle existe ou non ; zone d'acquisition, unité administrative et zone "
                "importée restent distinctes.")
+    show_store_mode(active_store(data_dir))
     tabs = st.tabs(["Sélection", "Comparaison des référentiels", "Import GeoJSON"])
     with tabs[0]:
         _selection(data_dir)
