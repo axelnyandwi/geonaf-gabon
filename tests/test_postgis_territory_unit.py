@@ -303,13 +303,16 @@ def test_licences_used_by_the_registry_are_seeded_by_the_migration():
 
 def test_migration_chain_points_to_existing_sql_files():
     versions = sorted((ROOT / "db" / "migrations" / "versions").glob("*.py"))
-    assert [p.name for p in versions] == ["0001_territorial_registry.py"]
-    tree = ast.parse(versions[0].read_text(encoding="utf-8"))
-    values = {node.targets[0].id: node.value.value for node in tree.body
-              if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)}
-    assert values["revision"] == "0001_territorial_registry" and values["down_revision"] is None
-    for name in re.findall(r'"(\d{4}_[a-z_]+\.(?:up|down)\.sql)"', versions[0].read_text(encoding="utf-8")):
-        assert (ROOT / "db" / "sql" / name).is_file()
+    assert [p.name for p in versions] == ["0001_territorial_registry.py", "0002_observations.py"]
+    expected = {"0001_territorial_registry": None, "0002_observations": "0001_territorial_registry"}
+    for path in versions:
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        values = {node.targets[0].id: node.value.value for node in tree.body
+                  if isinstance(node, ast.Assign) and isinstance(node.value, ast.Constant)}
+        assert values["revision"] == path.stem and values["down_revision"] == expected[path.stem]
+        names = re.findall(r'"(\d{4}_[a-z_]+\.(?:up|down)\.sql)"', path.read_text(encoding="utf-8"))
+        assert sorted(names) == [f"{path.stem}.down.sql", f"{path.stem}.up.sql"]
+        assert all((ROOT / "db" / "sql" / name).is_file() for name in names)
     ini = (ROOT / "db" / "alembic.ini").read_text(encoding="utf-8")
     assert "sqlalchemy.url" not in ini and "postgresql" not in ini      # No URL, hence no secret, in the file.
 

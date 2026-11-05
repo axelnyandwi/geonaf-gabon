@@ -1,0 +1,264 @@
+-- GEONAF migration 0002: satellite acquisitions and territorial indicator results (D3).
+--
+-- Copies of GEONAF's file records, like 0001: every row is immutable, the original document is kept
+-- verbatim (jsonb) with its SHA-256 so that Python can check it, the columns exist for queries and
+-- constraints. Three dates are never merged: acquisition (what the satellite saw), ingestion (when
+-- GEONAF retrieved it) and computation (when a result was produced).
+--
+-- A result is attached to the GEOMETRY it was computed on (geonaf.geometries, normalized fingerprint),
+-- never to a territory or a community: the same geometry may be described by several territories, and
+-- a value is attributable to a community only when its perimeter is that community's (AGENTS.md).
+--
+-- Conventions of 0001: schema-qualified objects, functions with an empty search_path, no percent sign.
+-- Requires migration 0001 (schema geonaf, geonaf.geometries, geonaf.forbid_change) and PostGIS on the
+-- search_path while this file runs.
+DO $$
+BEGIN
+  IF to_regclass('geonaf.geometries') IS NULL OR to_regprocedure('geonaf.forbid_change()') IS NULL THEN
+    RAISE EXCEPTION 'GEONAF: migration 0001 absente, 0002 ne peut pas être appliquée';
+  END IF;
+  IF to_regtype('geometry') IS NULL THEN
+    RAISE EXCEPTION 'GEONAF: type geometry introuvable, ajouter le schéma de PostGIS au search_path';
+  END IF;
+END $$;
+
+-- Import journal, one row per import run (acquisitions or indicators) -----------------------------
+
+CREATE TABLE geonaf.data_imports (
+  import_id           bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  scope               text NOT NULL CHECK (scope IN ('acquisitions', 'indicators')),
+  started_at          timestamptz NOT NULL DEFAULT now(),
+  finished_at         timestamptz,
+  source_label        text NOT NULL CHECK (btrim(source_label) <> '' AND source_label !~ '[/\\:]'),
+  code_version        text NOT NULL CHECK (btrim(code_version) <> ''),
+  records_seen        integer NOT NULL DEFAULT 0 CHECK (records_seen >= 0),
+  records_inserted    integer NOT NULL DEFAULT 0 CHECK (records_inserted >= 0),
+  records_existing    integer NOT NULL DEFAULT 0 CHECK (records_existing >= 0),
+  fingerprints_sha256 char(64)
+);
+
+-- Acquisitions --------------------------------------------------------------------------------------
+
+-- Identity of a satellite product (STAC collection and item); acquired_at is the sensing date.
+CREATE TABLE geonaf.acquisitions (
+  collection  text NOT NULL CHECK (collection ~ '^[a-z0-9][a-z0-9-]{0,63}$'),
+  product_id  text NOT NULL CHECK (product_id ~ '^[A-Za-z0-9][A-Za-z0-9_.:-]{0,255}$'),
+  acquired_at timestamptz NOT NULL,
+  PRIMARY KEY (collection, product_id)
+);
+
+-- One row per ingestion manifest: a product ingested twice keeps two manifests (two ingestion dates).
+-- footprint: extent of the raster GRID of the red band, reprojected to WGS84. It is not the footprint
+-- of valid pixels (a tile may be partly empty) and is NULL when the grid cannot be reprojected.
+CREATE TABLE geonaf.acquisition_manifests (
+  manifest_sha256   char(64) PRIMARY KEY CHECK (manifest_sha256 ~ '^[0-9a-f]{64}$'),
+  collection        text NOT NULL,
+  product_id        text NOT NULL,
+  schema_version    text NOT NULL CHECK (schema_version = 'geonaf.sentinel2-acquisition/v1'),
+  acquired_at       timestamptz NOT NULL,
+  ingested_at       timestamptz NOT NULL,
+  stac_source       text NOT NULL CHECK (stac_source ~ '^https://'),
+  grid_crs          text NOT NULL CHECK (btrim(grid_crs) <> ''),
+  grid_resolution_m double precision NOT NULL CHECK (grid_resolution_m > 0),
+  footprint         geometry(Polygon, 4326),
+  integrity_mode    text CHECK (integrity_mode IN ('strict', 'exploratory')),
+  manifest_document jsonb NOT NULL,
+  import_id         bigint NOT NULL REFERENCES geonaf.data_imports,
+  FOREIGN KEY (collection, product_id) REFERENCES geonaf.acquisitions (collection, product_id),
+  CHECK (ingested_at >= acquired_at),
+  CHECK (footprint IS NULL OR (ST_IsValid(footprint) AND NOT ST_IsEmpty(footprint))),
+  CHECK (jsonb_typeof(manifest_document) = 'object'
+         AND manifest_document ->> 'product_id' = product_id
+         AND manifest_document ->> 'collection' = collection
+         AND manifest_document ->> 'schema_version' = schema_version)
+);
+CREATE INDEX acquisition_manifests_product ON geonaf.acquisition_manifests (collection, product_id);
+CREATE INDEX acquisition_manifests_footprint ON geonaf.acquisition_manifests USING gist (footprint);
+CREATE INDEX acquisitions_acquired ON geonaf.acquisitions (acquired_at);
+
+-- Indicators ---------------------------------------------------------------------------------------
+
+-- Copy of RESULT_KINDS (src/indicators/model.py).
+CREATE TABLE geonaf.indicator_result_kinds (result_kind text PRIMARY KEY);
+INSERT INTO geonaf.indicator_result_kinds (result_kind) VALUES
+  ('mesure géométrique'), ('observation d''une base cartographique'), ('estimation'), ('prédiction');
+
+-- What is measured and how: identifier, label, unit, method, nature and the fingerprint of the
+-- versioned profile (thresholds, classes). Another profile is another definition, never an edit.
+CREATE TABLE geonaf.indicator_definitions (
+  definition_sha256   char(64) PRIMARY KEY CHECK (definition_sha256 ~ '^[0-9a-f]{64}$'),
+  indicator_id        text NOT NULL CHECK (indicator_id ~ '^[a-z0-9][a-z0-9_.-]{0,127}$'),
+  label               text NOT NULL CHECK (btrim(label) <> ''),
+  unit                text NOT NULL,
+  method              text NOT NULL CHECK (btrim(method) <> ''),
+  result_kind         text REFERENCES geonaf.indicator_result_kinds,
+  scientific_status   text CHECK (scientific_status IN ('experimental', 'validated')),
+  profile_fingerprint char(64) NOT NULL CHECK (profile_fingerprint ~ '^[0-9a-f]{64}$'),
+  definition_document jsonb NOT NULL,
+  CHECK (jsonb_typeof(definition_document) = 'object'
+         AND definition_document ->> 'indicator_id' = indicator_id
+         AND definition_document ->> 'profile_fingerprint' = profile_fingerprint)
+);
+CREATE INDEX indicator_definitions_indicator ON geonaf.indicator_definitions (indicator_id);
+
+-- One computed value on one geometry. aoi_file_sha256 is the digest of the zone file used by the
+-- computation (existing caches); geometry_sha256 the normalized geometry it designates.
+CREATE TABLE geonaf.indicator_results (
+  result_sha256         char(64) PRIMARY KEY CHECK (result_sha256 ~ '^[0-9a-f]{64}$'),
+  definition_sha256     char(64) NOT NULL REFERENCES geonaf.indicator_definitions,
+  geometry_sha256       char(64) NOT NULL REFERENCES geonaf.geometries,
+  aoi_id                text NOT NULL CHECK (btrim(aoi_id) <> ''),
+  aoi_file_sha256       char(64) NOT NULL CHECK (aoi_file_sha256 ~ '^[0-9a-f]{64}$'),
+  status                text NOT NULL CHECK (status IN ('disponible', 'indisponible')),
+  -- Finite only. PostgreSQL holds NaN = NaN as true, so NaN and the infinities are named explicitly.
+  value                 double precision CHECK (value IS NULL OR value NOT IN ('NaN', 'Infinity', '-Infinity')),
+  unit                  text NOT NULL,
+  observation_start     timestamptz,
+  observation_end       timestamptz,
+  reference_label       text,
+  ingested_at           timestamptz,
+  source_id             text,
+  source_product        text,
+  source_version        text,
+  coverage_percent      double precision CHECK (coverage_percent IS NULL OR coverage_percent BETWEEN 0 AND 100),
+  reliability           text NOT NULL CHECK (reliability IN ('élevée', 'moyenne', 'faible', 'non évaluée')),
+  computed_at           timestamptz NOT NULL,
+  code_version          text NOT NULL CHECK (btrim(code_version) <> ''),
+  result_document       jsonb NOT NULL,
+  import_id             bigint NOT NULL REFERENCES geonaf.data_imports,
+  CHECK (status = 'disponible' OR value IS NULL),
+  CHECK (observation_start IS NULL OR observation_end IS NULL OR observation_start <= observation_end),
+  CHECK (jsonb_typeof(result_document) = 'object'
+         AND result_document -> 'indicator' ->> 'indicator_id' IS NOT NULL
+         AND result_document ->> 'geometry_sha256' = geometry_sha256
+         AND result_document ->> 'definition_sha256' = definition_sha256)
+);
+CREATE INDEX indicator_results_geometry ON geonaf.indicator_results (geometry_sha256, definition_sha256);
+CREATE INDEX indicator_results_file ON geonaf.indicator_results (aoi_file_sha256);
+
+-- Immutability ------------------------------------------------------------------------------------
+
+CREATE TRIGGER acquisitions_immutable BEFORE UPDATE OR DELETE ON geonaf.acquisitions
+  FOR EACH ROW EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER acquisitions_no_truncate BEFORE TRUNCATE ON geonaf.acquisitions
+  FOR EACH STATEMENT EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER acquisition_manifests_immutable BEFORE UPDATE OR DELETE ON geonaf.acquisition_manifests
+  FOR EACH ROW EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER acquisition_manifests_no_truncate BEFORE TRUNCATE ON geonaf.acquisition_manifests
+  FOR EACH STATEMENT EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER indicator_result_kinds_immutable BEFORE UPDATE OR DELETE ON geonaf.indicator_result_kinds
+  FOR EACH ROW EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER indicator_result_kinds_no_truncate BEFORE TRUNCATE ON geonaf.indicator_result_kinds
+  FOR EACH STATEMENT EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER indicator_definitions_immutable BEFORE UPDATE OR DELETE ON geonaf.indicator_definitions
+  FOR EACH ROW EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER indicator_definitions_no_truncate BEFORE TRUNCATE ON geonaf.indicator_definitions
+  FOR EACH STATEMENT EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER indicator_results_immutable BEFORE UPDATE OR DELETE ON geonaf.indicator_results
+  FOR EACH ROW EXECUTE FUNCTION geonaf.forbid_change();
+CREATE TRIGGER indicator_results_no_truncate BEFORE TRUNCATE ON geonaf.indicator_results
+  FOR EACH STATEMENT EXECUTE FUNCTION geonaf.forbid_change();
+
+-- The journal row may only be closed once; scope, label and code version never change.
+CREATE FUNCTION geonaf.close_data_import_only() RETURNS trigger LANGUAGE plpgsql SET search_path = '' AS $$
+BEGIN
+  IF TG_OP <> 'UPDATE' OR OLD.finished_at IS NOT NULL OR NEW.finished_at IS NULL
+     OR NEW.import_id <> OLD.import_id OR NEW.scope <> OLD.scope OR NEW.started_at <> OLD.started_at
+     OR NEW.source_label <> OLD.source_label OR NEW.code_version <> OLD.code_version THEN
+    RAISE EXCEPTION 'GEONAF: le journal d''import ne peut être que clôturé une fois'
+      USING DETAIL = TG_OP || ' sur data_imports';
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER data_imports_close BEFORE UPDATE OR DELETE ON geonaf.data_imports
+  FOR EACH ROW EXECUTE FUNCTION geonaf.close_data_import_only();
+CREATE TRIGGER data_imports_no_truncate BEFORE TRUNCATE ON geonaf.data_imports
+  FOR EACH STATEMENT EXECUTE FUNCTION geonaf.forbid_change();
+
+-- A manifest repeats the dates of its acquisition exactly.
+CREATE FUNCTION geonaf.check_acquisition_manifest() RETURNS trigger LANGUAGE plpgsql SET search_path = '' AS $$
+DECLARE
+  sensed timestamptz;
+BEGIN
+  SELECT acquired_at INTO sensed FROM geonaf.acquisitions
+   WHERE collection = NEW.collection AND product_id = NEW.product_id;
+  IF sensed IS DISTINCT FROM NEW.acquired_at THEN
+    RAISE EXCEPTION 'GEONAF: date d''acquisition du manifeste différente de celle du produit'
+      USING DETAIL = NEW.collection || ' ' || NEW.product_id;
+  END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER acquisition_manifests_check BEFORE INSERT ON geonaf.acquisition_manifests
+  FOR EACH ROW EXECUTE FUNCTION geonaf.check_acquisition_manifest();
+
+-- Views -----------------------------------------------------------------------------------------
+
+-- Latest ingestion of every product (the most recent manifest), with the age of the observation
+-- left to the reader: acquired_at and ingested_at are both given, never merged.
+CREATE VIEW geonaf.acquisitions_latest WITH (security_invoker = true) AS
+  SELECT DISTINCT ON (collection, product_id) collection, product_id, acquired_at, ingested_at, grid_crs,
+         grid_resolution_m, footprint, integrity_mode, manifest_sha256
+  FROM geonaf.acquisition_manifests
+  ORDER BY collection, product_id, ingested_at DESC, manifest_sha256;
+
+-- Privileges (same model as 0001) -------------------------------------------------------------------
+REVOKE ALL ON geonaf.data_imports, geonaf.acquisitions, geonaf.acquisition_manifests, geonaf.indicator_result_kinds,
+              geonaf.indicator_definitions, geonaf.indicator_results, geonaf.acquisitions_latest FROM PUBLIC;
+REVOKE ALL ON FUNCTION geonaf.close_data_import_only(), geonaf.check_acquisition_manifest() FROM PUBLIC;
+
+ALTER TABLE geonaf.data_imports ENABLE ROW LEVEL SECURITY;
+ALTER TABLE geonaf.acquisitions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE geonaf.acquisition_manifests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE geonaf.indicator_result_kinds ENABLE ROW LEVEL SECURITY;
+ALTER TABLE geonaf.indicator_definitions ENABLE ROW LEVEL SECURITY;
+ALTER TABLE geonaf.indicator_results ENABLE ROW LEVEL SECURITY;
+
+DO $$
+DECLARE
+  api_role text;
+  geonaf_table text;
+BEGIN
+  FOREACH api_role IN ARRAY ARRAY['anon', 'authenticated', 'service_role'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = api_role) THEN
+      EXECUTE 'REVOKE ALL ON geonaf.data_imports, geonaf.acquisitions, geonaf.acquisition_manifests, '
+           || 'geonaf.indicator_result_kinds, geonaf.indicator_definitions, geonaf.indicator_results, '
+           || 'geonaf.acquisitions_latest FROM ' || quote_ident(api_role);
+      EXECUTE 'REVOKE ALL ON ALL SEQUENCES IN SCHEMA geonaf FROM ' || quote_ident(api_role);
+      EXECUTE 'REVOKE ALL ON ALL FUNCTIONS IN SCHEMA geonaf FROM ' || quote_ident(api_role);
+    END IF;
+  END LOOP;
+  FOREACH geonaf_table IN ARRAY ARRAY['data_imports', 'acquisitions', 'acquisition_manifests',
+      'indicator_result_kinds', 'indicator_definitions', 'indicator_results'] LOOP
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geonaf_reader') THEN
+      EXECUTE 'CREATE POLICY geonaf_reader_select ON geonaf.' || quote_ident(geonaf_table)
+           || ' FOR SELECT TO geonaf_reader USING (true)';
+    END IF;
+    IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geonaf_importer') THEN
+      EXECUTE 'CREATE POLICY geonaf_importer_select ON geonaf.' || quote_ident(geonaf_table)
+           || ' FOR SELECT TO geonaf_importer USING (true)';
+      IF geonaf_table <> 'indicator_result_kinds' THEN
+        EXECUTE 'CREATE POLICY geonaf_importer_insert ON geonaf.' || quote_ident(geonaf_table)
+             || ' FOR INSERT TO geonaf_importer WITH CHECK (true)';
+      END IF;
+    END IF;
+  END LOOP;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geonaf_importer') THEN
+    CREATE POLICY geonaf_importer_close ON geonaf.data_imports FOR UPDATE TO geonaf_importer
+      USING (finished_at IS NULL) WITH CHECK (finished_at IS NOT NULL);
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geonaf_reader') THEN
+    GRANT SELECT ON geonaf.data_imports, geonaf.acquisitions, geonaf.acquisition_manifests,
+                    geonaf.indicator_result_kinds, geonaf.indicator_definitions, geonaf.indicator_results,
+                    geonaf.acquisitions_latest TO geonaf_reader;
+  END IF;
+  IF EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'geonaf_importer') THEN
+    GRANT SELECT ON geonaf.data_imports, geonaf.acquisitions, geonaf.acquisition_manifests,
+                    geonaf.indicator_result_kinds, geonaf.indicator_definitions, geonaf.indicator_results,
+                    geonaf.acquisitions_latest TO geonaf_importer;
+    GRANT INSERT ON geonaf.data_imports, geonaf.acquisitions, geonaf.acquisition_manifests,
+                    geonaf.indicator_definitions, geonaf.indicator_results TO geonaf_importer;
+    GRANT UPDATE (finished_at, records_seen, records_inserted, records_existing, fingerprints_sha256)
+      ON geonaf.data_imports TO geonaf_importer;
+    GRANT USAGE ON ALL SEQUENCES IN SCHEMA geonaf TO geonaf_importer;
+  END IF;
+END $$;

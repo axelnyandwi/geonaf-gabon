@@ -289,13 +289,19 @@ def test_no_request_ever_searches_public_or_puts_pg_temp_first(registry):
             assert value in ("pg_catalog, extensions, pg_temp", ""), (name, value)
 
 
-def test_python_postgis_calls_are_inventoried_until_r5_bis():
-    """R5 bis is not implemented: the Python layer runs these PostGIS calls with the connection's default
-    search path (which holds public on Supabase). A new call must update this list and the R5 bis note."""
-    source = (ROOT / "src" / "data" / "postgis_territory_registry.py").read_text(encoding="utf-8")
-    assert set(re.findall(r"\b(ST_\w+)\(", source)) == {"ST_Intersects", "ST_MakeEnvelope", "ST_AsBinary",
-                                                         "ST_GeomFromWKB"}
-    assert "search_path" not in source      # Turns red when R5 bis lands: then replace this test by its own.
+def test_r5_bis_every_python_module_calling_postgis_sets_the_transaction_search_path():
+    """R5 bis (D4): a module that sends ST_* functions reaches the database only through transactions that
+    set pg_catalog, <PostGIS schema>, pg_temp first (src/data/postgis_session.py, tests in test_storage_d4.py)."""
+    # Modules that send SQL to a driver (.execute) and name a PostGIS function. supabase_sql.py only writes
+    # SQL Editor text (R5 path in every script, tests above); layer_store.py names ST_Intersects in a docstring.
+    sources = {p.name: p.read_text(encoding="utf-8") for p in (ROOT / "src").rglob("*.py")}
+    callers = sorted(name for name, text in sources.items() if re.search(r"\bST_\w+\(", text) and ".execute(" in text)
+    assert callers == ["postgis_observations.py", "postgis_territory_registry.py"]
+    for name in callers:
+        source = (ROOT / "src" / "data" / name).read_text(encoding="utf-8")
+        assert "set_postgis_search_path(cursor)" in source and "plain_read_transaction" in source, name
+        assert "self._sessions.read()" in source, name
+        assert not re.search(r"set_config\('search_path'|SET\s+search_path", source, re.I), name
 
 
 def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
@@ -306,6 +312,7 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
         "07_export_parity.sql", "08_inspect_legacy_schema.sql", "09_legacy_schema_fingerprint.sql",
         "09_rename_legacy_schema_application.sql", "09_rename_legacy_schema_rollback.sql",
         "09_rename_legacy_schema_simulation.sql", "10_security_precheck.sql", "10_verify_legacy_schema_rename.sql",
+        "11_state_diagnostic.sql", "12_migration_0002_application.sql", "12_migration_0002_simulation.sql",
         "90_test_constraints.sql", "99_drop_schema_test.sql"]
     for path in scripts:
         text = path.read_text(encoding="utf-8")
@@ -314,7 +321,8 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
     writes = re.compile(r"\b(INSERT|UPDATE|DELETE|CREATE|DROP|ALTER|GRANT|REVOKE|TRUNCATE|COMMENT|LOCK|SET\s+ROLE)\b",
                         re.I)
     for name in ("00_preflight.sql", "04_verify_schema.sql", "07_export_parity.sql", "08_inspect_legacy_schema.sql",
-                 "09_legacy_schema_fingerprint.sql", "10_security_precheck.sql", "10_verify_legacy_schema_rename.sql"):
+                 "09_legacy_schema_fingerprint.sql", "10_security_precheck.sql", "10_verify_legacy_schema_rename.sql",
+                 "11_state_diagnostic.sql"):
         assert not writes.search(code_only((SUPABASE / name).read_text(encoding="utf-8"))), name
 
 
@@ -590,3 +598,61 @@ def test_build_script_writes_import_files_outside_the_repository_only(registry, 
     assert sorted(manifest["files_sha256"]) == ["05_import_lot_01_application.sql", "05_import_lot_01_simulation.sql",
                                                 "06_verify_import.sql"]
     assert str(registry.data_dir) not in capsys.readouterr().out
+
+
+# --- Migration 0002 and state diagnostic (D2-D4) ------------------------------------------------------
+
+
+@pytest.mark.parametrize("name, apply", [("12_migration_0002_simulation.sql", False),
+                                         ("12_migration_0002_application.sql", True)])
+def test_migration_0002_scripts_are_generated_from_the_unchanged_body(name, apply):
+    text = (SUPABASE / name).read_text(encoding="utf-8")
+    assert text == s.migration_0002_wrapper(apply=apply)    # Regenerate with: build_supabase_sql.py migration
+    body = s.MIGRATION_0002.read_text(encoding="utf-8")
+    assert body.rstrip() in text and f"-- Body SHA-256: {hashlib.sha256(body.encode()).hexdigest()}" in text
+    assert text.index(s.SEARCH_PATH) < text.index("-- ===== Body of db/sql/0002")
+    # Preconditions before the body: 0001 recorded with the reviewed body, no 0002 yet, schema marked.
+    preconditions = text.split("-- ===== Body of")[0]
+    assert f"'0001_territorial_registry' AND body_sha256 = '{BODY_0001_SHA256}'" in preconditions
+    assert "migration 0002 deja enregistree" in preconditions and "03 a executer avant 0002" in preconditions
+    assert ("GEONAF SIMULATION DE MIGRATION 0002 REUSSIE, AUCUNE ECRITURE" in text) is (not apply)
+    assert not TRANSACTION_CONTROL.search(text)
+
+
+def test_state_diagnostic_is_read_only_and_never_recognises_a_migration_by_a_legacy_table_name():
+    text = (SUPABASE / "11_state_diagnostic.sql").read_text(encoding="utf-8")
+    code = statements_outside_comments(text).strip()
+    assert code.startswith(READ_ONLY_GUARD + "\nSELECT set_config('search_path', '', true);")
+    assert code_only(text).count(";") == 3 and code.endswith(";")          # Two settings, then one SELECT.
+    legacy = re.search(r"f\.geonaf_tables = '([a-z_,]+)'", text).group(1).split(",")
+    assert legacy == LEGACY_TABLES.split(",")
+    for marker in re.findall(r"to_regclass\('geonaf\.(\w+)'\) IS NOT NULL AS has_000", text):
+        assert marker not in legacy, marker          # territory_versions and indicator_results exist in both.
+    for code in ("S0", "S1", "S3", "S4", "S5", "V", "INCOHERENT"):
+        assert f"'{code}'" in text
+    # Privilege functions are called only for roles that exist (CASE fixes the evaluation order).
+    assert text.count("THEN has_table_privilege(") == 1 and text.count("THEN has_schema_privilege(") == 1
+
+
+def test_state_diagnostic_exports_are_compared_on_comparable_rows_only(tmp_path):
+    sys.path.insert(0, str(ROOT))
+    from scripts.compare_state_diagnostics import ExportError, compare, main, read_export
+
+    lines = ["ordre,rubrique,element,valeur,comparable", "0,execution,date UTC,{date},false",
+             "2,extension,postgis,3.3.7 dans extensions,true", "3,schema,geonaf_legacy_draft : oid,{oid},false",
+             "98,etat,etat reconnu,S1 : renomme,true"]
+    header, common = lines[0] + "\n", "".join(line + "\n" for line in lines[1:])
+    test = tmp_path / "test.csv"
+    dev = tmp_path / "dev.csv"
+    test.write_text(header + common.format(date="2026-11-05", oid="18655"), encoding="utf-8")
+    dev.write_text(header + common.format(date="2026-11-06", oid="20001"), encoding="utf-8")
+    assert compare(read_export(test), read_export(dev)) == [] and main([str(test), str(dev)]) == 0
+    dev.write_text(header + common.format(date="x", oid="y").replace("3.3.7", "3.4.0").replace("S1 : renomme",
+                                                                                              "S0 : herite"),
+                   encoding="utf-8")
+    differences = compare(read_export(test), read_export(dev))
+    assert len(differences) == 2 and any("postgis" in d for d in differences) and main([str(test), str(dev)]) == 1
+    (tmp_path / "bad.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+    with pytest.raises(ExportError):
+        read_export(tmp_path / "bad.csv")
+    assert main([str(tmp_path / "bad.csv"), str(dev)]) == 2

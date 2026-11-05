@@ -89,9 +89,11 @@ Même procédure que 08 (section 1, étapes 1 à 9), fichier `geonaf-<env>_10_<A
   l.11 et l.12 (masquage de PostGIS), l.14 (droit `CREATE` sur `extensions`) et l.41 (Data API).
 - Cohérence avec 08 : mêmes heures `-3` (critère I4), PostGIS dans `extensions`, mêmes déclencheurs
   d'événement (l.34 et 08 l.27).
-- R5 est appliqué aux scripts (D2.7) ; R5 bis ne l'est pas. La ligne 11 reste bloquante dans tous
-  les cas : la couche Python (R5 bis) utilise le chemin par défaut de la connexion, qui contient
-  `public` (relevé sur les deux projets le 2026-11-04 : `postgres` a `"$user", public, extensions`).
+- R5 est appliqué aux scripts (D2.7) et R5 bis à la couche Python (D2-D4, `src/data/postgis_session.py`) :
+  toute transaction Python qui appelle PostGIS fixe d'abord `pg_catalog, <schéma de PostGIS>, pg_temp`.
+  La ligne 11 reste bloquante : un objet de `public` qui masque PostGIS serait encore atteint par
+  tout outil qui ne passe pas par ces transactions (relevé du 2026-11-04 : `postgres` a
+  `"$user", public, extensions`).
 - Après 09 et 01, relancer 10 : toutes les lignes non informatives doivent être conformes (S1).
 
 Après 0001 : `04_verify_schema.sql` (aucun droit pour les rôles API ni pour `PUBLIC`, RLS partout,
@@ -124,7 +126,7 @@ autorisé.
 | R3 | RLS | RLS activée sans politique : le propriétaire la contourne, sauf FORCE RLS. Un comptage peut afficher 0 alors que la table contient des lignes | 08 l.4 et la garde de 09 tiennent compte de `relforcerowsecurity` | - |
 | R4 | RLS | `service_role` et les rôles `BYPASSRLS` ignorent la RLS : seuls les droits de table protègent `geonaf` | 0001 révoque tout aux rôles API ; 04 le vérifie | Vérifier 04 après toute future migration |
 | R5 | search_path | Avec `pg_catalog, public, extensions`, un objet `geometry` ou `st_*` placé dans `public` (ou dans `pg_temp`) serait lié **définitivement** aux contraintes et index de 0001 | **Appliqué en D2.7** : tout script qui résout un nom PostGIS (02, lots 05, 06, 07, 90) fixe d'abord `pg_catalog, extensions, pg_temp`. `public` n'est jamais parcouru et `pg_temp` vient en dernier (les lots trouvent leurs tables temporaires). Corps de 0001 inchangé (`719e7e84...`). Tests de non-régression ; 10 l.11 et l.12 restent bloquantes | Valider sur `geonaf-test` par la simulation 02 |
-| R5 bis | search_path (Python) | `PostgisTerritoryRegistry` et `read_only_session()` utilisent le chemin par défaut de la connexion, qui contient `public` : `ST_Intersects`, `ST_MakeEnvelope`, `ST_AsBinary` et `ST_GeomFromWKB` pourraient être masqués. `geometry()` est protégé par l'empreinte recalculée, **`intersecting()` ne l'est pas** | Aucune connexion possible depuis le poste (ports fermés) ; inventaire des appels figé par un test | Lot dédié : chemin local à la transaction construit depuis `pg_extension`, passage du registre par `read_only_session()` |
+| R5 bis | search_path (Python) | Avant D2-D4, `PostgisTerritoryRegistry` utilisait le chemin par défaut de la connexion, qui contient `public` : `ST_Intersects`, `ST_MakeEnvelope`, `ST_AsBinary` et `ST_GeomFromWKB` pouvaient être masqués (`intersecting()` sans protection) | **Appliqué (D2-D4)** : `set_postgis_search_path()` lit le schéma de PostGIS dans `pg_extension` et fixe `pg_catalog, <schéma>, pg_temp` en local à la transaction, avant toute requête, dans le registre, les imports et les lectures D3-D4. Tests : unitaires (ordre et texte des instructions), statique (tout module Python qui envoie `ST_*` passe par ce chemin), intégration contre une fonction d'ombrage (exige PostGIS : **non exécuté sur le poste**) | Si PostGIS est installé dans `public` (serveur local), `public` reste parcouru : rien d'autre n'est possible. `read_only_session()` (SQLAlchemy, diagnostic D2.1) n'appelle pas PostGIS |
 | R6 | Privilèges hérités | Les droits par défaut globaux s'appliquent à tout nouvel objet. Les droits par défaut d'un schéma s'ajoutent aux globaux sans pouvoir les retirer | 0001 révoque après création (tables, séquences, fonctions) | Règle pour 0002 et suivantes : `REVOKE` explicite après chaque création, contrôle 04 étendu |
 | R7 | Privilèges hérités | Les membres de `pg_read_all_data` lisent toutes les tables sans droit de table | Liste en 10 l.31 | Décider si ces rôles de la plateforme sont acceptables (avis de l'administrateur) |
 | R8 | Fonctions | Droit `EXECUTE` à `PUBLIC` par défaut sur toute nouvelle fonction | 0001 : `REVOKE ALL ON ALL FUNCTIONS ... FROM PUBLIC` et rôles API | Même règle en 0002 |

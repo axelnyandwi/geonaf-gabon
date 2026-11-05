@@ -1,7 +1,8 @@
 """Generate the SQL Editor scripts for Supabase (D2-a2); writes files only, never connects.
 
     python scripts/build_supabase_sql.py migration
-        -> db/supabase/02_migration_0001_simulation.sql and 02_migration_0001_application.sql
+        -> db/supabase/02_migration_0001_simulation.sql and 02_migration_0001_application.sql,
+           db/supabase/12_migration_0002_simulation.sql and 12_migration_0002_application.sql
     python scripts/build_supabase_sql.py import --data-dir <data> --source-label "registre local" --output-dir <dir>
         -> <dir>/05_import_lot_NN_simulation.sql, 05_import_lot_NN_application.sql, 06_verify_import.sql,
            manifest.json (SHA-256 of every file and the expected values)
@@ -25,12 +26,13 @@ sys.path.insert(0, str(ROOT))
 
 from src.data.postgis_territory_registry import TerritoryImportError, plan_import  # noqa: E402
 from src.data.supabase_sql import (  # noqa: E402
-    expected_intersecting, import_batches, migration_wrapper, verify_import_sql,
+    expected_intersecting, import_batches, migration_0002_wrapper, migration_wrapper, verify_import_sql,
 )
 from src.data.territory_registry import TerritoryRegistry  # noqa: E402
 
 SUPABASE_DIR = ROOT / "db" / "supabase"
 MIGRATION_FILES = {"02_migration_0001_simulation.sql": False, "02_migration_0001_application.sql": True}
+MIGRATION_0002_FILES = {"12_migration_0002_simulation.sql": False, "12_migration_0002_application.sql": True}
 
 
 def write(path: Path, text: str) -> str:
@@ -49,6 +51,8 @@ def code_version() -> str:
 def build_migration() -> int:
     for name, apply in MIGRATION_FILES.items():
         print(f"{name} : {write(SUPABASE_DIR / name, migration_wrapper(apply=apply))}")
+    for name, apply in MIGRATION_0002_FILES.items():
+        print(f"{name} : {write(SUPABASE_DIR / name, migration_0002_wrapper(apply=apply))}")
     return 0
 
 

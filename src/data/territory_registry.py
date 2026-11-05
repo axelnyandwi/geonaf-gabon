@@ -241,6 +241,35 @@ class TerritoryRegistry:
             raise ValueError("Géométrie de territoire absente ou modifiée depuis son enregistrement.")
         return path
 
+    def geometry(self, record: TerritoryRecord):
+        """WGS84 union of the registered geometry, checked against the record's fingerprint.
+
+        Same contract as :meth:`PostgisTerritoryRegistry.geometry`: the file digest is verified first,
+        then the geometry fingerprint; a geometry that does not match its record is refused.
+        """
+        import geopandas as gpd
+
+        from src.geo.aoi_identity import geometry_fingerprint
+
+        union = gpd.read_file(self.geometry_path(record)).to_crs("EPSG:4326").geometry.union_all()
+        if geometry_fingerprint(union) != record.geometry_sha256:
+            raise ValueError("Géométrie de territoire différente de son empreinte.")
+        return union
+
+    def intersecting(self, wgs84_bounds, kind: str | None = None) -> tuple[TerritoryRecord, ...]:
+        """Latest versions whose recorded WGS84 bounds, then geometry, intersect a rectangle."""
+        from shapely.geometry import box
+
+        west, south, east, north = (float(v) for v in wgs84_bounds)
+        rectangle = box(west, south, east, north)
+        output = []
+        for record in self.territories(kind):
+            left, bottom, right, top = record.wgs84_bounds
+            if left <= east and right >= west and bottom <= north and top >= south:
+                if self.geometry(record).intersects(rectangle):
+                    output.append(record)
+        return tuple(output)
+
     def register(self, *, territory_id: str, label: str, kind: str, legal_status: str, source: TerritorySource,
                  geometry_path, admin: AdminInfo | None = None, grid: GridInfo | None = None,
                  legal_evidence: str | None = None, scientific_profile_id: str | None = None,

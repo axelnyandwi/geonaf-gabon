@@ -19,6 +19,11 @@ Schema: ``db/sql/0001_territorial_registry.up.sql``. Three parts, no UI:
 
 Areas are copied from the record (EPSG:6933, computed by GEONAF), never recomputed by PostGIS.
 ``psycopg`` is imported only when a database is used: the file backend never needs it.
+
+R5 bis: every transaction that names a PostGIS function first sets, local to the transaction, the
+search path ``pg_catalog, <PostGIS schema>, pg_temp`` (:mod:`src.data.postgis_session`), so that an
+object of ``public`` can never shadow PostGIS. The application reads through guarded sessions
+(environment mark, read only, timeout); tools and tests may pass a plain ``connect`` factory.
 """
 
 from __future__ import annotations
@@ -29,6 +34,7 @@ import os
 from pathlib import Path
 from typing import Callable, Mapping
 
+from src.data.postgis_session import plain_read_transaction, set_postgis_search_path
 from src.data.territory_registry import (
     _ID, TerritoryRecord, TerritoryRegistry, TerritorySource, record_from_dict, record_to_dict,
 )
@@ -206,17 +212,27 @@ def connect_from_env(variable: str = URL_VARIABLE) -> Callable:
 
 
 class PostgisTerritoryRegistry:
-    """Same read methods as :class:`TerritoryRegistry`; geometry files are still read and verified from disk."""
+    """Same read methods as :class:`TerritoryRegistry`; geometries come from the database (``geometry``).
 
-    def __init__(self, connect: Callable, data_dir):
+    ``sessions``: guarded application sessions (:class:`src.data.postgis_session.PostgisSessions`).
+    ``connect``: a bare connection factory (tools, tests); its transactions get the R5 bis path too.
+    ``data_dir`` is optional: only :meth:`geometry_path` reads files (and verifies their digest).
+    """
+
+    def __init__(self, connect: Callable | None = None, data_dir=None, *, sessions=None):
         self._connect = connect
-        self.files = TerritoryRegistry(Path(data_dir))   # Read only here: geometry_path verifies the file digest.
+        self._sessions = sessions
+        self.files = TerritoryRegistry(Path(data_dir)) if data_dir is not None else None
+
+    def _transaction(self):
+        if self._sessions is not None:
+            return self._sessions.read()
+        return plain_read_transaction(self._connect)
 
     def _rows(self, query: str, params: dict) -> list[dict]:
         from psycopg.rows import dict_row
 
-        with self._connect() as connection:
-            connection.read_only = True
+        with self._transaction() as connection:
             with connection.cursor(row_factory=dict_row) as cursor:
                 cursor.execute(QUERIES[query], params)
                 return cursor.fetchall()
@@ -265,6 +281,8 @@ class PostgisTerritoryRegistry:
         return geometry
 
     def geometry_path(self, record: TerritoryRecord) -> Path:
+        if self.files is None:
+            raise FileNotFoundError("Registre PostGIS sans répertoire de fichiers : utiliser geometry().")
         return self.files.geometry_path(record)
 
     def register(self, **_):
@@ -364,6 +382,7 @@ def apply_import(connection, plan: ImportPlan, *, source_label: str, code_versio
     import_id = None
     with connection.transaction(), connection.cursor() as cursor:
         cursor.execute("SELECT pg_advisory_xact_lock(hashtext(%s))", (IMPORT_LOCK,))
+        set_postgis_search_path(cursor)                    # R5 bis: ST_GeomFromWKB and ST_AsBinary below.
         cursor.execute("SELECT licence_id, share_alike FROM geonaf.licences WHERE licence_id = ANY(%s)",
                        (list(plan.licence_ids),))
         licences = dict(cursor.fetchall())

@@ -29,6 +29,10 @@ n'est pas appliquée. Le schéma renommé reçoit le commentaire `geonaf-legacy:
 
 ## Ordre d'exécution
 
+Avant toute étape, `11_state_diagnostic.sql` (lecture seule) indique l'état réel du projet et
+l'étape suivante : voir `docs/supabase_convergence_d2.md`. Ne jamais supposer qu'un projet est encore
+dans son état initial.
+
 `geonaf-test` d'abord, puis `geonaf-dev` seulement si tout `geonaf-test` est conforme. Chaque fichier
 est collé en entier dans une **nouvelle** requête du SQL Editor, puis exécuté. On lit le résultat
 avant de passer à l'étape suivante.
