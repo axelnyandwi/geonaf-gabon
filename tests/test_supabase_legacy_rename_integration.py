@@ -64,6 +64,7 @@ def connect():
         c.execute("DROP SCHEMA IF EXISTS geonaf CASCADE")
         c.execute("DROP SCHEMA IF EXISTS geonaf_legacy_draft CASCADE")
         c.execute("DROP TABLE IF EXISTS public.found, public.geonaf_probe")
+        c.execute("DROP FUNCTION IF EXISTS public.geonaf_probe_fn()")
         c.execute("CREATE SCHEMA geonaf")
         for table in LEGACY_TABLES:
             c.execute(f"CREATE TABLE geonaf.{table} (id bigint PRIMARY KEY, label text)")
@@ -72,6 +73,7 @@ def connect():
     with factory() as c:
         c.execute("DROP SCHEMA IF EXISTS geonaf CASCADE")
         c.execute("DROP SCHEMA IF EXISTS geonaf_legacy_draft CASCADE")
+        c.execute("DROP FUNCTION IF EXISTS public.geonaf_probe_fn()")
 
 
 def run(connection, sql: str):
@@ -140,6 +142,38 @@ def test_simulation_guard_refuses_a_schema_that_is_not_the_legacy_one(connect, c
         before = fingerprint(c)
         assert run_error(c, script("09_rename_legacy_schema_simulation.sql"))[0] == expected
         assert fingerprint(c) == before
+
+
+@pytest.mark.parametrize("name", ["09_rename_legacy_schema_simulation.sql", "09_rename_legacy_schema_application.sql"])
+def test_guard_refuses_a_function_whose_search_path_names_geonaf(connect, name):
+    """D2.9 audit: SET search_path = geonaf is kept in pg_proc.proconfig, not in prosrc. Before the fix the
+    simulation succeeded; after the rename and 0001, such a function would bind to the NEW geonaf tables."""
+    with connect() as c:
+        c.execute("CREATE FUNCTION public.geonaf_probe_fn() RETURNS int LANGUAGE sql SET search_path = geonaf "
+                  "AS 'SELECT 1'")
+        before = fingerprint(c)
+        sql = script(name) if "simulation" in name else confirmed(name, c)
+        message, detail = run_error(c, sql)
+        assert message == "GEONAF: renommage refuse" and "fonction hors geonaf qui cite geonaf" in detail
+        assert fingerprint(c) == before
+
+
+def test_fingerprint_sees_column_grants_and_default_privileges(connect):
+    """D2.9 audit: the fingerprint must change with every grant kept for the schema, column grants and
+    default privileges included (they are kept by OID through a rename, but must be proved intact)."""
+    with connect() as c:
+        if not c.execute("SELECT 1 FROM pg_roles WHERE rolname = 'geonaf_fp_probe'").fetchone():
+            c.execute("CREATE ROLE geonaf_fp_probe NOLOGIN")
+        try:
+            base = fingerprint(c)["empreinte_sha256"]
+            c.execute("GRANT SELECT (label) ON geonaf.sources TO geonaf_fp_probe")
+            column_grant = fingerprint(c)["empreinte_sha256"]
+            c.execute("ALTER DEFAULT PRIVILEGES IN SCHEMA geonaf GRANT SELECT ON TABLES TO geonaf_fp_probe")
+            default_acl = fingerprint(c)["empreinte_sha256"]
+            assert len({base, column_grant, default_acl}) == 3
+        finally:
+            c.execute("DROP OWNED BY geonaf_fp_probe")     # Its grants and default privileges, this database.
+            c.execute("DROP ROLE geonaf_fp_probe")
 
 
 def _line_ranges(text: str):

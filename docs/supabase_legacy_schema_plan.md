@@ -72,7 +72,7 @@ propre validation.
 | Schéma cible `geonaf_legacy_draft` déjà présent | Conflit de nom | Ligne 24 ; bloquant |
 | Vues ou règles d'un autre schéma qui lisent `geonaf` | Elles suivent l'OID : elles liraient les tables héritées en silence | Ligne 13 ; bloquant |
 | Clés étrangères d'un autre schéma vers `geonaf` | Elles suivent l'OID | Ligne 14 ; bloquant |
-| Fonctions qui citent `geonaf` dans leur code | **Résolution par nom** : après 0001, `geonaf.territories` et `geonaf.territory_versions` désigneraient les nouvelles tables, de structure différente | Ligne 15 ; bloquant |
+| Fonctions qui citent `geonaf` dans leur code ou leur `search_path` (`proconfig`) | **Résolution par nom** : après 0001, `geonaf.territories` et `geonaf.territory_versions` désigneraient les nouvelles tables, de structure différente | Ligne 15 ; bloquant |
 | `search_path` de rôle ou de base contenant `geonaf` | Même résolution par nom | Ligne 16 ; bloquant |
 | Schéma exposé par la Data API (`pgrst.db_schemas`) | Cache PostgREST en erreur ; exposition du futur schéma | Ligne 17 ; bloquant |
 | Publications Realtime | Elles suivent l'OID ; diffusion de tables héritées | Ligne 18 ; bloquant |
@@ -102,3 +102,5 @@ propre validation.
 - Nous ne savons pas qui a créé le schéma hérité, ni pourquoi. Le renommer peut casser un usage
   externe non déclaré.
 - `geonaf_legacy_draft` reste en place. Sa suppression éventuelle est une décision séparée.
+- Le retour arrière ne détecte pas un objet créé après le renommage qui citerait
+  `geonaf_legacy_draft` par son nom (R18 de `docs/supabase_security_d2_2.md`).

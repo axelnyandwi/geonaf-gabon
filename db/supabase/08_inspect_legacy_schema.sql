@@ -73,10 +73,11 @@ FROM (
   UNION ALL SELECT 14, 'cles etrangeres hors geonaf vers une table de geonaf', '0',
          (SELECT count(*) FROM pg_constraint WHERE contype = 'f' AND confrelid IN (SELECT oid FROM legacy_tables)
           AND connamespace <> to_regnamespace('geonaf'))::text
-  UNION ALL SELECT 15, 'fonctions hors geonaf qui citent geonaf dans leur code', '0',
+  UNION ALL SELECT 15, 'fonctions hors geonaf qui citent geonaf dans leur code ou leur search_path', '0',
          (SELECT count(*) FROM pg_proc WHERE pronamespace <> to_regnamespace('geonaf')
           AND pronamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
-          AND strpos(coalesce(prosrc, ''), 'geonaf') > 0)::text
+          AND (strpos(coalesce(prosrc, ''), 'geonaf') > 0
+               OR strpos(coalesce(array_to_string(proconfig, ' '), ''), 'geonaf') > 0))::text
   UNION ALL SELECT 16, 'parametres de role ou de base qui citent geonaf (search_path, Data API)', '0',
          (SELECT count(*) FROM pg_db_role_setting, unnest(setconfig) AS setting
           WHERE strpos(setting, 'geonaf') > 0)::text

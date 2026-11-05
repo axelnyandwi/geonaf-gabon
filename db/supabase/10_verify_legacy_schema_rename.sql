@@ -149,9 +149,11 @@ WITH attendu AS (
   UNION ALL SELECT 18, 'droits par defaut definis sur le schema renomme', 'information',
          (SELECT count(*)::text FROM pg_catalog.pg_default_acl WHERE defaclnamespace = (SELECT oid FROM ns)), false
   UNION ALL SELECT 19, 'objets hors du schema qui en dependent (controle B1)', '0', (SELECT n::text FROM dependances), true
-  UNION ALL SELECT 20, 'fonctions hors catalogue qui citent geonaf dans leur code', '0',
+  UNION ALL SELECT 20, 'fonctions hors catalogue qui citent geonaf dans leur code ou leur search_path', '0',
          (SELECT count(*)::text FROM pg_catalog.pg_proc WHERE pronamespace NOT IN
-            ('pg_catalog'::regnamespace, 'information_schema'::regnamespace) AND strpos(coalesce(prosrc, ''), 'geonaf') > 0), true
+            ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
+            AND (strpos(coalesce(prosrc, ''), 'geonaf') > 0
+                 OR strpos(coalesce(array_to_string(proconfig, ' '), ''), 'geonaf') > 0)), true
   UNION ALL SELECT 21, 'parametres de role ou de base qui citent geonaf', '0',
          (SELECT count(*)::text FROM pg_catalog.pg_db_role_setting, unnest(setconfig) AS setting
           WHERE strpos(setting, 'geonaf') > 0), true

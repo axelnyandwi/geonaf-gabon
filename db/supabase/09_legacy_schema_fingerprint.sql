@@ -3,10 +3,11 @@
 -- Run just before and just after the 09 simulation (and around 09 application or rollback). For the
 -- simulation, every column except execution_utc must be identical in the two exports: same schema
 -- name and OID, same exact comment, same tables, columns, constraints, indexes, policies, triggers,
--- and grants. The fingerprint is the SHA-256 of a canonical text of these catalog rows; the search path
--- is empty for the request so that every name in it is printed the same way each time. Row counts are
--- not part of it (they need query_to_xml, absent from servers built without libxml): 08 line 5,
--- run before and after, counts them.
+-- and grants (schema, relations, columns, and default privileges of the two schemas). The fingerprint
+-- is the SHA-256 of a canonical text of these catalog rows; the search path is empty for the request
+-- so that every name in it is printed the same way each time. Row counts are not part of it (they
+-- need query_to_xml, absent from servers built without libxml): 08 line 5, run before and after,
+-- counts them.
 -- Writes nothing: the first statement makes the whole request a read-only transaction.
 SELECT set_config('transaction_read_only', 'on', true);
 SELECT set_config('search_path', '', true);
@@ -27,7 +28,7 @@ WITH schemas AS (
                        E'\n' ORDER BY r.oid) FROM rels r),
     (SELECT string_agg(concat_ws('|', 'column', a.attrelid, a.attnum, a.attname,
                                  format_type(a.atttypid, a.atttypmod), a.attnotnull, a.attisdropped, a.attidentity,
-                                 pg_get_expr(d.adbin, d.adrelid)),
+                                 pg_get_expr(d.adbin, d.adrelid), coalesce(a.attacl::text, '-')),
                        E'\n' ORDER BY a.attrelid, a.attnum)
      FROM pg_catalog.pg_attribute a LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = a.attrelid AND d.adnum = a.attnum
      WHERE a.attrelid IN (SELECT oid FROM rels) AND a.attnum > 0),
@@ -41,7 +42,11 @@ WITH schemas AS (
                        E'\n' ORDER BY p.oid)
      FROM pg_catalog.pg_policy p WHERE p.polrelid IN (SELECT oid FROM rels)),
     (SELECT string_agg(concat_ws('|', 'trigger', g.oid, g.tgrelid, g.tgname, g.tgenabled), E'\n' ORDER BY g.oid)
-     FROM pg_catalog.pg_trigger g WHERE g.tgrelid IN (SELECT oid FROM rels) AND NOT g.tgisinternal)
+     FROM pg_catalog.pg_trigger g WHERE g.tgrelid IN (SELECT oid FROM rels) AND NOT g.tgisinternal),
+    (SELECT string_agg(concat_ws('|', 'default_acl', da.oid, da.defaclrole::regrole, da.defaclnamespace,
+                                 da.defaclobjtype::text, da.defaclacl::text),
+                       E'\n' ORDER BY da.oid)
+     FROM pg_catalog.pg_default_acl da WHERE da.defaclnamespace IN (SELECT oid FROM schemas))
   ) AS document
 )
 SELECT

@@ -131,10 +131,11 @@ autorisé.
 | R9 | Data API | Un schéma exposé via le tableau de bord n'apparaît pas forcément dans les paramètres de rôle | Contrôle manuel S2 ; aucun droit `USAGE` pour les rôles API (04) | - |
 | R10 | Data API | Paramètres `pgrst.*` pouvant contenir un secret (`pgrst.jwt_secret`) | 10 n'affiche que `pgrst.db_schemas` ; test qui interdit toute autre lecture | - |
 | R11 | Déclencheurs d'événement | Ils s'exécutent pendant `ALTER SCHEMA` et 0001, avec les droits de leur fonction. Un `NOTIFY` est annulé avec la requête ; **un `nextval` ne l'est pas** (pg_graphql incrémente `graphql.seq_schema_version` à chaque DDL et reconstruit alors son cache) | Listés en 08 l.27 et 10 l.34 ; le message de succès de la simulation 09 liste ceux qui se sont exécutés, avec `(*)` si leur code peut avoir un effet non transactionnel. Comportement démontré par un test d'intégration (D2.9) | Relecture humaine (section 3) |
-| R12 | Renommage | Les références **par nom** (fonctions, `search_path`, `pg_cron`, code externe) viseraient, après 0001, les nouvelles tables `territories`/`territory_versions` | Bloquants en 08 et 09 ; verrou des 8 tables pendant 09 | S6 (code externe, invisible depuis SQL) |
+| R12 | Renommage | Les références **par nom** (fonctions, `search_path`, `pg_cron`, code externe) viseraient, après 0001, les nouvelles tables `territories`/`territory_versions` | Bloquants en 08 et 09 (code **et** `search_path` des fonctions, `pg_proc.proconfig`, depuis l'audit du 2026-11-05) ; verrou des 8 tables pendant 09 | S6 (code externe, invisible depuis SQL) |
 | R13 | Identification | Coller un script dans le mauvais projet. 08 et 09 ne peuvent pas s'appuyer sur une marque : les deux schémas hérités n'en ont pas | Critères I1 à I4 (section 1), triple vérification manuelle, ordre test puis dev. L'identifiant système de PostgreSQL est partagé entre projets et n'est plus utilisé | Fiche d'exécution hors dépôt (référence, nom, heures `-3` et `-2`) ; envisager une marque d'identité posée avant 09 (décision à prendre : c'est une écriture) |
 | R14 | Éditeur | Si l'éditeur n'exécute pas tout en une transaction, un échec pourrait laisser un état partiel | Sonde de 00 ; lecture seule imposée (08, 10) ; 09 : une seule instruction `DO`, atomique par elle-même quel que soit l'éditeur (D2.9) | - |
 | R17 | Éditeur | **Sélection partielle** : le SQL Editor exécute le texte sélectionné. Avant D2.9, la ligne de renommage de 09 seule renommait sans garde, même dans le fichier de simulation, et la ligne `SELECT ... INTO found` seule créait une table `public.found` (`SELECT INTO` hors PL/pgSQL = `CREATE TABLE AS`) : 122 plages de lignes dangereuses mesurées sur PostgreSQL 16 | D2.9 : renommage et commentaire construits par `format()` à l'intérieur du `DO`, plus de `SELECT INTO`, aucune instruction exécutable dans les commentaires. Test d'intégration : aucune plage de lignes des trois scripts 09 ne modifie la base (état initial et état renommé) ; test statique sur le texte brut | Une sélection qui commence ou finit au milieu d'une ligne n'est couverte que par le test statique |
+| R18 | Retour arrière | Un objet créé **après** le renommage qui cite `geonaf_legacy_draft` par son nom (fonction, paramètre, tâche `pg_cron`) serait cassé par le retour arrière ; le script ne le détecte pas | Retour arrière réservé aux incidents, avant 0001, juste après l'application ; 10 l.20 et l.21 relues avant | Relancer 08 et l'empreinte après le retour arrière |
 | R15 | Poste | Exports CSV et futur `.env` de connexion | Worktree hors OneDrive ; `.env` ignoré par Git | Exports dans `%USERPROFILE%\.geonaf\exports\` |
 | R16 | Dépôt | Le `.git` du dépôt principal est dans OneDrive : objets synchronisés (aucun secret suivi, vérifié), risque de corruption par la synchronisation | - | Décision séparée : déplacer le dépôt hors OneDrive |
 
@@ -145,7 +146,8 @@ autorisé.
    d'événement (R11).
 2. ✋ Application de 09 (renommage), projet par projet, après 08 conforme et simulation réussie.
 3. ✋ `01_roles.sql`, puis ✋ application de 02 (migration 0001), puis ✋ 03 (marque).
-4. Commit de la sécurisation D2.9 (non commitée).
+4. Push de la branche `db/d2a-territory-registry` (sécurisation D2.9 `f6ab959` et audit D2.9 du
+   2026-11-05 : commits locaux, non poussés).
 5. Décision sur les rôles de la plateforme listés en 10 l.30 et l.31.
 6. Activation future de `LOGIN` pour les rôles GEONAF et choix d'un rôle de migration distinct.
 7. Suppression éventuelle de `geonaf_legacy_draft` : hors périmètre, autorisation séparée.
@@ -163,7 +165,7 @@ autorisé.
 | Simulation sans renommage réel ? | Étudiée et **non retenue seule** : la garde lit déjà toutes les préconditions vérifiables par catalogue (droits du propriétaire, `CREATE` sur la base, nom cible libre, dépendances). Elle ne peut pas vérifier ce que seul le DDL déclenche : déclencheurs d'événement de la plateforme, crochets d'extension (`supautils`), verrous réels sur le catalogue. Le renommage en sous-transaction est la seule façon de les éprouver sans rien conserver | - |
 | `BEGIN`, contrôles, renommage, `ROLLBACK` explicites ? | **Rejeté** : une sélection qui omet le `ROLLBACK` laisse une transaction ouverte sur une connexion de l'éditeur (validée ou annulée selon son pool, inconnu) ; une sélection de la seule ligne de renommage la valide aussitôt | - |
 | Confusion simulation / application | L'application et le retour arrière **refusent de s'exécuter tels qu'ils sont versionnés** : il faut remplacer `AAAA-MM-JJ HH:MM:SS.UUUUUU` par la ligne `-3` de 08 (démarrage de l'instance, UTC, microsecondes), lue juste avant sur le même projet. La simulation n'a rien à modifier. Coller le mauvais fichier arrête tout avant la garde | Tests d'intégration et statiques |
-| État identique avant et après | `09_legacy_schema_fingerprint.sql` (lecture seule) : OID et commentaire exact (JSON) des deux schémas, nombre de tables et SHA-256 d'un texte canonique (schéma, relations, colonnes, contraintes, index, politiques, déclencheurs, droits). Les lignes sont comptées par 08 l.5 | Test d'intégration |
+| État identique avant et après | `09_legacy_schema_fingerprint.sql` (lecture seule) : OID et commentaire exact (JSON) des deux schémas, nombre de tables et SHA-256 d'un texte canonique (schéma, relations, colonnes, contraintes, index, politiques, déclencheurs, droits du schéma, des relations et des colonnes, privilèges par défaut). Les lignes sont comptées par 08 l.5 | Test d'intégration |
 
 **Garanties de PostgreSQL utilisées.** Plusieurs instructions envoyées en une requête forment une
 transaction implicite : une erreur annule tout (démontré par test). Une instruction `DO` est atomique
@@ -179,6 +181,21 @@ envoie le texte (une requête ou plusieurs), l'exécution de la seule sélection
 d'événement et les crochets réels de Supabase, le comportement sous PostgreSQL 15 ou 17 (tests
 exécutés sur PostgreSQL 16.2). La conception ne dépend pas des points propres à l'éditeur.
 
+### Audit du 2026-11-05 (D2.9, avant autorisation)
+
+Revue des quatre scripts 09 sur `42a4c6e`, avec exécution sur un PostgreSQL 16.2 local jetable (jamais
+Supabase). La conception (une seule instruction `DO`, sous-transaction annulée par `GN009`, double
+annulation, confirmation par l'heure de démarrage, retour arrière qui lit le commentaire initial dans la
+marque) est conservée. Deux lacunes démontrées par reproduction, puis corrigées :
+
+| Lacune | Reproduction avant correction | Correction | Test |
+|---|---|---|---|
+| Une fonction hors `geonaf` déclarée `SET search_path = geonaf` n'était pas vue : le chemin est dans `pg_proc.proconfig`, pas dans `prosrc`. Après 09 puis 0001, elle se lierait en silence aux **nouvelles** tables (R12) | Simulation « REUSSIE » avec `public.probe()` présente | Garde de 09 (simulation et application, identiques), 08 l.15 et 10 l.20 lisent aussi `proconfig` | Intégration : simulation et application refusées, empreinte inchangée ; 10 l.20 non conforme ; statique sur les quatre fichiers |
+| L'empreinte ignorait les droits de colonnes (`attacl`) et les privilèges par défaut du schéma (`pg_default_acl`) | Empreinte identique après `GRANT SELECT (label)` et `ALTER DEFAULT PRIVILEGES` | Ajout des deux éléments au texte canonique (`defaclobjtype::text`, cf. D2.10a) | Intégration : trois empreintes distinctes ; statique |
+
+L'empreinte de 09 n'a jamais été exportée sur un projet : la modifier ne casse aucune référence. Elle
+est distincte de l'empreinte de l'export D utilisée par 10 (inchangée).
+
 ### Prérequis, tous requis
 
 - 08 et 10 du 2026-11-04 conformes (constat D2.7 : 08 sans ligne fausse ; 10 anticipé, seules les
@@ -187,6 +204,8 @@ exécutés sur PostgreSQL 16.2). La conception ne dépend pas des points propres
 - S2 : Data API désactivée sur les deux projets (constat déclaré le 2026-11-04).
 - 08 l.27 relue : chaque déclencheur d'événement est connu (section 3).
 - Autorisation explicite de la simulation, pour `geonaf-test` seulement.
+- 08 dans sa version **actuelle** (l.15 étendue au `search_path` des fonctions, audit du 2026-11-05) :
+  le constat du 2026-11-04 ne couvre pas ce contrôle. L'étape 2 le relance ; l.15 doit valoir `0`.
 
 ### Procédure (`geonaf-test` seulement)
 

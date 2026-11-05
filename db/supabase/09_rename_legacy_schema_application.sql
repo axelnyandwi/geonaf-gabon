@@ -108,8 +108,10 @@ BEGIN
   END IF;
   IF EXISTS (SELECT 1 FROM pg_proc WHERE pronamespace <> legacy
              AND pronamespace NOT IN ('pg_catalog'::regnamespace, 'information_schema'::regnamespace)
-             AND strpos(coalesce(prosrc, ''), old_name) > 0) THEN
-    blockers := blockers || 'fonction hors geonaf qui cite geonaf'::text;
+             AND (strpos(coalesce(prosrc, ''), old_name) > 0
+                  OR strpos(coalesce(array_to_string(proconfig, ' '), ''), old_name) > 0)) THEN
+    -- proconfig: SET search_path = geonaf would bind the function to the NEW geonaf of 0001 (D2.9 audit).
+    blockers := blockers || 'fonction hors geonaf qui cite geonaf (code ou search_path)'::text;
   END IF;
   IF EXISTS (SELECT 1 FROM pg_db_role_setting, unnest(setconfig) AS setting WHERE strpos(setting, old_name) > 0) THEN
     blockers := blockers || 'parametre de role ou de base qui cite geonaf (search_path ou Data API)'::text;

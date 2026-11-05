@@ -537,6 +537,20 @@ def test_legacy_fingerprint_is_read_only_deterministic_and_never_hashes_with_md5
         assert part in statements[2], part
 
 
+def test_every_function_reference_check_reads_the_body_and_the_search_path():
+    """D2.9 audit: a function citing geonaf only in SET search_path (pg_proc.proconfig) must block 08, 09 and 10."""
+    for name in ("08_inspect_legacy_schema.sql", "09_rename_legacy_schema_simulation.sql",
+                 "09_rename_legacy_schema_application.sql", "10_verify_legacy_schema_rename.sql"):
+        text = (SUPABASE / name).read_text(encoding="utf-8")
+        assert text.count("strpos(coalesce(prosrc, '')") == text.count("array_to_string(proconfig, ' ')") == 1, name
+
+
+def test_legacy_fingerprint_hashes_column_grants_and_default_privileges():
+    text = (SUPABASE / "09_legacy_schema_fingerprint.sql").read_text(encoding="utf-8")
+    assert "a.attacl::text" in text and "'default_acl'" in text and "pg_catalog.pg_default_acl" in text
+    assert "defaclobjtype::text" in text        # "char" column: always cast (D2.10a).
+
+
 def test_09_docs_never_show_a_runnable_rename_back():
     """The old one-line reverse kept the legacy mark on geonaf: it must not be copied from the docs again."""
     for doc in ("supabase_legacy_schema_plan.md", "supabase_security_d2_2.md"):

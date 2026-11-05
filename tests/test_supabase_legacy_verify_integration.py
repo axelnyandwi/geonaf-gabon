@@ -241,6 +241,8 @@ def test_a_schema_renamed_to_another_name_is_not_accepted(db):
 @pytest.mark.parametrize("setup, failing", [
     ("CREATE VIEW public.lit_legacy AS SELECT id FROM geonaf_legacy_draft.sources", {19}),
     ("CREATE FUNCTION public.cite_geonaf() RETURNS int LANGUAGE sql AS 'SELECT 1 /* geonaf */'", {20}),
+    ("CREATE FUNCTION public.cite_geonaf() RETURNS int LANGUAGE sql SET search_path = geonaf_legacy_draft "
+     "AS 'SELECT 1'", {20}),
 ])
 @db_test
 def test_references_from_outside_are_detected(db, setup, failing):
