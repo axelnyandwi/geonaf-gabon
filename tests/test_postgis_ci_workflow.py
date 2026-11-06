@@ -96,3 +96,16 @@ def test_workflow_and_manifest_contract():
             tree = ast.parse((ROOT / filename).read_text(encoding="utf-8"))
             assert name in {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
     assert "test_real_registry_import_and_parity" not in str(ci.required("public"))
+
+
+
+def test_sql_editor_mark_scenarios_are_mandatory_in_existing_workflow():
+    filename = "tests/test_supabase_mark_postgis_integration.py"
+    tree = ast.parse((ROOT / filename).read_text(encoding="utf-8"))
+    nodes = {filename + "::" + node.name for node in tree.body
+             if isinstance(node, ast.FunctionDef) and node.name.startswith("test_")}
+    assert len(nodes) >= 15
+    assert nodes <= set(ci.required("extensions"))
+    for variant in ("plain", "public"):
+        assert filename + "::test_s0_cannot_become_test_even_with_operator_confirmations" in ci.required(variant)
+        assert filename + "::test_independent_local_database_identity_is_required" in ci.required(variant)

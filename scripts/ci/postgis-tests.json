@@ -5,7 +5,9 @@
     "tests/test_postgis_storage_integration.py::test_connection_error_names_no_host_user_or_password",
     "tests/test_postgis_storage_integration.py::test_migration_0002_constraints_triggers_and_view_on_a_real_server",
     "tests/test_postgis_storage_integration.py::test_migration_0002_privileges_and_row_level_security",
-    "tests/test_postgis_storage_integration.py::test_migration_0002_downgrade_removes_only_its_objects"
+    "tests/test_postgis_storage_integration.py::test_migration_0002_downgrade_removes_only_its_objects",
+    "tests/test_supabase_mark_postgis_integration.py::test_s0_cannot_become_test_even_with_operator_confirmations",
+    "tests/test_supabase_mark_postgis_integration.py::test_independent_local_database_identity_is_required"
   ],
   "public": [
     "tests/test_postgis_territory_integration.py::test_alembic_upgrade_downgrade_upgrade",
@@ -28,7 +30,9 @@
     "tests/test_postgis_ci_integration.py::test_multi_scope_failure_is_atomic",
     "tests/test_postgis_ci_integration.py::test_effective_reader_rls_and_importer",
     "tests/test_postgis_ci_integration.py::test_wrong_identity_and_unauthorized_drop_are_refused",
-    "tests/test_postgis_ci_integration.py::test_real_gist_catalog_and_plans"
+    "tests/test_postgis_ci_integration.py::test_real_gist_catalog_and_plans",
+    "tests/test_supabase_mark_postgis_integration.py::test_s0_cannot_become_test_even_with_operator_confirmations",
+    "tests/test_supabase_mark_postgis_integration.py::test_independent_local_database_identity_is_required"
   ],
   "extensions": [
     "tests/test_postgis_territory_integration.py::test_alembic_upgrade_downgrade_upgrade",
@@ -51,6 +55,24 @@
     "tests/test_postgis_ci_integration.py::test_multi_scope_failure_is_atomic",
     "tests/test_postgis_ci_integration.py::test_effective_reader_rls_and_importer",
     "tests/test_postgis_ci_integration.py::test_wrong_identity_and_unauthorized_drop_are_refused",
-    "tests/test_postgis_ci_integration.py::test_real_gist_catalog_and_plans"
+    "tests/test_postgis_ci_integration.py::test_real_gist_catalog_and_plans",
+    "tests/test_supabase_mark_postgis_integration.py::test_0001_then_03_succeeds_on_independently_isolated_postgis",
+    "tests/test_supabase_mark_postgis_integration.py::test_s0_cannot_become_test_even_with_operator_confirmations",
+    "tests/test_supabase_mark_postgis_integration.py::test_missing_constraint_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_changed_check_with_same_name_and_count_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_changed_foreign_key_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_changed_primary_key_order_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_missing_view_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_changed_view_filter_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_changed_latest_view_order_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_changed_view_security_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_history_forgery_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_unconfirmed_target_and_stale_instance_are_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_changed_unique_null_semantics_are_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_unvalidated_constraint_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_independent_local_database_identity_is_required",
+    "tests/test_supabase_mark_postgis_integration.py::test_missing_history_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_empty_history_is_refused_without_writing",
+    "tests/test_supabase_mark_postgis_integration.py::test_extra_migration_is_refused_without_writing"
   ]
 }
