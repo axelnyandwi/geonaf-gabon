@@ -1,10 +1,11 @@
 """Full SQL Editor 02 -> 03 on real PostGIS, using the existing isolated-test capability.
 
-The only substitutions are the two documented operator confirmations. No production
-structural, history or identity guard is disabled. No Supabase connection is accepted.
+Only documented operator confirmations and the line endings inside expected view literals
+are varied. No structural, history or identity guard is disabled. No Supabase connection is accepted.
 """
 import os
 from pathlib import Path
+import re
 
 import pytest
 
@@ -59,6 +60,25 @@ def confirmed(c):
     return text.replace("confirmation_i2 constant boolean := false;", "confirmation_i2 constant boolean := true;").replace("'A_COMPLETER_DEPUIS_11'", "'" + start + "'")
 
 
+def with_view_reference_line_endings(text, ending):
+    """Model transport conversion inside the two view literals, without changing other guards."""
+    pattern = r"(WITH expected(?:_raw)?\(view_name, definition\) AS \(VALUES\n)(.*?)(\n    \),)"
+    match = re.search(pattern, text, re.S)
+    assert match is not None
+    literals = re.findall(r"'(?:[^']|'')*'", match[2])
+    assert len(literals) == 4  # Two names and two definitions.
+    changed = re.sub(r"'(?:[^']|'')*'",
+                     lambda m: m[0].replace("\r\n", "\n").replace("\n", ending), match[2])
+    return text[:match.start(2)] + changed + text[match.end(2):]
+
+
+def refused_view_with_both_reference_endings(c):
+    for ending in ("\n", "\r\n"):
+        text = with_view_reference_line_endings(confirmed(c), ending)
+        refused_unchanged(c, text, "vues post-0001 non conformes")
+        assert environment(c) is None
+
+
 def snapshot(c):
     from psycopg import sql
     catalog = fingerprint(c)  # Existing read-only SHA-256 catalog mechanism.
@@ -81,11 +101,16 @@ def refused_unchanged(c, text, message):
 def test_0001_then_03_succeeds_on_independently_isolated_postgis(after_0001):
     c = after_0001
     before = c.execute("SELECT version,body_sha256,applied_at,applied_by,channel FROM geonaf.schema_migrations").fetchall()
-    run(c, confirmed(c))
-    assert environment(c) == "geonaf-environment:test"
-    assert c.execute("SELECT version,body_sha256,applied_at,applied_by,channel FROM geonaf.schema_migrations").fetchall() == before
-    run(c, confirmed(c))  # Same initial data and same mark: no change to history.
-    assert environment(c) == "geonaf-environment:test"
+    for ending in ("\n", "\r\n"):
+        # Each transport variant must succeed from an unmarked post-0001 schema.
+        with c.transaction(force_rollback=True):
+            assert environment(c) is None
+            text = with_view_reference_line_endings(confirmed(c), ending)
+            for _ in range(2):  # Same initial data and mark: repeat remains accepted.
+                run(c, text)
+                assert environment(c) == "geonaf-environment:test"
+                assert c.execute("SELECT version,body_sha256,applied_at,applied_by,channel FROM geonaf.schema_migrations").fetchall() == before
+        assert environment(c) is None
 
 
 def test_s0_cannot_become_test_even_with_operator_confirmations(local_db):
@@ -125,25 +150,25 @@ def test_changed_primary_key_order_is_refused_without_writing(after_0001):
 def test_missing_view_is_refused_without_writing(after_0001):
     c = after_0001
     c.execute("DROP VIEW geonaf.territory_identities")
-    refused_unchanged(c, confirmed(c), "vues post-0001 non conformes")
+    refused_view_with_both_reference_endings(c)
 
 
 def test_changed_view_filter_is_refused_without_writing(after_0001):
     c = after_0001
     c.execute("CREATE OR REPLACE VIEW geonaf.territory_identities WITH (security_invoker=true) AS SELECT territory_id,version,kind,geometry_sha256,file_sha256,record_fingerprint FROM geonaf.territory_versions WHERE version > 1")
-    refused_unchanged(c, confirmed(c), "vues post-0001 non conformes")
+    refused_view_with_both_reference_endings(c)
 
 
 def test_changed_latest_view_order_is_refused_without_writing(after_0001):
     c = after_0001
     c.execute("CREATE OR REPLACE VIEW geonaf.territories_latest WITH (security_invoker=true) AS SELECT DISTINCT ON (territory_id) * FROM geonaf.territory_versions ORDER BY territory_id, version ASC")
-    refused_unchanged(c, confirmed(c), "vues post-0001 non conformes")
+    refused_view_with_both_reference_endings(c)
 
 
 def test_changed_view_security_is_refused_without_writing(after_0001):
     c = after_0001
     c.execute("ALTER VIEW geonaf.territory_identities SET (security_invoker=false)")
-    refused_unchanged(c, confirmed(c), "vues post-0001 non conformes")
+    refused_view_with_both_reference_endings(c)
 
 
 def test_history_forgery_is_refused_without_writing(after_0001):

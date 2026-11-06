@@ -126,7 +126,7 @@ BEGIN
   END IF;
   LOCK TABLE geonaf.territories_latest, geonaf.territory_identities IN ACCESS EXCLUSIVE MODE;
   IF EXISTS (
-    WITH expected(view_name, definition) AS (VALUES
+    WITH expected_raw(view_name, definition) AS (VALUES
       ('territories_latest', ' SELECT DISTINCT ON (territory_id) territory_id,
     version,
     kind,
@@ -167,6 +167,10 @@ BEGIN
     file_sha256,
     record_fingerprint
    FROM geonaf.territory_versions;')
+    ), expected(view_name, definition) AS (
+      -- Canonicalize only the expected literals after CRLF transport conversion.
+      SELECT view_name, pg_catalog.replace(definition, E'\r\n', E'\n')
+      FROM expected_raw
     ), actual AS (
       SELECT c.relname::text, pg_catalog.pg_get_viewdef(c.oid, false)
       FROM pg_catalog.pg_class c
