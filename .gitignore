@@ -7,6 +7,11 @@
 secrets/
 *.pem
 *.key
+*.crt
+# Supabase CLI: project link (reference, pooler URL), local branches and function secrets (D5).
+supabase/.temp/
+supabase/.branches/
+supabase/**/.env*
 
 # Environnements virtuels Python
 .venv/

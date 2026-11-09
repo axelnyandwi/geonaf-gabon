@@ -314,6 +314,7 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
         "09_rename_legacy_schema_application.sql", "09_rename_legacy_schema_rollback.sql",
         "09_rename_legacy_schema_simulation.sql", "10_security_precheck.sql", "10_verify_legacy_schema_rename.sql",
         "11_state_diagnostic.sql", "12_migration_0002_application.sql", "12_migration_0002_simulation.sql",
+        "13_edge_reader_role.sql", "13_edge_reader_role_rollback.sql", "13_edge_reader_role_verify.sql",
         "90_test_constraints.sql", "99_drop_schema_test.sql"]
     for path in scripts:
         text = path.read_text(encoding="utf-8")
@@ -323,7 +324,7 @@ def test_static_scripts_are_single_requests_and_read_only_ones_never_write():
                         re.I)
     for name in ("00_preflight.sql", "04_verify_schema.sql", "07_export_parity.sql", "08_inspect_legacy_schema.sql",
                  "09_legacy_schema_fingerprint.sql", "10_security_precheck.sql", "10_verify_legacy_schema_rename.sql",
-                 "11_state_diagnostic.sql"):
+                 "11_state_diagnostic.sql", "13_edge_reader_role_verify.sql"):
         assert not writes.search(code_only((SUPABASE / name).read_text(encoding="utf-8"))), name
 
 
