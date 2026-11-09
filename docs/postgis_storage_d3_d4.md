@@ -121,7 +121,15 @@ identique pour les deux outils :
 
 Supabase n'est pas joignable par psycopg depuis le poste (ports fermés). L'import vers Supabase passe
 donc par des scripts SQL Editor générés, comme pour les territoires (05/06). Pour les observations,
-ce générateur reste à écrire : voir le plan de convergence.
+`scripts/generate_observations_sql.py` produit l'import des **acquisitions** seulement. Les règles
+sont les mêmes que pour les lots de territoires :
+- une seule requête, simulation par défaut ;
+- balise de citation vérifiée, ce qui empêche l'injection ;
+- refus des doublons et des divergences ;
+- fichier écrit hors du dépôt, jamais écrasé.
+
+Ses tests locaux couvrent la syntaxe et l'ordre des garde-fous, sans PostGIS. Les résultats
+d'indicateurs exigent encore un générateur tenant compte des géométries.
 
 ## 5. Tests et limites
 
