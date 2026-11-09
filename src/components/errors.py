@@ -71,6 +71,7 @@ def _expected_types() -> tuple[type[BaseException], ...]:
     from src.demo_mode import DemoReadOnlyError
     from src.data.demo_pack import DemoPackError
     from src.data.download_control import TransferAborted
+    from src.data.edge_acquisitions import EdgeAcquisitionsError
     from src.data.geoboundaries import GeoBoundariesError
     from src.data.remote_window import ByteBudgetExceeded
     from src.geo.pair_selection import IncompleteSTACSearchError
@@ -78,7 +79,7 @@ def _expected_types() -> tuple[type[BaseException], ...]:
     from src.services.local_preview import LocalPreviewError
     from src.services.territory_catalog import ZoneImportRefused
 
-    return (LocalPreviewError, CatalogueError, TransferAborted, GeoBoundariesError, DemoPackError,
+    return (LocalPreviewError, CatalogueError, TransferAborted, GeoBoundariesError, DemoPackError, EdgeAcquisitionsError,
             ByteBudgetExceeded, IncompleteSTACSearchError, ZoneImportRefused, ComputeBusyError,
             DemoReadOnlyError, DatabaseConfigError, DatabaseConnectionError, EnvironmentIdentityError,
             PostgisUnavailableError)

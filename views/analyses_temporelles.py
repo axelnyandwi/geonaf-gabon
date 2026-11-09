@@ -24,6 +24,12 @@ with page_guard("analyses_temporelles"):
             from src.components.acquisition_catalogue import show_acquisition_catalogue
 
             show_acquisition_catalogue(data_dir, embedded=True)
+        # Separate guard: a Supabase failure never hides the local catalogue. No request until asked.
+        st.divider()
+        with page_guard("analyses_temporelles.supabase"):
+            from src.components.supabase_acquisitions import show_supabase_acquisitions
+
+            show_supabase_acquisitions(key_prefix="donnees_supabase")
     else:
         aoi_id = choose_shared_territory(data_dir)
         if aoi_id is not None:
