@@ -5,7 +5,10 @@ name: demo-pack-linux
 # Test failures are also published as annotations (readable without signing in).
 on:
   push:
-    branches: [deploy/cloud-demo-akanda]
+    branches: [deploy/cloud-demo-akanda, main]
+  # Content of a pull request towards main (fork PRs get a read-only token and no secret).
+  pull_request:
+    branches: [main]
   workflow_dispatch:
 
 permissions:
@@ -20,8 +23,10 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: "3.13"
+      # requirements.txt (as on Cloud) plus the existing DB pins, pytest 9.2.0 and trustme 1.2.1: the full
+      # suite holds the D2-D4 database unit tests. The app never imports them (tests/test_postgis_guardrails.py).
       - name: Install pinned dependencies
-        run: python -m pip install -r requirements.txt "pytest>=8,<10" "trustme>=1.2,<2"
+        run: python -m pip install -r requirements-ci-postgis.txt
       - name: Library versions
         run: |
           python - <<'EOF'

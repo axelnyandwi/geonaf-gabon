@@ -18,6 +18,13 @@ Désactivé par défaut : le fonctionnement local est inchangé. Vide, `0`, `fal
 désactivent le mode ; toute autre valeur l'active (une valeur inattendue est traitée comme
 « activé »). La variable est relue à chaque appel.
 
+**Verrou du paquet partagé (préparation du merge vers `main`, 10/11/2026).** Dès que le processus
+sert le paquet de démonstration (`origin == "demo_pack"` dans `active_data_dir`, que le paquet ait été
+téléchargé ou que `GABON_GEOAI_DATA_DIR` désigne un paquet décompressé), le mode est actif pour toute
+la durée du processus, **quelle que soit la variable** : un secret oublié ou mis à `0` ne rend pas un
+déploiement public inscriptible. Avec des données locales (sans `PACK_MANIFEST.json`), la variable
+garde seule la main. Pour écrire localement, utiliser des données locales, jamais le paquet.
+
 ## Effets
 
 | Autorisé | Refusé (`DemoReadOnlyError`, message public) |

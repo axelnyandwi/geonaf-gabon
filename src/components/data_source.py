@@ -7,6 +7,7 @@ import streamlit as st
 import src.config as config
 from src.components.errors import show_error
 from src.data.demo_pack import DemoPackError, default_cache_root, pack_summary, resolve_data_dir, spec_from_environment
+from src.demo_mode import lock_for_shared_pack
 
 
 @st.cache_resource(show_spinner="Préparation des données de démonstration (premier chargement)…")
@@ -44,6 +45,9 @@ def active_data_dir() -> Path:
         show_error(error, context="donnees.demonstration", level="warning",
                    prefix="Données de démonstration indisponibles : ", suffix=" Réessayer en rechargeant la page.")
         return configured
+    if source.origin == "demo_pack":
+        # Shared by every session of the process: no visitor write, even without the secret.
+        lock_for_shared_pack()
     if source.origin == "demo_pack" and source.pack is not None:
         lines = pack_summary(source.pack)
         st.caption(f"Données de démonstration : {lines[0]}")

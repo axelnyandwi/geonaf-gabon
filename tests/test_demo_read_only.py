@@ -109,6 +109,29 @@ def test_mode_is_off_by_default_and_fails_closed(value, expected):
         ensure_writable("Opération", environ)
 
 
+def test_shared_pack_lock_overrides_the_variable():
+    from src.demo_mode import lock_for_shared_pack
+
+    assert read_only({ENV_NAME: "0"}) is False
+    lock_for_shared_pack()
+    for environ in ({}, {ENV_NAME: ""}, {ENV_NAME: "0"}, {ENV_NAME: "off"}):
+        assert read_only(environ) is True
+        with pytest.raises(DemoReadOnlyError):
+            ensure_writable("Opération", environ)
+
+
+def test_local_data_never_lock_the_process(tmp_path, monkeypatch):
+    """active_data_dir locks only for the demo pack; local data leave the variable in charge."""
+    from src.components import data_source
+    from src.data.demo_pack import DataSource
+
+    monkeypatch.delenv(ENV_NAME, raising=False)
+    for origin, locked in (("local", False), ("none", False), ("demo_pack", True)):
+        monkeypatch.setattr(data_source, "_resolve", lambda *a, origin=origin: DataSource(tmp_path, origin))
+        assert data_source.active_data_dir() == tmp_path
+        assert read_only() is locked, origin
+
+
 def test_services_refuse_before_any_network_access_or_write(demo, tmp_path):
     client = _boom()
     for name, call in _forbidden_calls(tmp_path, client).items():
@@ -248,12 +271,43 @@ def test_forbidden_commands_are_replaced_by_a_message(pack_copy, demo, monkeypat
     assert not [button for button in multisource.button if button.key and button.key.startswith("ms_fetch_")]
 
 
-def test_mode_off_keeps_the_commands(pack_copy, monkeypatch):
-    monkeypatch.delenv(ENV_NAME, raising=False)
+@pytest.mark.parametrize("value", [None, "0", "off"])
+def test_the_shared_pack_is_read_only_even_when_the_variable_is_off(pack_copy, monkeypatch, value):
+    """A public deployment serves the pack: a missing or wrong secret must not make it writable."""
+    from src.data.demo_pack import verify_pack
+
+    if value is None:
+        monkeypatch.delenv(ENV_NAME, raising=False)
+    else:
+        monkeypatch.setenv(ENV_NAME, value)
+    before = _tree(pack_copy)
     multisource = _run("views/analyses_multisources.py", pack_copy, monkeypatch)
-    assert {"ms_fetch_wc", "ms_fetch_osm", "ms_fetch_s1"} <= {button.key for button in multisource.button}
+    assert any("lecture seule" in text for text in _infos(multisource))
+    assert not [button for button in multisource.button if button.key and button.key.startswith("ms_fetch_")]
     territories = _run("views/territoires.py", pack_copy, monkeypatch)
+    assert any(text.startswith("Import de zone personnalisée : fonctionnalité indisponible") for text in _infos(territories))
+    assert read_only() is True
+    with pytest.raises(DemoReadOnlyError):
+        ensure_writable("Opération")
+    assert _tree(pack_copy) == before
+    verify_pack(pack_copy, "geonaf-demo-akanda-2025-01")
+
+
+@pytest.fixture(scope="module")
+def local_copy(pack_copy, tmp_path_factory):
+    """The pack's files without PACK_MANIFEST.json: ordinary local data, not the shared pack."""
+    target = tmp_path_factory.mktemp("local") / "data"
+    shutil.copytree(pack_copy, target, ignore=shutil.ignore_patterns("PACK_MANIFEST.json"))
+    return target
+
+
+def test_local_data_keep_the_commands_when_the_mode_is_off(local_copy, monkeypatch):
+    monkeypatch.delenv(ENV_NAME, raising=False)
+    multisource = _run("views/analyses_multisources.py", local_copy, monkeypatch)
+    assert {"ms_fetch_wc", "ms_fetch_osm", "ms_fetch_s1"} <= {button.key for button in multisource.button}
+    territories = _run("views/territoires.py", local_copy, monkeypatch)
     assert not any("lecture seule" in text for text in _infos(territories))
+    assert read_only() is False
 
 
 def test_session_switch_does_not_leak_the_mode_into_the_pack(pack_copy, demo, monkeypatch):

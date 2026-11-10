@@ -13,6 +13,10 @@ stores and keeps its own verified installation.
 
 The variable is read at each call. Empty or ``0``/``false``/``no``/``off`` disables the mode;
 any other value enables it (an unrecognised value fails closed).
+
+A process that serves the shared demo pack is read-only whatever the variable says
+(:func:`lock_for_shared_pack`): a public deployment cannot be left writable by a missing or
+wrong secret. Local data keep the variable's behaviour.
 """
 
 from __future__ import annotations
@@ -21,6 +25,7 @@ import os
 
 ENV_NAME = "GEONAF_DEMO_READ_ONLY"
 _DISABLED = frozenset({"", "0", "false", "no", "off"})
+_shared_pack = False   # Set once this process serves the demo pack; never cleared by the application.
 
 
 class DemoReadOnlyError(RuntimeError):
@@ -36,8 +41,14 @@ def unavailable_text(operation: str) -> str:
             "Les données du paquet de démonstration restent consultables et analysables.")
 
 
+def lock_for_shared_pack() -> None:
+    """The data directory is the demo pack shared by every session: read-only for the process."""
+    global _shared_pack
+    _shared_pack = True
+
+
 def read_only(environ=os.environ) -> bool:
-    return environ.get(ENV_NAME, "").strip().lower() not in _DISABLED
+    return _shared_pack or environ.get(ENV_NAME, "").strip().lower() not in _DISABLED
 
 
 def ensure_writable(operation: str, environ=os.environ) -> None:

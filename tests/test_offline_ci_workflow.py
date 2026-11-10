@@ -14,7 +14,8 @@ def test_workflow_is_read_only_pinned_and_secret_free():
     # JSON notation is a strict YAML 1.2 subset: no optional local YAML dependency.
     workflow = json.loads(WORKFLOW.read_text(encoding="utf-8"))
     assert workflow["permissions"] == {"contents": "read"}
-    assert workflow["on"]["push"]["branches"] == ["db/d2a-territory-registry"]
+    assert workflow["on"]["push"]["branches"] == ["db/d2a-territory-registry", "main"]
+    assert workflow["on"]["pull_request"] == {"branches": ["main"]}
     job = workflow["jobs"]["offline"]
     assert job["runs-on"] == "ubuntu-24.04" and job["timeout-minutes"] <= 30
     steps = job["steps"]
@@ -28,6 +29,25 @@ def test_workflow_is_read_only_pinned_and_secret_free():
     text = json.dumps(workflow)
     assert "secrets." not in text and "SUPABASE" not in text.upper() and "DATABASE_URL" not in text
     assert steps[-1]["run"] == "python -B scripts/ci/offline_validation.py"
+
+
+def test_every_workflow_checks_pull_requests_and_pushes_to_main_read_only():
+    """Integration into main is checked before (pull request) and after (push), without any write right."""
+    for name in ("postgis-validation.yml", "offline-tests.yml"):
+        workflow = json.loads((ROOT / ".github/workflows" / name).read_text(encoding="utf-8"))
+        assert "main" in workflow["on"]["push"]["branches"], name
+        assert workflow["on"]["pull_request"] == {"branches": ["main"]}, name
+        assert workflow["permissions"] == {"contents": "read"}, name
+    # demo-pack-linux.yml is plain YAML: its trigger and permission blocks are checked as text.
+    demo = (ROOT / ".github/workflows/demo-pack-linux.yml").read_text(encoding="utf-8")
+    assert "on:\n  push:\n    branches: [deploy/cloud-demo-akanda, main]\n" in demo
+    assert "\n  pull_request:\n    branches: [main]\n" in demo
+    assert "\npermissions:\n  contents: read\n\n" in demo and demo.count("permissions:") == 1
+    # The full suite holds the D2-D4 database unit tests: the existing DB pins must be installed.
+    assert "run: python -m pip install -r requirements-ci-postgis.txt\n" in demo
+    for path in (ROOT / ".github/workflows").glob("*.yml"):
+        text = path.read_text(encoding="utf-8")
+        assert "pull_request_target" not in text and "secrets." not in text, path.name
 
 
 def test_manifest_lists_the_d3_d5_files_and_every_node_test():

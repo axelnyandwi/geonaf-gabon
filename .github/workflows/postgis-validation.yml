@@ -3,7 +3,13 @@
   "on": {
     "push": {
       "branches": [
-        "db/d2a-territory-registry"
+        "db/d2a-territory-registry",
+        "main"
+      ]
+    },
+    "pull_request": {
+      "branches": [
+        "main"
       ]
     },
     "workflow_dispatch": {}

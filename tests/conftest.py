@@ -57,3 +57,18 @@ def _clear_shared_result_cache():
     if module is not None and module._shared is not None:
         module._shared.clear()
     yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_shared_pack_lock():
+    """The demo pack lock lasts for the process in production; each test starts unlocked."""
+    import sys
+
+    def unlock():   # The module may be imported for the first time during the test.
+        module = sys.modules.get("src.demo_mode")
+        if module is not None:
+            module._shared_pack = False
+
+    unlock()
+    yield
+    unlock()
