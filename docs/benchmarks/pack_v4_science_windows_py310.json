@@ -1,0 +1,526 @@
+{
+ "platform": "Windows Python 3.10.11",
+ "territories": {
+  "akanda": {
+   "2021-01-31_2025-01-25": {
+    "areas_m2": {
+     "decrease": "60314033.15731255",
+     "increase": "4984794.608278304",
+     "stable": "26406433.103247825"
+    },
+    "arrays": {
+     "change_class_map": {
+      "dtype": "uint8",
+      "sha256": "0597a20018781d58baece9173bd3b43113df0178aa50518d03bee849d1301525",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparable_mask": {
+      "dtype": "bool",
+      "sha256": "9b1ea31da07c8aa2f911e062489f04cea3f69c7ed960c4e0d542198f81325bbb",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparison_mask": {
+      "dtype": "bool",
+      "sha256": "ad37791e80fe3d446ee1057df47be97b5840d0d73c3515c8c9530c72be8d7631",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "delta_ndvi": {
+      "dtype": "float32",
+      "sha256": "cef68c5eb7dc1bd4955491644d2d79ecb968a08d498832dc1eee6e7a3ada97ea",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_1": {
+      "dtype": "float32",
+      "sha256": "f577b90ad8404550a221a4174ea491ed250cadd1b009d3015166df9d17807d40",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_2": {
+      "dtype": "float32",
+      "sha256": "7276d2d9b66fb29d1682cdde82b7be23d67061bfb9a7f28d29214130d1bc6887",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_1": {
+      "dtype": "bool",
+      "sha256": "022f164166e496d8fd63e15671604a504502ab9195768282a15df9c2a4a1cf03",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_2": {
+      "dtype": "bool",
+      "sha256": "ee66e99859bda0cfc327a863e30a2e5ff6208d75d24acd8ce9a4446cea5b14dd",
+      "shape": [
+       1201,
+       1201
+      ]
+     }
+    },
+    "class_pixel_counts": {
+     "decrease": 604024,
+     "increase": 49828,
+     "stable": 264017
+    },
+    "comparable_area_m2": "91705260.86883867",
+    "comparable_coverage_percent": "63.63623163439518",
+    "denominator_area_m2": "144108566.0064011",
+    "grid": [
+     1201,
+     1201,
+     [
+      10.0,
+      0.0,
+      537190.0,
+      0.0,
+      -10.0,
+      63090.0
+     ]
+    ],
+    "statistics": {
+     "count": "917869",
+     "max": "0.8150624632835388",
+     "mean": "-0.14290984573984286",
+     "median": "-0.1577562689781189",
+     "min": "-0.8208818435668945",
+     "p25": "-0.21730104088783264",
+     "p75": "-0.048236727714538574",
+     "std": "0.152976332400332"
+    }
+   },
+   "2025-01-15_2025-01-25": {
+    "areas_m2": {
+     "decrease": "11758249.451432202",
+     "increase": "3691333.847761153",
+     "stable": "69016079.56082544"
+    },
+    "arrays": {
+     "change_class_map": {
+      "dtype": "uint8",
+      "sha256": "7caed7b98811b8f9cc27517aa5f5c69e8af55e57fd2451eae1ad0b0a2f873b5e",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparable_mask": {
+      "dtype": "bool",
+      "sha256": "e0de86a8847e0d312c2985dddac00d862a91eff2f25e7726328bb157dcf0e342",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparison_mask": {
+      "dtype": "bool",
+      "sha256": "e0de86a8847e0d312c2985dddac00d862a91eff2f25e7726328bb157dcf0e342",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "delta_ndvi": {
+      "dtype": "float32",
+      "sha256": "acb388595de68808cc76b0794435f7542286aa50fff92f9752671cf0f84086d7",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_1": {
+      "dtype": "float32",
+      "sha256": "02a7bdb15e052286e2ba5742c82620cc9f3ef5bfba4bc9853678d1eaebd186e9",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_2": {
+      "dtype": "float32",
+      "sha256": "7276d2d9b66fb29d1682cdde82b7be23d67061bfb9a7f28d29214130d1bc6887",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_1": {
+      "dtype": "bool",
+      "sha256": "ac6493fda99e2f108745680d3dbb8337191d12d5698c5fda6318c4da4317de1d",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_2": {
+      "dtype": "bool",
+      "sha256": "ee66e99859bda0cfc327a863e30a2e5ff6208d75d24acd8ce9a4446cea5b14dd",
+      "shape": [
+       1201,
+       1201
+      ]
+     }
+    },
+    "class_pixel_counts": {
+     "decrease": 117622,
+     "increase": 36912,
+     "stable": 690849
+    },
+    "comparable_area_m2": "84465662.8600188",
+    "comparable_coverage_percent": "58.6125205466738",
+    "denominator_area_m2": "144108566.0064011",
+    "grid": [
+     1201,
+     1201,
+     [
+      10.0,
+      0.0,
+      537190.0,
+      0.0,
+      -10.0,
+      63090.0
+     ]
+    ],
+    "statistics": {
+     "count": "845383",
+     "max": "0.6301770806312561",
+     "mean": "-0.03287226942591627",
+     "median": "-0.02643829584121704",
+     "min": "-0.6957127451896667",
+     "p25": "-0.06777998805046082",
+     "p75": "0.011134535074234009",
+     "std": "0.0918309337934315"
+    }
+   }
+  },
+  "libreville": {
+   "2021-01-31_2025-01-25": {
+    "areas_m2": {
+     "decrease": "34430474.51902006",
+     "increase": "4778365.604248324",
+     "stable": "43526938.68212015"
+    },
+    "arrays": {
+     "change_class_map": {
+      "dtype": "uint8",
+      "sha256": "9b53cd41fcf6220ebdfdef6e4d93e37863dd98040fa6c99989ac52ba9a51ba02",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparable_mask": {
+      "dtype": "bool",
+      "sha256": "ea1fb7dd1d0084c3ce5c0bf958bd4c168035699b6f3545be4ef4ee20a507fc91",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparison_mask": {
+      "dtype": "bool",
+      "sha256": "801e575314021d9f36f3d481a1b2d390e7695a51bf70673d0ec0b2f1fbfea574",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "delta_ndvi": {
+      "dtype": "float32",
+      "sha256": "64907ebc797d1bb8e270047a24f25e719c5c9557edbba61f50eaa350d62aa690",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_1": {
+      "dtype": "float32",
+      "sha256": "2b018e02ac107a62902e580aeda289a15a6d69c61efef548f3fb75694cbe2af2",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_2": {
+      "dtype": "float32",
+      "sha256": "8e4aed489dd5f5c8f5c34213e9d0b8410162a8d4cde736749a57c87cbdeefc08",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_1": {
+      "dtype": "bool",
+      "sha256": "3d7e35e6b4cd2468e60a31d667e4b7bed7061c0b1a787007749b41b3f65763d7",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_2": {
+      "dtype": "bool",
+      "sha256": "6d4bc8d1ed811165d98da92fffff7b5fb33f7a79b3a56345c0dd1ad6f99c1330",
+      "shape": [
+       1201,
+       1201
+      ]
+     }
+    },
+    "class_pixel_counts": {
+     "decrease": 344202,
+     "increase": 47772,
+     "stable": 435063
+    },
+    "comparable_area_m2": "82735778.80538855",
+    "comparable_coverage_percent": "57.41290158580217",
+    "denominator_area_m2": "144106597.1587274",
+    "grid": [
+     1201,
+     1201,
+     [
+      10.0,
+      0.0,
+      543160.0,
+      0.0,
+      -10.0,
+      51170.0
+     ]
+    ],
+    "statistics": {
+     "count": "827037",
+     "max": "0.766262412071228",
+     "mean": "-0.08306786032707107",
+     "median": "-0.06288367509841919",
+     "min": "-0.9103451371192932",
+     "p25": "-0.17013555765151978",
+     "p75": "0.023790761828422546",
+     "std": "0.14870024733844808"
+    }
+   },
+   "2025-01-15_2025-01-25": {
+    "areas_m2": {
+     "decrease": "1741309.2290956792",
+     "increase": "5710841.891638151",
+     "stable": "16266125.911748819"
+    },
+    "arrays": {
+     "change_class_map": {
+      "dtype": "uint8",
+      "sha256": "f94c1c157d0eb88324b7fe92c9f1e30f3f0d6941270d4063b9afb62122711420",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparable_mask": {
+      "dtype": "bool",
+      "sha256": "bc4b92db76e70923696de533e7cd1c16bec182c41fda8c3c0aacb3b0b608bd6d",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparison_mask": {
+      "dtype": "bool",
+      "sha256": "bc4b92db76e70923696de533e7cd1c16bec182c41fda8c3c0aacb3b0b608bd6d",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "delta_ndvi": {
+      "dtype": "float32",
+      "sha256": "b3cab988eaf256a3238eaa58686b6e9a0e26be56ac173698f4560271883d61d0",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_1": {
+      "dtype": "float32",
+      "sha256": "cea3afc7aa2b06f8885a11b9c57128c21425f1379d42fcace4567c7fcd7cd326",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_2": {
+      "dtype": "float32",
+      "sha256": "8e4aed489dd5f5c8f5c34213e9d0b8410162a8d4cde736749a57c87cbdeefc08",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_1": {
+      "dtype": "bool",
+      "sha256": "2b65f4baab906652a892e29c347b5e00a245be9dd5b7a0e34fc8ac4e0dad9812",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_2": {
+      "dtype": "bool",
+      "sha256": "6d4bc8d1ed811165d98da92fffff7b5fb33f7a79b3a56345c0dd1ad6f99c1330",
+      "shape": [
+       1201,
+       1201
+      ]
+     }
+    },
+    "class_pixel_counts": {
+     "decrease": 17401,
+     "increase": 57067,
+     "stable": 162552
+    },
+    "comparable_area_m2": "23718277.03248265",
+    "comparable_coverage_percent": "16.458841926825844",
+    "denominator_area_m2": "144106597.1587274",
+    "grid": [
+     1201,
+     1201,
+     [
+      10.0,
+      0.0,
+      543160.0,
+      0.0,
+      -10.0,
+      51170.0
+     ]
+    ],
+    "statistics": {
+     "count": "237020",
+     "max": "0.7143548727035522",
+     "mean": "0.037351070762190096",
+     "median": "0.03058672696352005",
+     "min": "-0.6398774981498718",
+     "p25": "-0.02462420891970396",
+     "p75": "0.09714542329311371",
+     "std": "0.11666752552574627"
+    }
+   }
+  },
+  "owendo": {
+   "2021-01-31_2025-01-25": {
+    "areas_m2": {
+     "decrease": "39667745.16734331",
+     "increase": "3573465.9861704577",
+     "stable": "25545496.38512313"
+    },
+    "arrays": {
+     "change_class_map": {
+      "dtype": "uint8",
+      "sha256": "e3498465ffcb3a47b7d3ab8633bc46ed21a1f1ca69318adfd1b29bac26e96b97",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparable_mask": {
+      "dtype": "bool",
+      "sha256": "8a5cb40dbff643231b553981e6f139f12178edbf69cd3786da522a491b465b77",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "comparison_mask": {
+      "dtype": "bool",
+      "sha256": "8fb3228f2eba576874fdef3253387e39d87e028d4c213bfc76ab392a8135f69e",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "delta_ndvi": {
+      "dtype": "float32",
+      "sha256": "f97f306f61b27c579262abad2daad3eeb013c4f6bcae41c30ec63b4627b81f99",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_1": {
+      "dtype": "float32",
+      "sha256": "2c8a932255f6af51588c7e3b460f8d98cc2ceb9278617cd7e2f9534ed3c8733e",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "ndvi_date_2": {
+      "dtype": "float32",
+      "sha256": "892190c3746c76bca1b795c9b5643776961f212958bfd4b3f4b436c6b03f1a1f",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_1": {
+      "dtype": "bool",
+      "sha256": "a2117a794a70434f57bbed0c6d4889098c87019f7a42f23778772fcf17721b20",
+      "shape": [
+       1201,
+       1201
+      ]
+     },
+     "valid_date_2": {
+      "dtype": "bool",
+      "sha256": "067e4d6c719ac3ad302f2024d8ac13cb832a76751c9aa0013d8ac20c5f1b0a9e",
+      "shape": [
+       1201,
+       1201
+      ]
+     }
+    },
+    "class_pixel_counts": {
+     "decrease": 397489,
+     "increase": 35768,
+     "stable": 255704
+    },
+    "comparable_area_m2": "68786707.53863691",
+    "comparable_coverage_percent": "47.733944477237436",
+    "denominator_area_m2": "144104385.86620212",
+    "grid": [
+     1201,
+     1201,
+     [
+      10.0,
+      0.0,
+      549110.0,
+      0.0,
+      -10.0,
+      41470.0
+     ]
+    ],
+    "statistics": {
+     "count": "688961",
+     "max": "0.7790622711181641",
+     "mean": "-0.10863972952446375",
+     "median": "-0.12918204069137573",
+     "min": "-0.8860867619514465",
+     "p25": "-0.18539613485336304",
+     "p75": "-0.012551963329315186",
+     "std": "0.13795793731857633"
+    }
+   }
+  }
+ }
+}

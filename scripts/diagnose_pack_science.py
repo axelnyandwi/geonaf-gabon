@@ -1,4 +1,4 @@
-"""Manual diagnostic: per-component fingerprint of the 15→25/01/2025 pair on the demo pack.
+"""Manual diagnostic: per-component fingerprint of a Sentinel-2 pair on a demo pack (v3, or v4 with --estuaire).
 
 Usage : python scripts/diagnose_pack_science.py <unpacked pack dir> [--json out.json]
 
@@ -28,10 +28,18 @@ def _array(values: np.ndarray) -> dict:
             "shape": list(values.shape)}
 
 
-def fingerprint(pack: Path) -> dict:
-    observations = {item.acquired_at.date().isoformat(): item for item in list_local_observations(pack)}
-    result = analyze_local_akanda(observations["2025-01-15"], observations["2025-01-25"], pack,
-                                  scientific_profile=PROFILE)
+ESTUAIRE_PAIRS = {"akanda": (("2025-01-15", "2025-01-25"), ("2021-01-31", "2025-01-25")),
+                  "libreville": (("2025-01-15", "2025-01-25"), ("2021-01-31", "2025-01-25")),
+                  "owendo": (("2021-01-31", "2025-01-25"),)}  # No usable 2025 pair over Owendo (0,12 %).
+
+
+def fingerprint(pack: Path, aoi_id: str | None = None, pair=("2025-01-15", "2025-01-25")) -> dict:
+    """Without ``aoi_id``: the v3 Akanda pair (unchanged). With it: that territory's own subsets and profile."""
+    from src.geo.scientific_profile import reference_profile
+
+    profile = PROFILE if aoi_id is None else reference_profile(aoi_id)
+    observations = {item.acquired_at.date().isoformat(): item for item in list_local_observations(pack, aoi_id)}
+    result = analyze_local_akanda(observations[pair[0]], observations[pair[1]], pack, scientific_profile=profile)
     comparison, analysis = result.comparison, result.analysis
     return {
         "platform": f"{platform.system()} Python {platform.python_version()}",
@@ -51,12 +59,25 @@ def fingerprint(pack: Path) -> dict:
     }
 
 
+def estuaire_fingerprints(pack: Path) -> dict:
+    """Estuaire v4 pack: one fingerprint per territory and pair (``ESTUAIRE_PAIRS``)."""
+    report = {"platform": f"{platform.system()} Python {platform.python_version()}", "territories": {}}
+    for aoi_id, pairs in ESTUAIRE_PAIRS.items():
+        report["territories"][aoi_id] = {}
+        for pair in pairs:
+            current = fingerprint(pack, aoi_id, pair)
+            current.pop("platform")
+            report["territories"][aoi_id][f"{pair[0]}_{pair[1]}"] = current
+    return report
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("pack", type=Path)
     parser.add_argument("--json", type=Path)
+    parser.add_argument("--estuaire", action="store_true", help="Paquet Estuaire v4 : trois territoires.")
     args = parser.parse_args()
-    report = fingerprint(args.pack)
+    report = estuaire_fingerprints(args.pack) if args.estuaire else fingerprint(args.pack)
     text = json.dumps(report, indent=1, sort_keys=True)
     if args.json:
         args.json.write_text(text + "\n", encoding="utf-8")

@@ -33,6 +33,64 @@ logiciels, inventaire SHA-256 et taille de chaque fichier.
 Construction : `python scripts/build_demo_pack.py` (aucun écrasement ; écrit le
 dossier, l'archive ZIP déterministe et son `.sha256`).
 
+Nombre de fichiers : le v2 comptait 30 fichiers. Le v3 (publié, épinglé dans
+`RELEASED_PACK`) y ajoute les deux référentiels geoBoundaries (4 fichiers) et leurs
+194 unités du registre des territoires (97 géométries + 97 enregistrements), soit
+228 fichiers, 229 membres ZIP avec `PACK_MANIFEST.json`. Les « 30 fichiers » des
+mesures ci-dessous concernent le v2 ; la liste « Non inclus » ci-dessus aussi
+(le v3 contient les référentiels de limites).
+
+## Paquet `geonaf-demo-estuaire-2025-01` v4 (lot 2, construit localement, non publié)
+
+Trois carrés d'acquisition de 12 × 12 km (Akanda, Libreville, Owendo), jamais des
+communes. Chaque territoire a ses propres extraits Sentinel-2 dans
+`raw/sentinel2/<produit>__<aoi>/` ; `derivation.aoi` (identifiant et SHA-256 de
+`aoi/<aoi>.geojson`) est vérifié par le filtre du lot 1 (`docs/multiterritoire.md`) :
+un territoire ne voit jamais les extraits d'un autre.
+
+| Territoire | Dates Sentinel-2 (couverture SCL valide, profil de référence) | Couches |
+|---|---|---|
+| Akanda | 31/01/2021 (72,93 %), 15/01/2025 (66,73 %), 20/01/2025 (2,72 %, exclue), 25/01/2025 (64,51 %) | WorldCover 2021, OSM 22/10/2026, S1 01/2025 VV/VH |
+| Libreville | 31/01/2021 (57,84 %), 15/01/2025 (16,59 %), 25/01/2025 (57,60 %) | idem, fenêtres propres |
+| Owendo | 31/01/2021 (49,17 %), 15/01/2025 (0,12 %, exclue), 25/01/2025 (48,27 %) | idem, fenêtres propres |
+
+Owendo n'a aucune paire 2025 exploitable (couverture comparable 15→25/01 : 0,12 %) ;
+seule la paire 31/01/2021 → 25/01/2025 (47,73 %) l'est. Les fenêtres externes de
+chaque carré sont contrôlées à la construction : la couche doit couvrir l'AOI à un
+pixel source près (WorldCover est calé sur sa grille de 1/12 000°).
+
+Mesures (Windows, Python 3.10.11, données locales, 10/11/2026) :
+
+| Mesure | v3 | v4 |
+|---|---|---|
+| Fichiers / membres ZIP | 228 / 229 | 295 / 296 |
+| Décompressé | 34,2 Mo | 112,1 Mo (106,9 Mio) |
+| Archive | 18,3 Mo | 59,4 Mo (56,7 Mio) |
+| Taux de compression maximal | - | 8,9 |
+| Installation à froid / réutilisation | 0,33 s / 0,07 s | 1,79 s / 0,43 s |
+
+Seule la limite du nombre de membres a été relevée, de 256 à **320** (besoin mesuré
+296, marge 8 %) ; taille d'archive (64 Mio), taille décompressée (160 Mio) et taux
+(50) sont inchangés et tous les contrôles d'extraction restent appliqués.
+
+Reproductibilité : `--created-at` fixe la date écrite dans les manifestes ; deux
+constructions indépendantes du même code et des mêmes données donnent la même
+archive au bit près. La construction depuis du code non commité est tracée
+(`code.uncommitted_paths`) : l'archive à publier doit être reconstruite après le
+commit du lot 2.
+
+Validation scientifique : pour chaque territoire, chaque date et chaque paire, les
+extraits donnent exactement les résultats des tuiles complètes (aucun écart, y compris
+flottant). Référence Windows : `docs/benchmarks/pack_v4_science_windows_py310.json`
+(`python scripts/diagnose_pack_science.py <paquet> --estuaire --json …`), vérifiée
+sous Python 3.13.3 avec les dépendances figées ; la paire Akanda 15→25/01/2025 y est
+identique au bit près à la référence v3. Tests : `tests/test_demo_pack_v4.py`
+(`GEONAF_DEMO_PACK_V4_DIR=<paquet décompressé>`).
+
+CI Linux à préparer après publication (lot 3, non fait) : dans `demo-pack-linux`,
+installer le v4 par le chargeur puis exécuter `tests/test_demo_pack_v4.py` avec
+`GEONAF_DEMO_PACK_V4_DIR`, en plus des contrôles v3 existants.
+
 ## Chargement (`src/data/demo_pack.py`, sans Streamlit)
 
 1. Données locales prioritaires : si `GABON_GEOAI_DATA_DIR` (ou `data/`) contient
@@ -43,8 +101,8 @@ dossier, l'archive ZIP déterministe et son `.sha256`).
    après redirection), délais 10 s / 60 s, 64 Mio au plus.
 3. SHA-256 de l'archive comparé à l'empreinte épinglée avant toute extraction.
 4. Extraction en flux : chemins absolus, `..`, lecteurs, barres obliques inverses,
-   liens, doublons, plus de 256 membres, plus de 160 Mio décompressés ou un taux de
-   compression > 50 sont refusés.
+   liens, doublons, plus de 320 membres (256 jusqu'au lot 2, voir ci-dessous), plus de
+   160 Mio décompressés ou un taux de compression > 50 sont refusés.
 5. Chaque fichier est vérifié contre `PACK_MANIFEST.json` (taille, SHA-256, aucun
    fichier non déclaré), puis le dossier est installé par un `os.replace` atomique
    dans `~/.cache/geonaf` (ou `GEONAF_CACHE_DIR`).
