@@ -1,10 +1,12 @@
 """Read verified local acquisitions for the Akanda prototype; no network calls."""
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import datetime
 import hashlib
 import json
 from pathlib import Path
+import re
 
 from src.data.acquisition import create_sentinel2_acquisition
 from src.data.acquisition_manifest import validate_acquisition_manifest
@@ -53,23 +55,89 @@ def _manifest(path):
     return manifest
 
 
-def list_local_observations(data_dir: Path) -> tuple[LocalObservation, ...]:
-    """Expose every verified local acquisition, retaining its exact UTC date."""
+_TERRITORY_ID = re.compile(r"[a-z0-9][a-z0-9_-]{0,63}")
+_DIGEST = re.compile(r"[0-9a-f]{64}")
+
+
+def subset_territory(manifest: Mapping) -> tuple[str, str]:
+    """(territory id, AOI GeoJSON SHA-256) an extract was cut for (``derivation.aoi``).
+
+    A full tile carries no territory: it may cover several AOIs and is clipped by the
+    analysis. An extract is only valid for its own AOI; a missing or malformed
+    declaration is refused rather than guessed.
+    """
+    derivation = manifest.get("derivation")
+    aoi = derivation.get("aoi") if isinstance(derivation, Mapping) else None
+    if not isinstance(aoi, Mapping):
+        raise ValueError("Territoire de l'extrait absent du manifeste.")
+    aoi_id, digest = aoi.get("id"), aoi.get("sha256")
+    if not isinstance(aoi_id, str) or not _TERRITORY_ID.fullmatch(aoi_id):
+        raise ValueError("Identifiant de territoire de l'extrait invalide.")
+    if not isinstance(digest, str) or not _DIGEST.fullmatch(digest):
+        raise ValueError("Empreinte de la géométrie de l'extrait invalide.")
+    return aoi_id, digest
+
+
+def _check_territory(manifest: Mapping, aoi_path: Path) -> None:
+    """An extract must have been cut for this AOI file (same id, same geometry digest)."""
+    if manifest.get("schema_version") != SUBSET_SCHEMA_VERSION:
+        return  # Full tile: valid for every AOI it covers.
+    aoi_id, digest = subset_territory(manifest)
+    if aoi_id != aoi_path.stem:
+        raise ValueError("Extrait d'un autre territoire.")
+    if hashlib.sha256(aoi_path.read_bytes()).hexdigest() != digest:
+        raise ValueError("Extrait découpé pour une autre géométrie du territoire.")
+
+
+def list_local_observations(data_dir: Path, aoi_id: str | None = None) -> tuple[LocalObservation, ...]:
+    """Expose the verified local acquisitions of one territory, retaining their exact UTC date.
+
+    With ``aoi_id``: full tiles, plus the extracts cut for that AOI (same id and same
+    ``aoi/<aoi_id>.geojson`` digest); extracts of other territories are left out.
+    Without it (diagnostics and single-territory packs only): every acquisition, refused
+    when extracts of several territories are present. Refused in both modes: a folder
+    holding both manifest kinds, an extract without a valid territory, a product listed
+    twice. Any refusal raises ``LocalPreviewError``: nothing is attributed silently.
+    """
     try:
-        observations = []
+        aoi_path = None
+        if aoi_id is not None:
+            if not isinstance(aoi_id, str) or not _TERRITORY_ID.fullmatch(aoi_id):
+                raise ValueError("Identifiant de territoire invalide.")
+            aoi_path = data_dir / "aoi" / f"{aoi_id}.geojson"
+        observations, territories = [], set()
         folders = sorted(path for path in (data_dir / "raw" / "sentinel2").glob("*") if path.is_dir())
-        for path in filter(None, map(manifest_path, folders)):
+        for folder in folders:
+            path = manifest_path(folder)
+            if path is None:
+                continue
+            if path.name == "acquisition_manifest.json" and (folder / "subset_manifest.json").is_file():
+                raise ValueError("Produit ambigu : tuile complète et extrait dans le même dossier.")
             manifest = _manifest(path)
+            subset = manifest["schema_version"] == SUBSET_SCHEMA_VERSION
+            if subset:
+                territory, _ = subset_territory(manifest)
+                territories.add(territory)
+                if aoi_path is not None:
+                    if territory != aoi_id:
+                        continue
+                    _check_territory(manifest, aoi_path)
             acquired = datetime.fromisoformat(manifest["acquired_at_utc"].replace("Z", "+00:00"))
-            observations.append(LocalObservation(acquired, path, manifest['product_id'],
-                                                 manifest["schema_version"] == SUBSET_SCHEMA_VERSION))
+            observations.append(LocalObservation(acquired, path, manifest['product_id'], subset))
+        if aoi_path is None and len(territories) > 1:
+            raise ValueError("Extraits de plusieurs territoires : préciser le territoire.")
+        if len({item.product_id for item in observations}) != len(observations):
+            raise ValueError("Produit présent deux fois pour ce territoire.")
         return tuple(sorted(observations, key=lambda item: item.acquired_at))
     except Exception:
         raise LocalPreviewError("Catalogue local indisponible ou manifeste non vérifié.") from None
 
 
-def _load_observation(observation):
+def _load_observation(observation, aoi_path: Path | None = None):
+    """Verified acquisition; with ``aoi_path``, an extract must belong to that AOI."""
     manifest = _manifest(observation.manifest_path)
+    if aoi_path is not None:
+        _check_territory(manifest, aoi_path)
     if datetime.fromisoformat(manifest["acquired_at_utc"].replace("Z", "+00:00")) != observation.acquired_at:
         raise ValueError("Date locale modifiée.")
     root = observation.manifest_path.parent.resolve()
@@ -155,9 +223,10 @@ def analyze_local_akanda(earlier: LocalObservation, later: LocalObservation, dat
     if earlier.acquired_at >= later.acquired_at:
         raise LocalPreviewError("Choisir deux acquisitions dans l’ordre chronologique.")
     try:
+        aoi_path = _profile_aoi(data_dir, scientific_profile)
         return analyze_temporal_vegetation_change(
-            _load_observation(earlier), _load_observation(later),
-            aoi_path=_profile_aoi(data_dir, scientific_profile), scientific_profile=scientific_profile,
+            _load_observation(earlier, aoi_path), _load_observation(later, aoi_path),
+            aoi_path=aoi_path, scientific_profile=scientific_profile,
         )
     except Exception:
         raise LocalPreviewError(
@@ -187,13 +256,14 @@ def analyze_local_ndvi_series(observations, data_dir: Path, *, scientific_profil
 
     try:
         acquisitions, digests = [], {}
+        aoi_path = _profile_aoi(data_dir, scientific_profile)
         for observation in observations:
-            acquisitions.append(_load_observation(observation))
+            acquisitions.append(_load_observation(observation, aoi_path))
             manifest = _manifest(observation.manifest_path)
             digests[manifest["product_id"]] = {role: record["sha256"]
                                                for role, record in manifest["assets"].items()}
         return analyze_ndvi_time_series(
-            acquisitions, aoi_path=_profile_aoi(data_dir, scientific_profile),
+            acquisitions, aoi_path=aoi_path,
             scientific_profile=scientific_profile, period=period,
             gap_warning_days=gap_warning_days, source_sha256=digests)
     except Exception:
@@ -219,8 +289,8 @@ def analyze_local_observation(observation: LocalObservation, data_dir: Path, *,
     from src.services.ndvi_observation import analyze_ndvi_observation
 
     try:
-        return analyze_ndvi_observation(_load_observation(observation),
-                                        aoi_path=_profile_aoi(data_dir, scientific_profile),
+        aoi_path = _profile_aoi(data_dir, scientific_profile)
+        return analyze_ndvi_observation(_load_observation(observation, aoi_path), aoi_path=aoi_path,
                                         scientific_profile=scientific_profile)
     except Exception:
         raise LocalPreviewError(
@@ -276,9 +346,9 @@ def analyze_local_group(group, data_dir: Path, *, scientific_profile: Scientific
     from src.services.ndvi_observation import analyze_ndvi_mosaic
 
     try:
-        return analyze_ndvi_mosaic([_load_observation(observation) for observation in group],
-                                   aoi_path=_profile_aoi(data_dir, scientific_profile),
-                                   scientific_profile=scientific_profile)
+        aoi_path = _profile_aoi(data_dir, scientific_profile)
+        return analyze_ndvi_mosaic([_load_observation(observation, aoi_path) for observation in group],
+                                   aoi_path=aoi_path, scientific_profile=scientific_profile)
     except Exception:
         raise LocalPreviewError(
             "NDVI de l'acquisition impossible : vérifier les tuiles, leurs manifestes, l'AOI et le profil.") from None
@@ -295,9 +365,9 @@ def analyze_local_group_with_scl(group, data_dir: Path, *, scientific_profile: S
     from src.services.ndvi_observation import analyze_ndvi_mosaic, analyze_ndvi_observation_with_scl
 
     try:
-        acquisitions = [_load_observation(observation) for observation in group]
-        provenance = tuple(observation_provenance(observation) for observation in group)
         aoi_path = _profile_aoi(data_dir, scientific_profile)
+        acquisitions = [_load_observation(observation, aoi_path) for observation in group]
+        provenance = tuple(observation_provenance(observation) for observation in group)
         if len(acquisitions) == 1:
             observation, scl = analyze_ndvi_observation_with_scl(acquisitions[0], aoi_path=aoi_path,
                                                                  scientific_profile=scientific_profile)

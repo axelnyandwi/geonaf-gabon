@@ -25,7 +25,7 @@ def _page(local_data, monkeypatch):
     # Register pages from the actual entrypoint, including the return link.
     # Empty local observations keep this catalogue-only fixture metadata-only.
     import src.services.local_preview as preview
-    monkeypatch.setattr(preview, "list_local_observations", lambda data_dir: ())
+    monkeypatch.setattr(preview, "list_local_observations", lambda data_dir, aoi_id=None: ())
     page = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     page.run(timeout=30)
     from src.navigation import SECTIONS

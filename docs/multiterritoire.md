@@ -83,6 +83,29 @@ vecteurs découpés à l'AOI et arrondis à 1e-5°. Pic mémoire du benchmark : 
 résultats sont ensuite servis par les caches Streamlit (prise de vue × AOI × profil,
 instantané OSM, fenêtres radar, croisement, charge carte).
 
+## Isolation des observations Sentinel-2 par territoire (MVP, lot 1)
+
+`list_local_observations(data_dir, aoi_id)` (`src/services/local_preview.py`) ne renvoie que
+les acquisitions utilisables pour le territoire choisi :
+
+- **tuiles complètes** (`acquisition_manifest.json`) : valables pour toute AOI qu'elles
+  couvrent, découpées à l'AOI par l'analyse (règles inchangées) ;
+- **extraits** (`subset_manifest.json`, paquet de démonstration) : retenus seulement si
+  `derivation.aoi.id` est le territoire choisi **et** si `derivation.aoi.sha256` est l'empreinte
+  de `aoi/<aoi_id>.geojson` ; les extraits des autres territoires sont ignorés.
+
+Refus explicites (`LocalPreviewError`, jamais d'attribution silencieuse) : extrait sans
+territoire ou avec identifiant ou empreinte malformés, extrait découpé pour une autre géométrie
+du même territoire (nouvelle version d'un périmètre), extrait d'un territoire dont l'AOI est
+absente, dossier contenant les deux types de manifeste, même produit présent deux fois pour un
+territoire, identifiant de territoire invalide. Sans `aoi_id` (diagnostics, paquet
+mono-territoire comme Akanda v3), la découverte reste possible mais est refusée dès que des
+extraits de plusieurs territoires coexistent.
+
+Défense en profondeur : chaque analyse (paire, série, date, groupe) revérifie, au chargement,
+qu'un extrait appartient à l'AOI du profil scientifique utilisé. Les six appelants de
+l'application passent le territoire (test `tests/test_territory_observations.py`).
+
 ## Limites
 
 - Profils Libreville/Owendo non calibrés ; paramètres hérités d'Akanda.
