@@ -1,12 +1,15 @@
 """Resource guards: thresholds, overruns, unknown inputs, imports and calibration; offline."""
 
+from pathlib import Path
+import sys
+
 import geopandas as gpd
 import pytest
 from shapely.geometry import MultiPolygon, Polygon, box
 
 from src.services.resource_guards import (
-    MIB, OK, REFUSED, UNKNOWN, WARNING, ResourceLimits, assess_import, assess_zone, estimate_raster_cells,
-    estimate_s2_tiles,
+    MIB, OK, REFUSED, UNKNOWN, WARNING, ResourceLimits, assess_import, assess_zone, available_memory_bytes,
+    estimate_raster_cells, estimate_s2_tiles,
 )
 from tests.test_aoi_identity import write_geojson
 
@@ -93,6 +96,41 @@ def test_akanda_multisource_stays_allowed_on_a_loaded_host():
     assert memory.status != REFUSED
 
 
+class _UnreadableMemory:
+    @staticmethod
+    def virtual_memory():
+        raise PermissionError("/proc/meminfo")
+
+
+@pytest.mark.parametrize("module", [None, _UnreadableMemory], ids=["psutil absent", "mémoire illisible"])
+def test_unknown_free_memory_keeps_the_configured_ceilings(monkeypatch, module):
+    monkeypatch.setitem(sys.modules, "psutil", module)   # None makes ``import psutil`` raise ImportError.
+    monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", Path("/nonexistent-cgroup"))   # No container.
+    assert available_memory_bytes() is None
+    memory = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_wanted=False).get("memory")   # Default reads the host.
+    assert (memory.warn_at, memory.refuse_at) == (pytest.approx(1024), pytest.approx(2048))
+    assert memory.status == OK and "mémoire libre" not in memory.reason
+
+
+def test_panel_verdict_follows_free_memory_instead_of_a_stale_cache(monkeypatch):
+    from src.components import resource_panel
+
+    calls, free = [], {"bytes": 8 * 1024 * MIB}
+    monkeypatch.setattr(resource_panel, "available_memory_bytes", lambda: free["bytes"])
+    monkeypatch.setattr(resource_panel, "assess_zone", lambda *a, **kw: calls.append(kw) or assess_zone(*a, **kw))
+    resource_panel._cached_assessment.clear()
+    try:
+        assess = lambda: resource_panel.assess_geometry(AKANDA_LIKE, "akanda-like").get("memory")
+        assert assess().status == OK
+        free["bytes"] = 600 * MIB          # Load rises: a new verdict, not the one cached above.
+        warned = assess()
+        assert warned.status == WARNING and calls[-1]["available_bytes"] == 576 * MIB   # Rounded down (64 MiB).
+        free["bytes"] = 630 * MIB          # Same 64 MiB step: the cached verdict is reused.
+        assert assess() == warned and len(calls) == 2
+    finally:
+        resource_panel._cached_assessment.clear()
+
+
 def test_tiles_across_utm_zones_hemispheres_and_100km_lines():
     assert len(estimate_s2_tiles(box(9.40, 0.40, 9.45, 0.45))) == 1
     assert len(estimate_s2_tiles(box(11.95, 0.40, 12.05, 0.45))) == 2       # UTM zones 32 and 33.
@@ -148,3 +186,172 @@ def test_import_missing_or_invalid_file(tmp_path):
     bow_tie = write_geojson(tmp_path / "bad.geojson", [Polygon([(9.3, 0.4), (9.4, 0.5), (9.4, 0.4), (9.3, 0.5)])])
     with pytest.raises(ValueError, match="invalide"):
         assess_import(bow_tie, limits=LIMITS)
+
+
+# --- Container memory (cgroup) ------------------------------------------------------------------------------
+
+
+def cgroup(tmp_path, version, limit, usage, inactive=0):
+    if version == 2:
+        (tmp_path / "memory.max").write_text(f"{limit}\n")
+        (tmp_path / "memory.current").write_text(f"{usage}\n")
+        (tmp_path / "memory.stat").write_text(f"anon 1\ninactive_file {inactive}\nactive_file 2\n")
+    else:
+        (tmp_path / "memory").mkdir()
+        (tmp_path / "memory" / "memory.limit_in_bytes").write_text(f"{limit}\n")
+        (tmp_path / "memory" / "memory.usage_in_bytes").write_text(f"{usage}\n")
+        (tmp_path / "memory" / "memory.stat").write_text(f"cache 5\ntotal_inactive_file {inactive}\n")
+    return tmp_path
+
+
+@pytest.mark.parametrize("version", [2, 1])
+def test_cgroup_limit_gives_the_memory_left_in_the_container(tmp_path, version):
+    from src.services.resource_guards import cgroup_memory_bytes
+
+    root = cgroup(tmp_path, version, 1024 * MIB, 700 * MIB, inactive=100 * MIB)
+    assert cgroup_memory_bytes(root) == (1024 - 600) * MIB             # Inactive file cache is reclaimable.
+    (tmp_path / "over").mkdir()
+    over = cgroup(tmp_path / "over", version, 512 * MIB, 900 * MIB)     # Usage above the limit.
+    assert cgroup_memory_bytes(over) == 0
+
+
+@pytest.mark.parametrize("limit", ["max", str(1 << 62), "garbage"])
+def test_no_cgroup_limit_or_unreadable_figures_are_ignored(tmp_path, limit):
+    from src.services.resource_guards import cgroup_memory_bytes
+
+    assert cgroup_memory_bytes(cgroup(tmp_path, 2, limit, 1)) is None
+    assert cgroup_memory_bytes(tmp_path / "absent") is None
+
+
+def test_free_memory_is_the_smaller_of_host_and_container(tmp_path, monkeypatch):
+    class Host:
+        @staticmethod
+        def virtual_memory():
+            return type("Memory", (), {"available": 8 * 1024 * MIB})()
+
+    monkeypatch.setitem(sys.modules, "psutil", Host)
+    monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", cgroup(tmp_path, 2, 1024 * MIB, 200 * MIB))
+    assert available_memory_bytes() == 824 * MIB                      # Container limit, not the host's 8 GiB.
+    memory = assess_zone(AKANDA_LIKE, limits=LIMITS, osm_wanted=False).get("memory")
+    assert memory.refuse_at == pytest.approx(824 * 0.9) and "mémoire libre" in memory.reason
+    monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", tmp_path / "absent")
+    assert available_memory_bytes() == 8 * 1024 * MIB                # Outside a container: the host figure.
+
+
+# --- cgroup: process cgroup, mounts and inherited limits (C4b) -------------------------------------
+
+def _write_v2(directory, limit=None, usage=0, inactive=0):
+    directory.mkdir(parents=True, exist_ok=True)
+    if limit is not None:
+        (directory / "memory.max").write_text(f"{limit}\n")
+    (directory / "memory.current").write_text(f"{usage}\n")
+    (directory / "memory.stat").write_text(f"anon 1\ninactive_file {inactive}\n")
+
+
+def _write_v1(directory, limit, usage=0, inactive=0):
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / "memory.limit_in_bytes").write_text(f"{limit}\n")
+    (directory / "memory.usage_in_bytes").write_text(f"{usage}\n")
+    (directory / "memory.stat").write_text(f"total_inactive_file {inactive}\n")
+
+
+def _proc(tmp_path, cgroup_lines, mount_lines):
+    proc = tmp_path / "proc"
+    proc.mkdir(parents=True, exist_ok=True)
+    (proc / "cgroup").write_text("\n".join(cgroup_lines) + "\n")
+    (proc / "mountinfo").write_text("\n".join(mount_lines) + "\n")
+    return {"proc_cgroup": proc / "cgroup", "mountinfo": proc / "mountinfo"}
+
+
+V2_MOUNT = "30 23 0:26 / /sys/fs/cgroup rw,nosuid shared:4 - cgroup2 cgroup2 rw,nsdelegate"
+
+
+def test_cgroup_v2_limit_inherited_from_a_parent_slice(tmp_path):
+    from src.services.resource_guards import LIMITED, cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v2(base / "system.slice" / "app.service", "max", usage=300 * MIB)       # No limit on the service.
+    _write_v2(base / "system.slice", 512 * MIB, usage=300 * MIB, inactive=50 * MIB)
+    figure = cgroup_memory(base, **_proc(tmp_path, ["0::/system.slice/app.service"], [V2_MOUNT]))
+    assert figure.status == LIMITED and figure.version == 2 and figure.level == "/system.slice"
+    assert figure.available_bytes == (512 - 250) * MIB and figure.limit_bytes == 512 * MIB
+
+
+def test_cgroup_most_restrictive_level_wins(tmp_path):
+    from src.services.resource_guards import cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v2(base / "kubepods" / "pod" / "container", 900 * MIB, usage=100 * MIB)  # 800 MiB left here...
+    _write_v2(base / "kubepods" / "pod", 1024 * MIB, usage=700 * MIB)               # ...but 324 MiB left for the pod.
+    figure = cgroup_memory(base, **_proc(tmp_path, ["0::/kubepods/pod/container"], [V2_MOUNT]))
+    assert figure.available_bytes == 324 * MIB and figure.level == "/kubepods/pod"
+
+
+def test_cgroup_v2_namespaced_container_sees_its_cgroup_at_the_mount_root(tmp_path):
+    from src.services.resource_guards import cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v2(base, 1024 * MIB, usage=200 * MIB)
+    figure = cgroup_memory(base, **_proc(tmp_path, ["0::/"], [V2_MOUNT]))
+    assert figure.available_bytes == 824 * MIB and figure.level == "/"
+
+
+def test_cgroup_v1_container_mounted_below_the_hierarchy_root(tmp_path):
+    from src.services.resource_guards import cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v1(base / "memory", 768 * MIB, usage=268 * MIB)
+    mount = ("41 30 0:37 /docker/abc /sys/fs/cgroup/memory ro,nosuid shared:20 - cgroup cgroup "
+             "rw,memory")
+    proc = _proc(tmp_path, ["12:cpu,cpuacct:/docker/abc", "9:memory:/docker/abc"], [mount])
+    figure = cgroup_memory(base, **proc)
+    assert figure.version == 1 and figure.available_bytes == 500 * MIB
+
+
+def test_cgroup_v1_hierarchy_with_a_limited_parent(tmp_path):
+    from src.services.resource_guards import CGROUP_UNLIMITED, cgroup_memory
+
+    base = tmp_path / "cgroup"
+    _write_v1(base / "memory" / "kubepods" / "pod1" / "c1", CGROUP_UNLIMITED + 4096, usage=10 * MIB)
+    _write_v1(base / "memory" / "kubepods" / "pod1", 256 * MIB, usage=56 * MIB)
+    mount = "41 30 0:37 / /sys/fs/cgroup/memory rw - cgroup cgroup rw,memory"
+    figure = cgroup_memory(base, **_proc(tmp_path, ["9:memory:/kubepods/pod1/c1"], [mount]))
+    assert figure.available_bytes == 200 * MIB and figure.level == "/kubepods/pod1"
+
+
+def test_cgroup_statuses_unlimited_absent_and_inaccessible_are_distinct(tmp_path):
+    from src.services.resource_guards import ABSENT, INACCESSIBLE, UNLIMITED, cgroup_memory
+
+    unlimited = tmp_path / "unlimited"
+    _write_v2(unlimited / "user.slice", "max")
+    _write_v2(unlimited, "max")
+    assert cgroup_memory(unlimited, **_proc(tmp_path / "u", ["0::/user.slice"], [V2_MOUNT])).status == UNLIMITED
+    assert cgroup_memory(tmp_path / "nothing", **_proc(tmp_path / "n", [], [])).status == ABSENT
+    broken = tmp_path / "broken"
+    _write_v2(broken, 512 * MIB)
+    (broken / "memory.current").write_text("unreadable\n")
+    figure = cgroup_memory(broken, **_proc(tmp_path / "b", ["0::/"], [V2_MOUNT]))
+    assert figure.status == INACCESSIBLE and figure.available_bytes is None
+
+
+def test_inaccessible_container_limit_never_falls_back_to_the_host_total(tmp_path, monkeypatch):
+    class Host:
+        @staticmethod
+        def virtual_memory():
+            return type("Memory", (), {"available": 64 * 1024 * MIB})()
+
+    monkeypatch.setitem(sys.modules, "psutil", Host)
+    broken = tmp_path / "broken"
+    _write_v2(broken, "not-a-number")
+    monkeypatch.setattr("src.services.resource_guards.CGROUP_ROOT", broken)
+    monkeypatch.setattr("src.services.resource_guards.PROC_SELF_CGROUP", tmp_path / "none")
+    assert available_memory_bytes() is None                 # Not the host's 64 GiB: configured ceilings only.
+    _write_v2(broken, "max")
+    assert available_memory_bytes() == 64 * 1024 * MIB      # Readable and unlimited: the host figure.
+
+
+def test_process_cgroup_files_unreadable_on_this_platform_mean_absent(tmp_path):
+    from src.services.resource_guards import ABSENT, cgroup_memory
+
+    figure = cgroup_memory(tmp_path / "cgroup", proc_cgroup=tmp_path / "missing", mountinfo=tmp_path / "missing")
+    assert figure.status == ABSENT and figure.available_bytes is None

@@ -1,4 +1,4 @@
-# Registre territorial — lot A
+# Registre territorial - lot A
 
 `src/data/territory_registry.py` : registre versionné et immuable des territoires observés par
 GEONAF. Stockage seulement : ni interface, ni réseau. Le moteur d'analyse n'est pas encore branché
@@ -77,7 +77,7 @@ CREATE INDEX ON territories (geometry_sha256);
 ## Performances (copie temporaire des données, 23/10/2026)
 
 - Enregistrement des 3 zones historiques : 0,18 s ; ré-enregistrement idempotent : 0,05 s.
-- Lecture de 203 territoires (dernières versions, empreintes vérifiées) : 0,75 s — linéaire,
+- Lecture de 203 territoires (dernières versions, empreintes vérifiées) : 0,75 s - linéaire,
   ≈ 3,7 ms par territoire. À l'échelle africaine (milliers d'unités), un index ou PostGIS sera
   nécessaire.
 

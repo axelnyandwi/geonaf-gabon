@@ -1,0 +1,65 @@
+{
+  "date_utc": "2026-10-28T15:06:16+00:00",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "python": "3.10.11",
+  "numpy": "2.2.6",
+  "rasterio": "1.4.4",
+  "results": [
+    {
+      "source": "paquet v3",
+      "zone": "akanda",
+      "acquisitions": 3,
+      "failures": 0,
+      "published": 2,
+      "cold_s": 3.53,
+      "warm_s": 2.51,
+      "python_peak_mib": 46.8,
+      "rss_after_imports_mib": 122.6,
+      "rss_after_runs_mib": 171.3,
+      "process_peak_mib": 217.7,
+      "cached_inventory_bytes": 4808
+    },
+    {
+      "source": "données locales",
+      "zone": "akanda",
+      "acquisitions": 3,
+      "failures": 0,
+      "published": 2,
+      "cold_s": 4.78,
+      "warm_s": 3.67,
+      "python_peak_mib": 46.8,
+      "rss_after_imports_mib": 122.3,
+      "rss_after_runs_mib": 183.9,
+      "process_peak_mib": 227.6,
+      "cached_inventory_bytes": 4808
+    },
+    {
+      "source": "données locales",
+      "zone": "libreville",
+      "acquisitions": 3,
+      "failures": 0,
+      "published": 1,
+      "cold_s": 4.28,
+      "warm_s": 3.41,
+      "python_peak_mib": 46.8,
+      "rss_after_imports_mib": 122.7,
+      "rss_after_runs_mib": 185.4,
+      "process_peak_mib": 229.9,
+      "cached_inventory_bytes": 4714
+    },
+    {
+      "source": "données locales",
+      "zone": "owendo",
+      "acquisitions": 3,
+      "failures": 0,
+      "published": 1,
+      "cold_s": 4.31,
+      "warm_s": 3.41,
+      "python_peak_mib": 46.8,
+      "rss_after_imports_mib": 122.3,
+      "rss_after_runs_mib": 184.3,
+      "process_peak_mib": 227.6,
+      "cached_inventory_bytes": 4700
+    }
+  ]
+}

@@ -24,6 +24,7 @@ import tempfile
 from src.data.external_sources import (
     ExternalLayerDescriptor, _utc, assess_temporal_join, descriptor_from_record, descriptor_to_record,
 )
+from src.demo_mode import ensure_writable
 
 
 def publish_new_file(temporary: Path, final: Path) -> Path:
@@ -71,6 +72,7 @@ class LayerFileStore:
 
     def temporary(self, key: str) -> Path:
         """Temporary sibling for writers (GDAL, JSON) before :meth:`publish`."""
+        ensure_writable("Écriture dans le dépôt de données partagé")
         final = self.path(key)
         final.parent.mkdir(parents=True, exist_ok=True)
         handle, name = tempfile.mkstemp(prefix=".tmp-", suffix=final.suffix, dir=final.parent)
@@ -78,6 +80,7 @@ class LayerFileStore:
         return Path(name)
 
     def publish(self, temporary: Path, key: str) -> Path:
+        ensure_writable("Écriture dans le dépôt de données partagé")
         return publish_new_file(Path(temporary), self.path(key))
 
     def write_bytes(self, key: str, payload: bytes) -> Path:

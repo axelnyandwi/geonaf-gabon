@@ -78,10 +78,10 @@ ni le même état hydrique, ni la comparabilité phénologique.
 
 | Statut | Conditions V1 |
 |---|---|
-| `not_comparable` — non comparable | Politique SCL inadaptée, aucune surface comparable, couverture AOI sous le minimum, ou règle saisonnière non satisfaite |
-| `not_assessed` — comparabilité non évaluée | Pas d'évaluation saisonnière exploitable et aucun rejet précédent |
+| `not_comparable` - non comparable | Politique SCL inadaptée, aucune surface comparable, couverture AOI sous le minimum, ou règle saisonnière non satisfaite |
+| `not_assessed` - comparabilité non évaluée | Pas d'évaluation saisonnière exploitable et aucun rejet précédent |
 | `exploration` | Conditions précédentes satisfaites ; interprétation toujours exploratoire |
-| `validated` — résultat validé | Réservé, **jamais produit par cette V1** |
+| `validated` - résultat validé | Réservé, **jamais produit par cette V1** |
 
 Le statut « résultat validé » nécessiterait une validation indépendante, bornée au
 protocole, aux données, à l'AOI et à la persistance du phénomène. Ce mécanisme

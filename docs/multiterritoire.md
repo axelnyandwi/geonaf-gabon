@@ -1,9 +1,9 @@
-# Lot 5 — modes d'analyse, multituile et trois territoires
+# Lot 5 - modes d'analyse, multituile et trois territoires
 
 ## Modes d'analyse (`src/geo/scientific_profile.py`, `src/components/analysis_settings.py`)
 
 - **Analyse standard** (par défaut) : profil de référence choisi automatiquement selon
-  le territoire (`REFERENCE_PROFILES`) — Akanda (inchangé, empreinte `c78ff691…`),
+  le territoire (`REFERENCE_PROFILES`) - Akanda (inchangé, empreinte `c78ff691…`),
   Libreville, Owendo. Les deux derniers reprennent les paramètres d'Akanda (même contexte
   déclaré « Gabon/Estuaire, équatorial ») avec une description d'écosystème propre ; ils
   sont **expérimentaux et non calibrés**.
@@ -45,7 +45,7 @@ Règles communes à toutes les sources :
 | Sentinel-2 | `group_local_observations` : même orbite relative, ≤ 15 min, tuiles MGRS distinctes | AOI dans le CRS et le maillage 10 m du premier produit | orbites/dates différentes, tuile en double |
 | WorldCover | `fetch_worldcover_windows` : toutes les tuiles 3° recoupant l'AOI, une fenêtre AOI ∩ tuile chacune | grille Sentinel-2 | produits/versions/nomenclatures différents |
 | Sentinel-1 | une mosaïque par tuile MGRS du mois, fenêtre AOI ∩ emprise de l'item | grille native 20 m de la première fenêtre | polarisations ou mois différents |
-| OSM | une requête par AOI (≤ 0,5°) | rastérisation sur la grille S2 | — |
+| OSM | une requête par AOI (≤ 0,5°) | rastérisation sur la grille S2 | - |
 
 Une tuile unique suit exactement le chemin du lot 4 (non-régression vérifiée).
 

@@ -1,4 +1,4 @@
-# Référentiels geoBoundaries et comparaison — lot C
+# Référentiels geoBoundaries et comparaison - lot C
 
 ## Adaptateur (`src/data/geoboundaries.py`)
 
@@ -36,7 +36,7 @@ territoire réel » ; millésimes différents et versions d'un même territoire 
 Les enregistrements ne sont ni fusionnés ni modifiés. `match_by_normalized_name` propose des paires
 par nom normalisé (accents et casse ignorés), à vérifier ; un nom ambigu n'est pas apparié.
 
-## Validation réelle (manuelle, réseau, répertoire temporaire — 23/10/2026)
+## Validation réelle (manuelle, réseau, répertoire temporaire - 23/10/2026)
 
 | Jeu | Niveau | Unités | Rejets | Téléchargé | Durée | Licence | Millésime | Type local |
 |---|---|---|---|---|---|---|---|---|

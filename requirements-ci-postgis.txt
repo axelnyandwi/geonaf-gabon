@@ -1,0 +1,5 @@
+# Scientific and database pins are inherited unchanged.
+-r requirements-db.txt
+# Validation tools only; Python 3.13 on Ubuntu 24.04.
+pytest==9.2.0
+trustme==1.2.1

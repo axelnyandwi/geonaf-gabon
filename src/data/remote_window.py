@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import math
+from uuid import uuid4
 
 import numpy as np
 import rasterio
@@ -41,11 +42,15 @@ class ByteBudget:
 
 
 class HttpRangeSource:
-    """Range source over an allow-listed :class:`ExternalHttpClient`."""
+    """Range source over an allow-listed :class:`ExternalHttpClient`.
 
-    def __init__(self, client, url: str):
+    ``anonymous=True`` declares a public resource read without credentials: rasterio
+    then never looks for cloud credentials for it (see :class:`RangeFile`).
+    """
+
+    def __init__(self, client, url: str, *, anonymous: bool = False):
         client.policy(url)  # Fails closed on a non-authorised host.
-        self.client, self.url = client, url
+        self.client, self.url, self.anonymous = client, url, anonymous is True
         head = client.request("HEAD", url)
         length = head.headers.get("Content-Length")
         if length is None or not str(length).isdigit():
@@ -60,6 +65,8 @@ class HttpRangeSource:
 
 class S3RangeSource:
     """Range source over GEONAF's S3 client (single SDK attempt, GEONAF retries)."""
+
+    anonymous = False  # Authenticated through the S3 client, never through rasterio.
 
     def __init__(self, client, key: str, *, bucket: str = "eodata", settings=None):
         from src.data.network import run_with_retry
@@ -95,6 +102,13 @@ class RangeFile:
 
     def __init__(self, source, budget: ByteBudget, *, label: str):
         self.source, self.budget, self.label = source, budget, label
+        # Name under which rasterio opens this file (all bytes still come from ``view``).
+        # rasterio picks a session from that name: a ``*.amazonaws.com`` URL builds an
+        # ``AWSSession`` whose boto3 credential chain probes the instance metadata service
+        # (169.254.169.254, ≈ 2 s per read off-cloud). A source declared anonymous gets a
+        # neutral, unique local-looking name instead: no session, no GDAL option changed.
+        self.name = (f"anonymous-range/{uuid4().hex}.tif"
+                     if getattr(source, "anonymous", False) is True else label)
         self.size, self.position, self.received = source.size, 0, 0
         self.blocks: dict[int, bytes] = {}
         self._parent = None
@@ -138,7 +152,7 @@ class RangeFile:
 
     def view(self, path, mode="rb"):
         """rasterio opener: only this object (no sidecar files), one cursor per open."""
-        if path != self.label or "w" in mode:
+        if path != self.name or "w" in mode:
             raise FileNotFoundError(path)
         view = RangeFile.__new__(RangeFile)
         view.__dict__.update(self.__dict__, position=0, closed=False)
@@ -205,7 +219,7 @@ def read_remote_window(range_file: RangeFile, bounds, bounds_crs, *, max_pixels:
 
 def _read_remote_window(range_file, bounds, bounds_crs, max_pixels):
     with rasterio.Env(GDAL_DISABLE_READDIR_ON_OPEN="EMPTY_DIR"):
-        with rasterio.open(range_file.label, opener=range_file.view) as source:
+        with rasterio.open(range_file.name, opener=range_file.view) as source:
             if source.crs is None:
                 raise ValueError("Raster distant sans CRS.")
             estimate = estimate_window(source, bounds, bounds_crs)

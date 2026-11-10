@@ -4,13 +4,15 @@ from pathlib import Path
 
 import streamlit as st
 
+from src.components.errors import show_internal_error
+from src.components.formatting import format_decimal
 from src.geo.scientific_profile import (
     ADVANCED_BOUNDS, ADVANCED_SCL_POLICIES, REFERENCE_PROFILES, SENSITIVITY_PRESET, advanced_configuration,
     standard_configuration,
 )
 
 TERRITORY_LABELS = {"akanda": "Akanda", "libreville": "Libreville", "owendo": "Owendo"}
-SCL_LABELS = {"usable_land": "Végétation et sols nus (SCL 4, 5) — recommandé",
+SCL_LABELS = {"usable_land": "Végétation et sols nus (SCL 4, 5) - recommandé",
               "vegetation": "Végétation seule (SCL 4)", "bare_soil": "Sols nus seuls (SCL 5)"}
 MODES = ("Analyse standard", "Analyse avancée")
 
@@ -27,6 +29,20 @@ def choose_territory(data_dir, key: str) -> str | None:
         st.error("Aucune AOI locale disponible (Akanda, Libreville, Owendo).")
         return None
     return st.selectbox("Territoire", territories, format_func=TERRITORY_LABELS.get, key=key)
+
+
+SHARED_TERRITORY_KEY = "geonaf_zone"
+
+
+def choose_shared_territory(data_dir) -> str | None:
+    """Study zone shared by the dashboard, temporal and multisource analyses (one session value)."""
+    territories = available_territories(data_dir)
+    if not territories:
+        st.error("Aucune AOI locale disponible (Akanda, Libreville, Owendo).")
+        return None
+    return st.selectbox("Zone d'étude", territories, format_func=TERRITORY_LABELS.get, key=SHARED_TERRITORY_KEY,
+                        persist_state="session",
+                        help="Zone partagée par le tableau de bord, les analyses temporelles et multisources.")
 
 
 def _apply_sensitivity(prefix):
@@ -48,8 +64,8 @@ def choose_analysis(aoi_id: str, prefix: str):
     reference = REFERENCE_PROFILES[aoi_id]
     if mode == MODES[0]:
         configuration = standard_configuration(aoi_id)
-        st.caption(f"Profil de référence **{reference.label}** · seuil ΔNDVI {reference.change_threshold:g} · "
-                   f"couverture minimale {reference.min_comparable_coverage_percent:g} % · masque SCL "
+        st.caption(f"Profil de référence **{reference.label}** · seuil ΔNDVI {format_decimal(reference.change_threshold, 2)} · "
+                   f"couverture minimale {format_decimal(reference.min_comparable_coverage_percent, 0)} % · masque SCL "
                    f"« {SCL_LABELS.get(reference.scl_policy, reference.scl_policy)} ». "
                    f"Statut : expérimental, non validé. {reference.rationale}")
         return configuration
@@ -74,10 +90,13 @@ def choose_analysis(aoi_id: str, prefix: str):
         configuration = advanced_configuration(aoi_id, change_threshold=threshold,
                                                min_comparable_coverage_percent=coverage, scl_policy=policy)
     except ValueError as error:
-        st.error(f"Configuration refusée : {error}")
+        # Inputs are already bounded by the widgets: reaching this is an anomaly, logged with its cause.
+        show_internal_error(error, context="analyse.configuration",
+                            message="Configuration refusée : seuil, couverture minimale ou masque SCL hors des "
+                                    "valeurs autorisées.")
         return None
     if configuration.overrides:
-        changes = " ; ".join(f"{name} = {value:g}" if isinstance(value, float) else f"{name} = {value}"
+        changes = " ; ".join(f"{name} = {format_decimal(value, 2)}" if isinstance(value, float) else f"{name} = {value}"
                              for name, value in configuration.overrides)
         st.warning(f"Configuration avancée **non validée** dérivée de {reference.profile_id} : {changes}. "
                    f"Version {configuration.effective.version} · empreinte "

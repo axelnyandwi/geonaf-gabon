@@ -1,4 +1,4 @@
-# Garde-fous de ressources — lot B
+# Garde-fous de ressources - lot B
 
 `src/services/resource_guards.py` estime le coût d'une analyse **avant** de la lancer (sans
 Streamlit ni réseau) et motive chaque refus. Le module n'est pas encore appelé par les pages
@@ -17,6 +17,14 @@ poste Windows. Ils ne sont validés ni scientifiquement ni opérationnellement.
 | OSM | emprise ≤ 0,5° (requête Overpass unique) ; volume estimé (`out count`) quand il est connu | volume inconnu ⇒ statut « inconnu », jamais supposé faible |
 | Import GeoJSON | taille du fichier **avant lecture**, puis validation stricte, sommets, parties | fichier trop gros refusé sans être analysé |
 
+**Mémoire libre (L4c, 29/10/2026)** : `available_memory_bytes` retient le minimum de la mémoire
+libre de l'hôte (`psutil`) et de la mémoire restante sous la limite cgroup du conteneur
+(`/sys/fs/cgroup/memory.max` − (`memory.current` − `inactive_file`) en v2, fichiers
+`memory.limit_in_bytes` / `memory.usage_in_bytes` / `total_inactive_file` en v1). Dans un conteneur,
+la mémoire de l'hôte ignore la limite du conteneur. Sans limite (`max`, valeur v1 géante) ou sans
+fichier lisible (Windows, macOS), seule la mémoire de l'hôte compte. Non vérifié sur un conteneur
+réel (Streamlit Cloud) : testé avec des fichiers cgroup simulés.
+
 Statuts : `ok`, `avertissement`, `inconnu`, `refus`. Une analyse est autorisée tant qu'aucun
 contrôle n'est en refus ; les avertissements et inconnues sont à afficher.
 
@@ -28,8 +36,8 @@ contrôle n'est en refus ; les avertissements et inconnues sont à afficher.
 | Mémoire estimée | > 1 Gio, ou > 50 % de la mémoire libre | > 2 Gio, ou > 90 % de la mémoire libre |
 | Tuiles Sentinel-2 | > 1 | > 4 |
 | Volume OSM estimé | > 32 Mio | > 64 Mio |
-| Emprise OSM | — | > 0,5° (découpage en tuiles non disponible) |
-| Import GeoJSON | — | > 5 Mio, > 50 000 sommets, > 1 000 parties |
+| Emprise OSM | - | > 0,5° (découpage en tuiles non disponible) |
+| Import GeoJSON | - | > 5 Mio, > 50 000 sommets, > 1 000 parties |
 
 Les limites incohérentes (avertissement > refus, valeurs négatives ou non numériques) sont
 refusées. Leur empreinte (`fingerprint`) accompagne chaque évaluation.
@@ -45,7 +53,7 @@ Libreville lus en mémoire depuis geoBoundaries (≈ 650 Ko), écrits dans un do
 | NDVI 1 date, Libreville gbOpen | 3 745 814 | 122 Mio | 292 Mio | 168 Mio | 47 |
 | NDVI 1 date, Libreville gbHumanitarian | 4 798 382 | 156 Mio | 336 Mio | 212 Mio | 46 |
 | Paire de dates, Akanda | 1 442 401 | 103 Mio | 267 Mio | 143 Mio | 104 |
-| Chiffres clés, Akanda (WorldCover + OSM 24,3 Mo) | — | 175 Mio | 526 Mio | 402 Mio | — |
+| Chiffres clés, Akanda (WorldCover + OSM 24,3 Mo) | - | 175 Mio | 526 Mio | 402 Mio | - |
 
 - `tracemalloc` ne voit qu'environ 55 % de la mémoire réelle des traitements raster (tampons
   natifs GDAL/rasterio non tracés) : seule la mémoire du processus sert à la calibration.

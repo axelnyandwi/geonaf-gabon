@@ -20,7 +20,7 @@ def open_page():
     """Start from the home script (as users do) then switch: page links need the app's page registry."""
     app = AppTest.from_file(APP)
     app.run(timeout=60)
-    return app.switch_page("pages/4_Territoires.py").run(timeout=60)
+    return app.switch_page("views/territoires.py").run(timeout=60)
 
 
 @pytest.fixture(autouse=True)
@@ -49,8 +49,10 @@ def texts(app):
     return [e.value for kind in (app.info, app.warning, app.caption, app.error, app.markdown) for e in kind]
 
 
-def test_historical_zone_is_shown_as_acquisition_zone(page):
+def test_historical_zone_is_shown_as_acquisition_zone(page, monkeypatch):
     data_dir, loader = page
+    # Host free memory unknown: the verdict must not depend on the load of the test machine.
+    monkeypatch.setattr("src.components.resource_panel.available_memory_bytes", lambda: None)
     app = open_page()
     assert not app.exception and not app.error and app.title[0].value == "Territoires et frontières"
     assert any("ni une commune" in t for t in texts(app))
@@ -59,6 +61,14 @@ def test_historical_zone_is_shown_as_acquisition_zone(page):
     assert "Zone d'acquisition GEONAF" in [str(v) for v in app.table[0].value["Valeur"]]
     assert loader.call_count == 0
     assert all(str(data_dir) not in t for t in texts(app))
+
+
+def test_low_free_memory_gives_a_warning_verdict(page, monkeypatch):
+    # Akanda-like square ≈ 343 MiB before OSM; 640 MiB free (a 64 MiB step) ⇒ warning above 320, refusal above 576.
+    monkeypatch.setattr("src.components.resource_panel.available_memory_bytes", lambda: 640 * 1024 * 1024)
+    app = open_page()
+    assert not app.exception and not app.error
+    assert any("verdict : **avertissement**" in t and "mémoire libre de l'hôte (640 Mio)" in t for t in texts(app))
 
 
 def test_referential_is_loaded_only_on_click(page):
@@ -101,3 +111,23 @@ def test_comparison_shows_both_sources_and_unmatched_units(page):
     markdown = " ".join(m.value for m in app.markdown)
     assert "Ogooué-Ivindo" in markdown and "Komo-Océan" in markdown
     assert loader.call_count == 0
+
+
+def test_provenance_table_shows_missing_values_as_not_specified(page, monkeypatch):
+    """C6b A1: a lone "-" in st.table is rendered as an empty Markdown list item; missing values read
+    « Non précisé ». Only the display changes: the provenance values themselves are unchanged."""
+    from src.components.territory_explorer import MISSING, _provenance, _shown
+    from src.services import territory_catalog as catalog
+
+    data_dir, _ = page
+    monkeypatch.setattr("src.components.resource_panel.available_memory_bytes", lambda: None)
+    app = open_page()
+    assert not app.exception and not app.error
+    table = app.table[0].value
+    shown = dict(zip(table["Attribut"], table["Valeur"]))
+    assert shown["Millésime"] == MISSING == "Non précisé" and shown["Licence"] == MISSING
+    assert not [v for v in table["Valeur"] if str(v).strip() in ("", "-", "None")]   # No cell left blank or "-".
+    zone = catalog.historical_zones(data_dir)[0]
+    assert _provenance(zone)["Millésime"] == "-" and _provenance(zone)["Licence"] == "-"   # Values unchanged.
+    assert [_shown(v) for v in (None, "", " ", "-", "2018", "non précisé", 0)] == \
+        [MISSING, MISSING, MISSING, MISSING, "2018", "non précisé", "0"]

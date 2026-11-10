@@ -37,7 +37,7 @@ def test_page_file_runs_in_streamlit(local_data, monkeypatch):
     monkeypatch.setattr(src.config, "DATA_DIR", local_data)
     app = AppTest.from_file(str(ROOT / "app.py"))
     app.run(timeout=30)
-    app.switch_page("pages/3_Multisource.py").run(timeout=60)
+    app.switch_page("views/analyses_multisources.py").run(timeout=60)
     assert not app.exception, app.exception
-    assert app.title[0].value == "Démonstrateur multisource"
+    assert app.title[0].value == "Analyses multisources"
     assert len(app.metric) == 5  # NDVI computed through analyze_local_observation.

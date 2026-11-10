@@ -8,6 +8,7 @@ from pathlib import Path
 
 from src.data.acquisition import create_sentinel2_acquisition
 from src.data.acquisition_manifest import validate_acquisition_manifest
+from src.data.derived_subset import SUBSET_SCHEMA_VERSION, validate_subset_manifest
 from src.services.temporal_analysis import analyze_temporal_vegetation_change
 from src.geo.change_analysis import DEFAULT_CHANGE_THRESHOLD
 from src.geo.scientific_profile import ScientificProfile
@@ -22,10 +23,26 @@ class LocalObservation:
     acquired_at: datetime
     manifest_path: Path
     product_id: str = ''
+    subset: bool = False      # Native-grid extract of a verified tile (demo pack).
+
+
+def manifest_path(folder: Path) -> Path | None:
+    """Original acquisition manifest first, otherwise the subset manifest of a demo pack."""
+    for name in ("acquisition_manifest.json", "subset_manifest.json"):
+        if (folder / name).is_file():
+            return folder / name
+    return None
 
 
 def _manifest(path):
     manifest = json.loads(path.read_text(encoding="utf-8"))
+    if manifest.get("schema_version") == SUBSET_SCHEMA_VERSION:
+        # Lineage check: the parent tile had strict, verified integrity; asset
+        # digests of the subset files are verified by the caller as usual.
+        if path.name != "subset_manifest.json":
+            raise ValueError("Manifeste d'extrait mal nommé.")
+        validate_subset_manifest(manifest)
+        return manifest
     validate_acquisition_manifest(manifest)
     integrity = manifest.get("integrity", {})
     if integrity.get("mode") != "strict" or any(
@@ -40,10 +57,12 @@ def list_local_observations(data_dir: Path) -> tuple[LocalObservation, ...]:
     """Expose every verified local acquisition, retaining its exact UTC date."""
     try:
         observations = []
-        for path in sorted((data_dir / "raw" / "sentinel2").glob("*/acquisition_manifest.json")):
+        folders = sorted(path for path in (data_dir / "raw" / "sentinel2").glob("*") if path.is_dir())
+        for path in filter(None, map(manifest_path, folders)):
             manifest = _manifest(path)
             acquired = datetime.fromisoformat(manifest["acquired_at_utc"].replace("Z", "+00:00"))
-            observations.append(LocalObservation(acquired, path, manifest['product_id']))
+            observations.append(LocalObservation(acquired, path, manifest['product_id'],
+                                                 manifest["schema_version"] == SUBSET_SCHEMA_VERSION))
         return tuple(sorted(observations, key=lambda item: item.acquired_at))
     except Exception:
         raise LocalPreviewError("Catalogue local indisponible ou manifeste non vérifié.") from None
@@ -237,6 +256,21 @@ def local_group_key(group, data_dir, scientific_profile: ScientificProfile):
         raise LocalPreviewError("Impossible de vérifier les entrées locales du cache.") from None
 
 
+def local_group_ndvi_key(group, data_dir, scientific_profile: ScientificProfile):
+    """Cache key of the NDVI arrays of one acquisition group: ``local_group_key`` without the
+    change threshold and the minimum comparable coverage, which the NDVI computation does not read.
+
+    Kept: file revisions, AOI path and content digest, and every profile field the computation
+    reads (AOI identifier, SCL policy, region, ecosystem, seasonal rules). Independence proved by
+    ``tests/test_ndvi_cache_independence.py`` (exact comparison). A cached observation must be
+    rebound to the effective profile (``dataclasses.replace(..., scientific_profile=...)``).
+    """
+    _, _, records = local_group_key(group, data_dir, scientific_profile)
+    profile = scientific_profile
+    return ("local-ndvi-group-arrays-v1", profile.aoi_id, profile.scl_policy, profile.region, profile.ecosystem,
+            profile.seasonal_rules, records)
+
+
 def analyze_local_group(group, data_dir: Path, *, scientific_profile: ScientificProfile):
     """Verify every tile's manifest and digests, then compute the (mosaicked) NDVI of one datatake."""
     from src.services.ndvi_observation import analyze_ndvi_mosaic
@@ -248,3 +282,42 @@ def analyze_local_group(group, data_dir: Path, *, scientific_profile: Scientific
     except Exception:
         raise LocalPreviewError(
             "NDVI de l'acquisition impossible : vérifier les tuiles, leurs manifestes, l'AOI et le profil.") from None
+
+
+def analyze_local_group_with_scl(group, data_dir: Path, *, scientific_profile: ScientificProfile):
+    """(observation, SCL classes or None, provenance per tile) of one verified datatake.
+
+    A single tile returns the SCL classes read from the clipped file that built
+    the NDVI validity mask (``analyze_ndvi_observation_with_scl``). A mosaic
+    returns ``None``: its per-tile SCL classes are not merged, so no detailed
+    breakdown is claimed for it.
+    """
+    from src.services.ndvi_observation import analyze_ndvi_mosaic, analyze_ndvi_observation_with_scl
+
+    try:
+        acquisitions = [_load_observation(observation) for observation in group]
+        provenance = tuple(observation_provenance(observation) for observation in group)
+        aoi_path = _profile_aoi(data_dir, scientific_profile)
+        if len(acquisitions) == 1:
+            observation, scl = analyze_ndvi_observation_with_scl(acquisitions[0], aoi_path=aoi_path,
+                                                                 scientific_profile=scientific_profile)
+        else:
+            observation, scl = analyze_ndvi_mosaic(acquisitions, aoi_path=aoi_path,
+                                                   scientific_profile=scientific_profile), None
+        return observation, scl, provenance
+    except Exception:
+        raise LocalPreviewError(
+            "NDVI de l'acquisition impossible : vérifier les tuiles, leurs manifestes, l'AOI et le profil.") from None
+
+
+def observation_provenance(observation: LocalObservation) -> dict:
+    """Verified manifest facts of one local acquisition (no local path)."""
+    manifest = _manifest(observation.manifest_path)
+    subset = manifest["schema_version"] == SUBSET_SCHEMA_VERSION
+    ingested = manifest.get("ingested_at_utc") or (manifest.get("parent") or {}).get("ingested_at_utc")
+    return {"product_id": manifest["product_id"], "acquired_at_utc": manifest["acquired_at_utc"],
+            "ingested_at_utc": ingested, "collection": manifest.get("collection"),
+            "stac_item": (manifest.get("stac") or {}).get("item_id"),
+            "scl_sha256": manifest["assets"]["scl"]["sha256"],
+            "manifest_sha256": hashlib.sha256(observation.manifest_path.read_bytes()).hexdigest(),
+            "subset": subset}

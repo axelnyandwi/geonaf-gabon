@@ -1,4 +1,6 @@
-# Catalogue des acquisitions Sentinel-2 — lot 1
+# Catalogue des acquisitions Sentinel-2 - lot 1
+
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
 
 ## Usage et périmètre
 
@@ -7,6 +9,11 @@ une AOI GeoJSON configurée, deux dates UTC et éventuellement un plafond de
 couverture nuageuse globale. Lancer explicitement la recherche, puis sélectionner
 plusieurs acquisitions. Aucun asset satellite n’est téléchargé et aucune paire
 scientifique ni série temporelle n’est construite par cette page.
+
+> **Navigation V1 (02/11/2026)** : le catalogue est la section « Données et acquisitions » de la page Analyses
+> temporelles (`/analyses-temporelles?section=Donn%C3%A9es+et+acquisitions`), servie par le routeur
+> `st.navigation` de `app.py` ; il n'y a plus de dossier `pages`. Voir `navigation.md`. Le
+> paragraphe suivant décrit l'état antérieur.
 
 Navigation : lancer `.venv\Scripts\python.exe -m streamlit run app.py` depuis
 la racine du dépôt. Le dossier `pages` utilise exclusivement la découverte

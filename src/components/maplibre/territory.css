@@ -9,3 +9,9 @@
 .gtm-fill { opacity: 0.6; }
 .gtm-coords, .gtm-status, .gtm-attribution { font-size: 12px; padding: 2px 0; }
 .gtm-attribution { color: #9ca3af; }
+
+@media (max-width: 640px) {
+  .gtm-canvas { height: min(400px, 55vh); min-height: 280px; }
+  .gtm-reset { min-height: 40px; }
+  .gtm-legend { gap: 6px 14px; }
+}

@@ -51,6 +51,8 @@ export function mountMultisourceMap(container, payload, maplibre, onError = () =
         { id: "background", type: "background", paint: { "background-color": "#0e1117" } }] },
       center: [(bounds[0][0] + bounds[1][0]) / 2, (bounds[0][1] + bounds[1][1]) / 2],
       zoom: 11, attributionControl: false,
+      // Touch screens: one finger scrolls the page, two fingers move the map.
+      cooperativeGestures: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
     });
   } catch (error) {
     fail();
@@ -67,7 +69,7 @@ export function mountMultisourceMap(container, payload, maplibre, onError = () =
     for (const raster of payload.rasters) {
       if (!state[raster.id]) continue;
       const block = el("div", "gms-legend-block");
-      block.append(el("strong", "", `${raster.label} — ${raster.nature}`));
+      block.append(el("strong", "", `${raster.label} - ${raster.nature}`));
       if (raster.legend.kind === "gradient") {
         const row = el("div", "gms-legend-row");
         const bar = el("span", "gms-gradient");
@@ -86,7 +88,7 @@ export function mountMultisourceMap(container, payload, maplibre, onError = () =
     }
     if (state.osm && payload.vector_legend.length) {
       const block = el("div", "gms-legend-block");
-      block.append(el("strong", "", "OpenStreetMap — Base collaborative"));
+      block.append(el("strong", "", "OpenStreetMap - Base collaborative"));
       for (const item of payload.vector_legend) {
         const row = el("div", "gms-legend-row");
         const swatch = el("span", "gms-swatch");

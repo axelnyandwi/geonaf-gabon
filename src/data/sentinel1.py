@@ -30,6 +30,7 @@ import rasterio
 from src.data.external_sources import (
     ExternalLayerDescriptor, LayerLicense, LayerQuality, SpatialExtent, TemporalValidity,
 )
+from src.demo_mode import ensure_writable
 
 COLLECTION = "sentinel-1-global-mosaics"
 PRODUCT_TYPE = "S1SAR_L3_IW_MCM"
@@ -50,10 +51,10 @@ RADIOMETRY = {
     "status": "documentée par le producteur ; non vérifiée par calibration indépendante",
     "evidence": (
         "Annonce CDSE (Sinergise, 06/08/2024) : « terrain-flattened gamma nought backscatter », "
-        "échelle linéaire, intensités — https://dataspace.copernicus.eu/node/1621",
+        "échelle linéaire, intensités - https://dataspace.copernicus.eu/node/1621",
         "Forum CDSE (G. Milčinski, Sinergise, 28/05/2025) : « Values are in linear units », conversion "
-        "dB par 10·log10 — https://forum.dataspace.copernicus.eu/t/sentinel-1-monthly-mosaics-linear-or-db/3757",
-        "Algorithme CDSE : calibration β⁰, RTC par intégration d'aires, Range-Doppler, ombres exclues — "
+        "dB par 10·log10 - https://forum.dataspace.copernicus.eu/t/sentinel-1-monthly-mosaics-linear-or-db/3757",
+        "Algorithme CDSE : calibration β⁰, RTC par intégration d'aires, Range-Doppler, ombres exclues - "
         "https://documentation.dataspace.copernicus.eu/Data/Others/Sentinel1_Mosaic_Algorithm.html",
     ),
     "inconsistency": "Les titres des actifs STAC indiquent « Amplitude » ; contredit par le producteur, "
@@ -243,6 +244,7 @@ def fetch_sentinel1_window(s3_client, store, repository, mosaic: Sentinel1Mosaic
     A stored window is reused only if it covers the bounds and was not recorded
     for another geometry (``aoi_geometry_sha256``, see ``src.geo.aoi_identity``).
     """
+    ensure_writable("Récupération Sentinel-1")
     from src.data.remote_window import ByteBudget, RangeFile, S3RangeSource, read_remote_window
 
     if polarization not in POLARIZATIONS:

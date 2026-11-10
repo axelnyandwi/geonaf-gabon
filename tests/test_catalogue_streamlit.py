@@ -28,7 +28,10 @@ def _page(local_data, monkeypatch):
     monkeypatch.setattr(preview, "list_local_observations", lambda data_dir: ())
     page = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     page.run(timeout=30)
-    page.switch_page("pages/1_Acquisitions_Sentinel2.py")
+    from src.navigation import SECTIONS
+
+    page.session_state["section"] = SECTIONS["donnees"]   # Section of the temporal analyses page.
+    page.switch_page("views/analyses_temporelles.py")
     return page, search
 
 

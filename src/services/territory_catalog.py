@@ -8,11 +8,16 @@ Three families stay distinct:
   only after an explicit ``load_referential`` (network, cached snapshot);
 * custom zones imported by the user (``import_custom_zone``), always
   « fourni par l'utilisateur », never official.
+
+Registered territories are read through the store selected by ``GEONAF_DB_BACKEND``
+(``src.data.storage``): the file registry by default, the PostGIS copy when selected. Their geometry
+is always obtained with ``registry.geometry(record)``, which checks it against the record's
+fingerprint; the file digest of a record (``file_sha256``) keys the caches in both modes.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 import hashlib
 from pathlib import Path
@@ -21,6 +26,7 @@ from src.data.territory_registry import (
     ACQUISITION_ZONE, ADMIN_UNIT, COMMUNITY, CUSTOM_IMPORT, GEONAF_ZONE, HISTORICAL_ZONES,
     HUMANITARIAN, USER_PROVIDED, TerritoryRegistry, TerritorySource,
 )
+from src.demo_mode import ensure_writable
 
 REFERENTIALS = {"gbOpen": "geoBoundaries gbOpen (communautaire)",
                 "gbHumanitarian": "geoBoundaries gbHumanitarian (humanitaire, OCHA COD-AB)"}
@@ -34,6 +40,10 @@ STATUS_TEXT = {
 COLORS = {"a": "#f59e0b", "b": "#38bdf8", "both": "#a3a3a3", "zone": "#f8fafc"}
 
 
+class ZoneImportRefused(ValueError):
+    """Import refused by a size, field or validity check; the message is written for users."""
+
+
 @dataclass(frozen=True)
 class TerritoryOption:
     key: str                 # Unique selection key: "aoi:<id>" or "territory:<id>".
@@ -41,13 +51,30 @@ class TerritoryOption:
     label: str
     kind: str
     legal_status: str
-    geometry_path: Path
+    geometry_path: Path | None   # None for a territory read from PostGIS (geometry from the database).
     area_km2: float
     record: object | None    # TerritoryRecord for registered territories; None for historical zones.
+    registry: object | None = field(default=None, compare=False, repr=False)   # Where the record was read.
 
     @property
     def status_text(self) -> str:
         return STATUS_TEXT.get(self.legal_status, self.legal_status)
+
+    @property
+    def file_sha256(self) -> str:
+        """Digest of the zone file: verified record digest, or the bytes of a historical zone file."""
+        if self.record is not None:
+            return self.record.file_sha256
+        return hashlib.sha256(self.geometry_path.read_bytes()).hexdigest()
+
+
+def territory_registry(data_dir, registry=None):
+    """The registry passed in, or the one of the store selected by GEONAF_DB_BACKEND (files by default)."""
+    if registry is not None:
+        return registry
+    from src.data.storage import open_store
+
+    return open_store(data_dir).territories
 
 
 def historical_zones(data_dir) -> tuple[TerritoryOption, ...]:
@@ -65,25 +92,28 @@ def historical_zones(data_dir) -> tuple[TerritoryOption, ...]:
 
 
 def _option(registry, record) -> TerritoryOption:
+    path = registry.store.path(record.storage_key) if isinstance(registry, TerritoryRegistry) else None
     return TerritoryOption(f"territory:{record.territory_id}", record.territory_id, record.label, record.kind,
-                           record.legal_status, registry.store.path(record.storage_key), record.area_km2, record)
+                           record.legal_status, path, record.area_km2, record, registry)
 
 
-def admin_territories(data_dir, release: str, level: str, iso3: str = "GAB") -> tuple[TerritoryOption, ...]:
-    registry = TerritoryRegistry(Path(data_dir))
+def admin_territories(data_dir, release: str, level: str, iso3: str = "GAB", *,
+                      registry=None) -> tuple[TerritoryOption, ...]:
+    registry = territory_registry(data_dir, registry)
     prefix = f"{iso3.lower()}-{release.lower()}-{level.lower()}-"
     records = [r for r in registry.territories(ADMIN_UNIT) if r.territory_id.startswith(prefix)
                and r.source.source_id == f"geoboundaries-{release.lower()}" and r.admin.level_code == level]
     return tuple(_option(registry, r) for r in sorted(records, key=lambda r: r.label.lower()))
 
 
-def custom_zones(data_dir) -> tuple[TerritoryOption, ...]:
-    registry = TerritoryRegistry(Path(data_dir))
+def custom_zones(data_dir, *, registry=None) -> tuple[TerritoryOption, ...]:
+    registry = territory_registry(data_dir, registry)
     return tuple(_option(registry, r) for r in sorted(registry.territories(CUSTOM_IMPORT), key=lambda r: r.label))
 
 
 def load_referential(data_dir, release: str, level: str, iso3: str = "GAB", client=None):
     """Explicit user action: retrieve (or reuse the cached snapshot of) one referential level."""
+    ensure_writable("Chargement geoBoundaries")
     from src.data.geoboundaries import import_geoboundaries
 
     return import_geoboundaries(Path(data_dir), release=release, iso3=iso3, level=level, client=client)
@@ -92,8 +122,9 @@ def load_referential(data_dir, release: str, level: str, iso3: str = "GAB", clie
 def geometry_wgs84(option: TerritoryOption):
     import geopandas as gpd
 
-    if option.record is not None:
-        TerritoryRegistry(option.geometry_path.parents[2]).geometry_path(option.record)   # Digest check.
+    if option.record is not None:       # Digest and geometry fingerprint checked by the registry.
+        registry = option.registry or TerritoryRegistry(option.geometry_path.parents[2])
+        return registry.geometry(option.record)
     return gpd.read_file(option.geometry_path).to_crs("EPSG:4326").geometry.union_all()
 
 
@@ -126,6 +157,35 @@ def selection_payload(option: TerritoryOption) -> dict:
                        attributions=attribution)
 
 
+def zone_context_payload(zone: TerritoryOption, units=(), *, margin_deg: float = 0.02) -> tuple[dict, list]:
+    """(map payload, labels of the overlapping units): analysed perimeter and limits around it; display only.
+
+    ``units``: administrative units of one referential level. Only those overlapping the zone are
+    drawn, as one layer of boundary lines (a border shared by two units is drawn once) cut to the
+    zone's bounding box widened by ``margin_deg``: the map stays on the zone and no artificial edge
+    is drawn. No area, share or statistic is computed.
+    """
+    from shapely.geometry import box
+    from shapely.ops import unary_union
+
+    zone_geometry = geometry_wgs84(zone)
+    left, bottom, right, top = zone_geometry.bounds
+    window = box(left - margin_deg, bottom - margin_deg, right + margin_deg, top + margin_deg)
+    overlapping = [(unit, geometry) for unit in units for geometry in (geometry_wgs84(unit),)
+                   if geometry.intersects(zone_geometry)]
+    labels = [unit.label for unit, _ in overlapping]
+    layers = [("units", "Limites administratives : " + ", ".join(labels),
+               unary_union([geometry.boundary for _, geometry in overlapping]).intersection(window),
+               COLORS["b"], "dashed")] if overlapping else []
+    layers.append(("zone", f"{zone.label} : périmètre analysé", zone_geometry, COLORS["zone"], "outline"))
+    note = ("Trait plein : zone d'acquisition GEONAF, carré de travail, pas une limite administrative."
+            + (" Tirets : limites administratives du référentiel, non officielles, tracées autour de la zone."
+               if overlapping else " Aucune limite administrative locale disponible pour cette zone."))
+    attributions = list(dict.fromkeys(unit.record.source.attribution for unit, _ in overlapping
+                                      if unit.record is not None))
+    return map_payload(layers, note=note, attributions=attributions), labels
+
+
 def comparison_payload(a: TerritoryOption, b: TerritoryOption) -> dict:
     """Two outlines kept separate, plus their common part and each side's own part (display only)."""
     geometry_a, geometry_b = geometry_wgs84(a), geometry_wgs84(b)
@@ -140,17 +200,62 @@ def comparison_payload(a: TerritoryOption, b: TerritoryOption) -> dict:
         attributions=[o.record.source.attribution for o in (a, b) if o.record is not None])
 
 
-def referential_pairs(data_dir, level: str, iso3: str = "GAB"):
-    """(pairs, unmatched gbOpen, unmatched gbHumanitarian) by normalized name; nothing is merged or hidden."""
+@dataclass(frozen=True)
+class StoredObservations:
+    """What the store holds for one zone; read only, nothing is recomputed."""
+
+    geometry_sha256: str
+    acquisitions: tuple            # AcquisitionRecord, latest ingestion of each product, grid footprint intersects.
+    results: tuple                 # IndicatorResult computed on this exact geometry.
+
+
+def stored_observations(option: TerritoryOption, store) -> StoredObservations:
+    """Acquisitions whose raster grid intersects the zone's bounds, and results recorded on its exact geometry.
+
+    The grid footprint is the extent of the raster, not of its valid pixels: a listed acquisition may
+    still not cover the zone. Results are matched on the normalized geometry fingerprint only, so a
+    value computed on another perimeter (another referential, another version) is never shown here.
+    """
+    from src.geo.aoi_identity import geometry_fingerprint
+
+    geometry = geometry_wgs84(option)
+    sha = option.record.geometry_sha256 if option.record is not None else geometry_fingerprint(geometry)
+    acquisitions = tuple(a for a in store.acquisitions.intersecting(geometry.bounds)
+                         if a.footprint().intersects(geometry))
+    return StoredObservations(sha, acquisitions, store.indicators.results(sha))
+
+
+def referential_pairs(data_dir, level: str, iso3: str = "GAB", *, registry=None, options=None):
+    """(pairs, unmatched gbOpen, unmatched gbHumanitarian) by normalized name; nothing is merged or hidden.
+
+    ``options``: {"gbOpen": ..., "gbHumanitarian": ...} already read in this rerun (no second read).
+    """
     from src.services.territory_comparison import match_by_normalized_name
 
-    open_ = admin_territories(data_dir, "gbOpen", level, iso3)
-    humanitarian = admin_territories(data_dir, "gbHumanitarian", level, iso3)
+    if options is None:
+        registry = territory_registry(data_dir, registry)
+        options = {release: admin_territories(data_dir, release, level, iso3, registry=registry)
+                   for release in ("gbOpen", "gbHumanitarian")}
+    open_, humanitarian = options["gbOpen"], options["gbHumanitarian"]
     pairs = match_by_normalized_name(open_, humanitarian)
     matched_a = {a.key for a, _ in pairs}
     matched_b = {b.key for _, b in pairs}
     return (pairs, tuple(o for o in open_ if o.key not in matched_a),
             tuple(o for o in humanitarian if o.key not in matched_b))
+
+
+def compare_options(a: TerritoryOption, b: TerritoryOption):
+    """Compare the two versions shown, read from the registry they come from; never another storage.
+
+    Both options must come from the same registry object (the store selected for this page): a file
+    record is never compared with a PostGIS record, and no registry is opened behind the caller's back.
+    """
+    from src.services.territory_comparison import compare_territories
+
+    if a.record is None or b.record is None or a.registry is None or a.registry is not b.registry:
+        raise ValueError("Comparaison refusée : les deux territoires doivent venir du même stockage.")
+    return compare_territories(a.registry, a.territory_id, b.territory_id, version_a=a.record.version,
+                               version_b=b.record.version)
 
 
 def import_custom_zone(data_dir, content: bytes, *, label: str, author: str, license_spdx: str, source_date: str,
@@ -161,6 +266,7 @@ def import_custom_zone(data_dir, content: bytes, *, label: str, author: str, lic
     status is always « fourni par l'utilisateur ». Nothing is stored when a
     check fails.
     """
+    ensure_writable("Import de zone personnalisée")
     import tempfile
 
     from src.data.geoboundaries import slug
@@ -170,15 +276,16 @@ def import_custom_zone(data_dir, content: bytes, *, label: str, author: str, lic
     for value, name in ((label, "Nom de la zone"), (author, "Auteur ou organisme source"),
                         (license_spdx, "Licence ou droits de réutilisation"), (source_date, "Date de la source")):
         if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"{name} obligatoire.")
+            raise ZoneImportRefused(f"{name} obligatoire.")
     if len(content) > limits.max_import_bytes:
-        raise ValueError(f"Fichier de {len(content) / 2**20:.1f} Mio > limite {limits.max_import_bytes / 2**20:.0f} Mio.")
+        raise ZoneImportRefused(f"Fichier de {len(content) / 2**20:.1f} Mio > limite "
+                                f"{limits.max_import_bytes / 2**20:.0f} Mio.")
     with tempfile.TemporaryDirectory() as folder:
         path = Path(folder) / "import.geojson"
         path.write_bytes(content)
         assessment = assess_import(path, limits=limits)
         if not assessment.allowed:
-            raise ValueError(" ".join(check.reason for check in assessment.refusals))
+            raise ZoneImportRefused(" ".join(check.reason for check in assessment.refusals))
         from src.geo.aoi_identity import load_aoi_identity
 
         identity = load_aoi_identity(path)

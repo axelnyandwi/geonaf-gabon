@@ -1,4 +1,6 @@
-# Préparation multisource — lot 3
+# Préparation multisource - lot 3
+
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
 
 ## Contrat (`src/data/external_sources.py`)
 
@@ -8,7 +10,7 @@
 |---|---|
 | `source_id`, `product`, `version` | identité de la source et de sa version |
 | `kind` | `categorical_raster`, `continuous_raster` ou `vector` |
-| `temporal` | `TemporalValidity` : `instant`, `interval` (carte annuelle) ou `snapshot` (extrait de base) en UTC — date décrite, pas date de téléchargement |
+| `temporal` | `TemporalValidity` : `instant`, `interval` (carte annuelle) ou `snapshot` (extrait de base) en UTC - date décrite, pas date de téléchargement |
 | `resolution_m` | résolution nominale (raster) ; `None` pour un vecteur |
 | `crs`, `extent` | CRS natif ; emprise native et WGS84 |
 | `license` | identifiant SPDX, attribution, URL, partage à l'identique |

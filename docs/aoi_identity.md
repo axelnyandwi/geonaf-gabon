@@ -5,7 +5,7 @@
 `load_aoi_identity(path, aoi_id)` valide strictement la zone puis calcule son empreinte :
 
 1. chaque entité doit être un Polygon/MultiPolygon non vide et valide, avec un CRS et des
-   coordonnées WGS84 finies et dans la plage ; sinon `ValueError` — **aucune réparation** ;
+   coordonnées WGS84 finies et dans la plage ; sinon `ValueError` - **aucune réparation** ;
 2. reprojection en EPSG:4326, fusion (`union_all`) ;
 3. forme canonique (`shapely.normalize` : point de départ et orientation des anneaux, ordre des
    parties), coordonnées arrondies à 1e-7° (≈ 1 cm) ;
@@ -45,7 +45,7 @@ contrôle d'hôte.
 |---|---|---|---|---|
 | gbOpen | ADM0, ADM1 (9 provinces), ADM2 (49 « Department ») | 35–572 sommets, 0 invalide | ADM0/1 : 2005, Wikipedia ; ADM2 : 2018, Wikimedia | ADM0/1 CC BY-SA 3.0 (partage à l'identique) ; ADM2 CC BY 3.0 |
 | gbHumanitarian | ADM0, ADM1, ADM2 (48) | 41–568 sommets, 0 invalide | 2015, SALB / HDX COD-AB | CC BY 3.0 IGO |
-| gbAuthoritative | — (HTTP 404) | | | |
+| gbAuthoritative | - (HTTP 404) | | | |
 
 Constats :
 

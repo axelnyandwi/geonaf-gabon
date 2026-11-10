@@ -435,3 +435,138 @@ def test_xml_without_stac_checksum_requires_safe_evidence(local_data):
     # The published manifest holds no SAFE evidence: its XML is no longer source-bound.
     with pytest.raises(TransferAborted, match="preuve SAFE"):
         queue.store.validate(folder, plan)
+
+
+# --- atomic_json: bounded retry of os.replace (Windows antivirus/indexer handles) ---
+
+def _flaky_replace(monkeypatch, failures):
+    """Make os.replace raise PermissionError ``failures`` times, then really replace."""
+    from src.data import download_store
+    real_replace = download_store.os.replace
+    calls = []
+    def flaky(source, destination):
+        calls.append(source)
+        if len(calls) <= failures:
+            raise PermissionError(13, "Accès refusé")
+        return real_replace(source, destination)
+    monkeypatch.setattr(download_store.os, "replace", flaky)
+    return calls
+
+
+def _no_temporary_left(folder):
+    return not list(folder.glob("*.tmp"))
+
+
+@pytest.fixture
+def instant_retries(monkeypatch):
+    from src.data import download_store
+    monkeypatch.setattr(download_store, "_REPLACE_RETRY_DELAYS", (0, 0, 0))
+
+
+def test_atomic_json_retries_a_transient_permission_error(tmp_path, instant_retries, monkeypatch):
+    from src.data.download_store import atomic_json
+    destination = tmp_path / "queue.json"
+    atomic_json(destination, {"version": 1})
+    calls = _flaky_replace(monkeypatch, failures=2)
+    atomic_json(destination, {"version": 2})
+    assert len(calls) == 3
+    assert json.loads(destination.read_text(encoding="utf-8")) == {"version": 2}
+    assert _no_temporary_left(tmp_path)
+
+
+def test_atomic_json_raises_after_bounded_retries_and_keeps_previous_file(
+        tmp_path, instant_retries, monkeypatch):
+    from src.data.download_store import atomic_json
+    destination = tmp_path / "queue.json"
+    atomic_json(destination, {"version": 1})
+    previous = destination.read_bytes()
+    calls = _flaky_replace(monkeypatch, failures=10**6)
+    with pytest.raises(PermissionError):
+        atomic_json(destination, {"version": 2})
+    assert len(calls) == 4  # First attempt + three retries, never unbounded.
+    assert destination.read_bytes() == previous
+    assert _no_temporary_left(tmp_path)
+
+
+def test_atomic_json_does_not_retry_without_configured_delays(tmp_path, monkeypatch):
+    """POSIX configuration: a rename PermissionError is permanent and raised at once."""
+    from src.data import download_store
+    monkeypatch.setattr(download_store, "_REPLACE_RETRY_DELAYS", ())
+    calls = _flaky_replace(monkeypatch, failures=1)
+    with pytest.raises(PermissionError):
+        download_store.atomic_json(tmp_path / "queue.json", {"version": 1})
+    assert len(calls) == 1
+    assert not (tmp_path / "queue.json").exists() and _no_temporary_left(tmp_path)
+
+
+def test_atomic_json_other_errors_are_not_retried_and_leave_no_temporary(
+        tmp_path, instant_retries, monkeypatch):
+    from src.data import download_store
+    destination = tmp_path / "queue.json"
+    download_store.atomic_json(destination, {"version": 1})
+    previous = destination.read_bytes()
+    calls = []
+    def missing(source, target):
+        calls.append(source)
+        raise FileNotFoundError(2, "absent")
+    monkeypatch.setattr(download_store.os, "replace", missing)
+    with pytest.raises(FileNotFoundError):
+        download_store.atomic_json(destination, {"version": 2})
+    monkeypatch.undo()
+    with pytest.raises(ValueError):  # NaN is rejected before any file is written.
+        download_store.atomic_json(destination, {"version": float("nan")})
+    assert len(calls) == 1
+    assert destination.read_bytes() == previous
+    assert _no_temporary_left(tmp_path)
+
+
+def test_atomic_json_concurrent_writers_and_readers_never_see_a_partial_journal(tmp_path):
+    """Real os.replace and real delays. Under Windows, concurrent writers and an open reader
+    make os.replace fail with WinError 5 (≈ 28 % of writes without retry, measured
+    30/10/2026); the reader pauses between reads like a scanner. A reader that never
+    releases the file must still fail the writes: that refusal is not masked."""
+    from threading import Thread
+    from src.data.download_store import atomic_json
+    destination = tmp_path / "queue.json"
+
+    def payload(writer, sequence):
+        rows = [{"id": f"P{writer}-{sequence}-{n}", "bytes": n} for n in range(50)]
+        return {"writer": writer, "sequence": sequence, "rows": rows,
+                "check": sum(row["bytes"] for row in rows) + writer * 1000 + sequence}
+
+    atomic_json(destination, payload(-1, 0))
+    errors, reads, stop = [], [], Event()
+
+    def write(writer):
+        try:
+            for sequence in range(25):
+                atomic_json(destination, payload(writer, sequence))
+        except Exception as error:  # Reported below with its type.
+            errors.append(error)
+
+    def read():
+        while not stop.is_set():
+            try:
+                text = destination.read_text(encoding="utf-8")
+            except PermissionError:
+                pass  # Windows may refuse the open while a replace is in progress.
+            else:
+                value = json.loads(text)  # A partial file would raise here.
+                reads.append(value["check"] == payload(value["writer"], value["sequence"])["check"])
+            stop.wait(0.005)
+
+    readers = [Thread(target=read)]
+    writers = [Thread(target=write, args=(writer,)) for writer in range(6)]
+    for thread in readers + writers:
+        thread.start()
+    for thread in writers:
+        thread.join(60)
+    stop.set()
+    for thread in readers:
+        thread.join(10)
+
+    assert errors == []
+    assert reads and all(reads)
+    final = json.loads(destination.read_text(encoding="utf-8"))
+    assert final["check"] == payload(final["writer"], final["sequence"])["check"]
+    assert _no_temporary_left(tmp_path)

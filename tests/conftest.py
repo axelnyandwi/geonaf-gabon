@@ -7,7 +7,12 @@ Installed packages cannot change during a pytest session, so the scan result
 is memoized for the session. Application behaviour is unchanged.
 """
 
+import os
+
 import pytest
+
+# Never download the released demo pack from tests (AppTest pages with empty data dirs).
+os.environ["GEONAF_DEMO_PACK"] = "off"
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -30,3 +35,40 @@ def _memoize_streamlit_component_manifest_scan():
         yield
     finally:
         manifest_scanner.scan_component_manifests = original
+
+
+@pytest.fixture(autouse=True)
+def _reset_ui_incident_registry():
+    """Each test sees a first occurrence: no carry-over of the repeat-suppression window."""
+    import sys
+
+    module = sys.modules.get("src.components.errors")
+    if module is not None:
+        module._seen.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _clear_shared_result_cache():
+    """The byte-bounded cache is process-wide: each test starts empty (no cross-test reuse)."""
+    import sys
+
+    module = sys.modules.get("src.services.bounded_cache")
+    if module is not None and module._shared is not None:
+        module._shared.clear()
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _reset_shared_pack_lock():
+    """The demo pack lock lasts for the process in production; each test starts unlocked."""
+    import sys
+
+    def unlock():   # The module may be imported for the first time during the test.
+        module = sys.modules.get("src.demo_mode")
+        if module is not None:
+            module._shared_pack = False
+
+    unlock()
+    yield
+    unlock()

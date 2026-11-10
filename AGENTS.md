@@ -1,4 +1,4 @@
-# GEONAF — règles de travail
+# GEONAF - règles de travail
 
 ## Produit et périmètre
 

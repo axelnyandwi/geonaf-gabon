@@ -110,7 +110,13 @@ def clip_raster_to_aoi(
     *,
     all_touched: bool = False,
 ) -> Path:
-    """Clip a raster using an AOI GeoJSON."""
+    """Clip a raster using an AOI GeoJSON.
+
+    The output is always a lossless GeoTIFF (DEFLATE), whatever the source
+    format. Inheriting the source driver re-encoded JPEG 2000 tiles with GDAL's
+    lossy default, altering reflectances and SCL classes. Values, data type,
+    CRS, affine transform, nodata and dataset tags are kept from the source.
+    """
 
     import geopandas as gpd
     from rasterio.mask import mask
@@ -143,16 +149,20 @@ def clip_raster_to_aoi(
             all_touched=all_touched,
         )
 
-        # 5. Copie des métadonnées du raster
-        profile = src.profile.copy()
-
-        profile.update(
-            {
-                "height": clipped_data.shape[1],
-                "width": clipped_data.shape[2],
-                "transform": clipped_transform,
-            }
-        )
+        # 5. Métadonnées explicites : GeoTIFF sans perte, jamais le pilote source
+        profile = {
+            "driver": "GTiff",
+            "compress": "deflate",
+            "BIGTIFF": "IF_SAFER",
+            "dtype": src.dtypes[0],
+            "count": src.count,
+            "crs": src.crs,
+            "nodata": src.nodata,
+            "height": clipped_data.shape[1],
+            "width": clipped_data.shape[2],
+            "transform": clipped_transform,
+        }
+        tags = src.tags()
 
     # 6. Création du dossier de sortie
     safe_call(
@@ -171,6 +181,7 @@ def clip_raster_to_aoi(
         **profile,
     ) as dst:
         dst.write(clipped_data)
+        dst.update_tags(**tags)
 
     return output_path
 

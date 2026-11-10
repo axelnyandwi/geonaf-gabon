@@ -1,8 +1,11 @@
-# Séries temporelles NDVI — lot 3
+# Séries temporelles NDVI - lot 3
+
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
 
 ## Usage
 
-Accueil → « Série temporelle NDVI ». Choisir un profil scientifique, une période
+Analyses temporelles → section « Série temporelle » (lien « Série temporelle NDVI » du tableau de
+bord ; zone d'étude partagée). Choisir un profil scientifique, une période
 UTC, le seuil de lacune (jours) et au moins trois acquisitions locales vérifiées,
 puis cliquer sur « Calculer la série ». Aucun calcul n'est lancé par un simple
 rerun ; un changement de paramètre demande un nouveau clic. Aucun téléchargement.
@@ -82,7 +85,7 @@ croît linéairement avec le nombre de dates ; ces chiffres ne sont pas une gara
 | Date | Couverture valide | Retenue | NDVI moyen (date) | NDVI moyen (communs) |
 |---|---:|---|---:|---:|
 | 15/01 | 66,18 % | oui | 0,4993 | 0,4991 |
-| 20/01 | 2,69 % | non (< 5 %) | 0,2833 | — |
+| 20/01 | 2,69 % | non (< 5 %) | 0,2833 | - |
 | 25/01 | 63,78 % | oui | 0,4641 | 0,4663 |
 
 Pixels communs : 827 865 (57,398 %), identiques à la paire 15/25 de référence ; la

@@ -22,7 +22,9 @@ from src.geo.change_analysis import (
     _rasterize_aoi_pixel_mask, load_equal_area_aoi, measure_mask_coverage, prepare_pixel_area_weights,
 )
 from src.geo.scientific_profile import ScientificProfile
-from src.geo.temporal import RasterGrid, _read_ndvi_on_grid, grid_from_raster, scl_policy_mask_on_grid
+from src.geo.temporal import (
+    RasterGrid, _read_ndvi_on_grid, grid_from_raster, scl_policy_mask_on_grid, scl_values_on_grid,
+)
 from src.services.ndvi_time_series import NDVISummary, _summary, prepare_date_ndvi
 from src.services.temporal_analysis import _profile_context, _revalidate, _utc
 
@@ -51,18 +53,41 @@ class NDVIObservation:
     mosaic_notes: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class SCLClasses:
+    """SCL classes on an observation grid, read from the very file that built its validity mask."""
+
+    product_id: str
+    classes: np.ndarray       # uint8, class 0 where invalid.
+    valid: np.ndarray         # bool: SCL data present (source NoData and outside footprint excluded).
+
+
 def analyze_ndvi_observation(acquisition: Sentinel2Acquisition, *, aoi_path: str | Path,
                              scientific_profile: ScientificProfile) -> NDVIObservation:
+    return _analyze_single(acquisition, aoi_path, scientific_profile, keep_scl=False)[0]
+
+
+def analyze_ndvi_observation_with_scl(acquisition: Sentinel2Acquisition, *, aoi_path: str | Path,
+                                      scientific_profile: ScientificProfile) -> tuple[NDVIObservation, SCLClasses]:
+    """Same observation as :func:`analyze_ndvi_observation`, plus the SCL classes of the same clipped file."""
+    return _analyze_single(acquisition, aoi_path, scientific_profile, keep_scl=True)
+
+
+def _analyze_single(acquisition, aoi_path, scientific_profile, *, keep_scl):
     if not isinstance(scientific_profile, ScientificProfile):
         raise TypeError("Un ScientificProfile est requis.")
     aoi_path = Path(aoi_path)
     acquisition = _profile_context(_revalidate(acquisition), scientific_profile)
     policy = scientific_profile.scl_policy
+    scl = None
     with TemporaryDirectory(prefix="geonaf-ndvi-date-") as scratch:
         ndvi_path, scl_path = prepare_date_ndvi(acquisition, aoi_path, Path(scratch), "date")
         grid = grid_from_raster(ndvi_path)
         values, raster_valid = _read_ndvi_on_grid(ndvi_path, grid, scl_path, policy)
         scl_valid = scl_policy_mask_on_grid(scl_path, grid, policy)
+        if keep_scl:
+            classes, present = scl_values_on_grid(scl_path, grid)
+            scl = SCLClasses(acquisition.asset_product_ids["scl"], classes, present)
     aoi_pixels = _rasterize_aoi_pixel_mask(grid, aoi_path)
     weights = prepare_pixel_area_weights(grid, load_equal_area_aoi(aoi_path))
     valid = raster_valid & scl_valid & np.isfinite(values) & (values >= -1.0) & (values <= 1.0) & aoi_pixels
@@ -76,7 +101,7 @@ def analyze_ndvi_observation(acquisition: Sentinel2Acquisition, *, aoi_path: str
         summary=_summary(values[valid]),
         calibration={"quantification_value": calibration.quantification_value,
                      "red_offset": calibration.red_offset, "nir_offset": calibration.nir_offset},
-        aoi_sha256=hashlib.sha256(aoi_path.read_bytes()).hexdigest(), scientific_profile=scientific_profile)
+        aoi_sha256=hashlib.sha256(aoi_path.read_bytes()).hexdigest(), scientific_profile=scientific_profile), scl
 
 
 ACQUISITION_WINDOW = timedelta(minutes=15)

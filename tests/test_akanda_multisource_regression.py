@@ -4,6 +4,11 @@ Reference values were computed on 22/10/2026 from the verified local
 acquisitions (15 and 25 January 2025), the WorldCover v200 window and the
 Sentinel-1 January 2025 IW mosaic windows. They detect unintended changes of
 the processing chain; they are not an accuracy validation. No network.
+
+Sentinel-2 values were updated on 26/10/2026 after the lossless AOI clip fix
+(docs/lossless_aoi_clip.md): the 22/10 values came from JPEG 2000 clips
+re-encoded with loss. The new values are identical on the full tiles and on
+the demo-pack subsets, which never went through that re-encoding.
 """
 
 import socket
@@ -51,18 +56,18 @@ def test_single_date_ndvi_and_worldcover_classes(context):
     observations, _, _, worldcover = context
     observation = analyze_local_observation(observations["2025-01-25"], DATA_DIR, scientific_profile=PROFILE)
     assert (observation.grid.width, observation.grid.height) == (1201, 1201)
-    assert observation.summary.count == 919967
-    assert observation.summary.median == pytest.approx(0.5050148, abs=1e-6)
-    assert observation.valid_coverage_percent == pytest.approx(63.781312, abs=1e-5)
+    assert observation.summary.count == 930515  # 919967 avec découpage avec perte.
+    assert observation.summary.median == pytest.approx(0.5042445, abs=1e-6)
+    assert observation.valid_coverage_percent == pytest.approx(64.512036, abs=1e-5)
     join = join_categorical_raster(observation.grid, observation.ndvi, observation.valid,
                                    observed_at=observation.acquired_at_utc, layer_path=worldcover.path,
                                    descriptor=worldcover.descriptor, aoi_path=AOI)
     zones = {z.code: z for z in join.zones}
-    assert (zones[10].pixel_count, zones[50].pixel_count, zones[95].pixel_count) == (419924, 224147, 133659)
-    assert zones[10].mean == pytest.approx(0.559144, abs=1e-6)
-    assert zones[50].mean == pytest.approx(0.281547, abs=1e-6)
-    assert zones[95].mean == pytest.approx(0.531439, abs=1e-6)
-    assert join.unmatched_pixels == 832 and round(join.temporal.offset_days) == 1120
+    assert (zones[10].pixel_count, zones[50].pixel_count, zones[95].pixel_count) == (424171, 226131, 136558)
+    assert zones[10].mean == pytest.approx(0.558004, abs=1e-6)
+    assert zones[50].mean == pytest.approx(0.281532, abs=1e-6)
+    assert zones[95].mean == pytest.approx(0.529429, abs=1e-6)
+    assert join.unmatched_pixels == 848 and round(join.temporal.offset_days) == 1120
 
 
 def test_lot3_pair_join_is_unchanged(context):
@@ -77,10 +82,10 @@ def test_lot3_pair_join_is_unchanged(context):
                                    observed_at=pair.later.acquired_at_utc, layer_path=worldcover.path,
                                    descriptor=worldcover.descriptor, aoi_path=AOI)
     zones = {z.code: z for z in join.zones}
-    assert int(mask.sum()) == 827865 and join.unmatched_pixels == 590  # docs/multisource.md (lot 3).
-    assert (zones[10].pixel_count, round(zones[10].mean, 4)) == (401717, 0.5604)
-    assert (zones[50].pixel_count, round(zones[50].mean, 4)) == (202410, 0.2809)
-    assert (zones[95].pixel_count, round(zones[95].mean, 4)) == (94580, 0.5353)
+    assert int(mask.sum()) == 845383 and join.unmatched_pixels == 608  # Lot 3 : 827865 / 590 avant correctif.
+    assert (zones[10].pixel_count, round(zones[10].mean, 4)) == (407423, 0.5592)
+    assert (zones[50].pixel_count, round(zones[50].mean, 4)) == (206870, 0.281)
+    assert (zones[95].pixel_count, round(zones[95].mean, 4)) == (98078, 0.5333)
 
 
 def test_sentinel1_january_2025_windows(context):
@@ -102,14 +107,14 @@ def test_sentinel1_january_2025_windows(context):
 
 
 def test_pair_scientific_digest_is_unchanged(context):
-    """Reference digest of the V0.1 pair (docs/acquisition_catalogue.md, docs/interactive_map.md)."""
+    """Digest of the V0.1 pair after the lossless clip fix (b0356911… before, see docs/lossless_aoi_clip.md)."""
     from scripts.benchmark_streamlit import scientific_digest
     from src.services.local_preview import analyze_local_akanda
 
     observations = context[0]
     result = analyze_local_akanda(observations["2025-01-15"], observations["2025-01-25"], DATA_DIR,
                                   scientific_profile=PROFILE)
-    assert scientific_digest(result) == "b0356911623b4af85939f9a5bb62f0f01cdff9ffd1dae875ca84b77523cb0e41"
+    assert scientific_digest(result) == "995a1dbfe14c3ec6b1585411ffa59e180f23a151765dad5dff4d60fb354e073b"
 
 
 def test_group_path_equals_single_date_path(context):

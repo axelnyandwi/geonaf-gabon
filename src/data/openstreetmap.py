@@ -25,6 +25,7 @@ import json
 from src.data.external_sources import (
     ExternalLayerDescriptor, LayerLicense, LayerQuality, RetrievalPlan, SpatialExtent, TemporalValidity,
 )
+from src.demo_mode import ensure_writable
 
 OVERPASS_ENDPOINT = "https://overpass-api.de/api/interpreter"
 LICENSE = LayerLicense("ODbL-1.0", "© OpenStreetMap contributors",
@@ -248,6 +249,7 @@ def fetch_osm_snapshot(client, store, repository, *, wgs84_bounds, tags=None, ti
     stored snapshot younger than ``max_age`` is reused. A refresh writes a new
     snapshot file; older ones are kept for reproducibility.
     """
+    ensure_writable("Récupération OpenStreetMap")
     adapter = OpenStreetMapAdapter()
     query = adapter.overpass_query(wgs84_bounds, tags, timeout_s=timeout_s)
     digest = hashlib.sha256(query.encode("utf-8")).hexdigest()

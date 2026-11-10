@@ -53,6 +53,17 @@ test("standalone map keeps interactions local and releases WebGL resources", () 
   assert.equal(root.removed && root.disconnected && view.map.removed, true);
 });
 
+test("two-finger map gestures only on touch screens", () => {
+  for (const coarse of [false, true]) {
+    globalThis.matchMedia = query => ({ matches: coarse && query === "(pointer: coarse)" });
+    const { library, payload, container } = environment();
+    const view = mountNdviMap(container, payload, library, () => {});
+    assert.equal(view.map.options.cooperativeGestures, coarse);
+    view.dispose();
+  }
+  delete globalThis.matchMedia;
+});
+
 test("missing WebGL reports a safe failure once", () => {
   const { root, library, payload, container } = environment();
   library.Map = class { constructor() { throw new Error("WebGL missing"); } };

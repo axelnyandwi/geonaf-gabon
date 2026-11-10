@@ -2,11 +2,11 @@
 
 Three kinds of information are kept distinct in the result:
 
-* ``Observation mesurée`` — Sentinel-2 NDVI of one acquisition (and Sentinel-1
+* ``Observation mesurée`` - Sentinel-2 NDVI of one acquisition (and Sentinel-1
   backscatter, a different physical quantity shown separately);
-* ``Classification externe`` / ``Base collaborative`` — WorldCover classes
+* ``Classification externe`` / ``Base collaborative`` - WorldCover classes
   (model output, 2021) and OpenStreetMap objects (contributed, snapshot date);
-* ``Interprétation`` — rule-generated sentences, always phrased as hypotheses.
+* ``Interprétation`` - rule-generated sentences, always phrased as hypotheses.
 
 External layers are aligned onto the Sentinel-2 10 m grid (nearest
 neighbour for classes, rasterization for vectors); Sentinel-2 values are not

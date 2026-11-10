@@ -1,0 +1,42 @@
+{
+  "date_utc": "2026-10-29T15:27:21+00:00",
+  "platform": "Windows-10-10.0.26200-SP0",
+  "python": "3.10.11",
+  "streamlit": "1.65.0",
+  "results": [
+    {
+      "source": "paquet v3",
+      "mode": "before",
+      "chargement_initial_s": 12.55,
+      "pic_processus_mib": 397.68
+    },
+    {
+      "source": "paquet v3",
+      "mode": "after",
+      "chargement_initial_s": 13.25,
+      "premier_calcul_paire_s": 6.22,
+      "changement_de_paire_s": 0.42,
+      "paire_choisie": "20/01/2025 → 25/01/2025 · écartée avant calcul (borne 2,72 %)",
+      "autre_session_cache_partage_s": 0.52,
+      "erreurs": [],
+      "pic_processus_mib": 470.66
+    },
+    {
+      "source": "données locales",
+      "mode": "before",
+      "chargement_initial_s": 14.02,
+      "pic_processus_mib": 399.08
+    },
+    {
+      "source": "données locales",
+      "mode": "after",
+      "chargement_initial_s": 11.71,
+      "premier_calcul_paire_s": 8.75,
+      "changement_de_paire_s": 0.45,
+      "paire_choisie": "20/01/2025 → 25/01/2025 · écartée avant calcul (borne 2,72 %)",
+      "autre_session_cache_partage_s": 0.48,
+      "erreurs": [],
+      "pic_processus_mib": 485.04
+    }
+  ]
+}

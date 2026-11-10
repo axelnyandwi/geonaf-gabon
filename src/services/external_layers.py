@@ -64,7 +64,7 @@ def layers_for_aoi(layers, identity) -> tuple[StoredLayer, ...]:
     * windows recorded for this exact geometry fingerprint are preferred;
     * windows recorded for **another** geometry are never used;
     * windows from before fingerprints (no record) are used only if, together,
-      they cover the zone's bounds within one cell — historical data stay valid;
+      they cover the zone's bounds within one cell - historical data stay valid;
     * the selected windows must cover the zone, or nothing is returned and the
       source must be retrieved again for the current geometry.
     """

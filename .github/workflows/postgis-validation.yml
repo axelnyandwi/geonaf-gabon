@@ -1,0 +1,81 @@
+{
+  "name": "postgis-validation",
+  "on": {
+    "push": {
+      "branches": [
+        "db/d2a-territory-registry",
+        "main"
+      ]
+    },
+    "pull_request": {
+      "branches": [
+        "main"
+      ]
+    },
+    "workflow_dispatch": {}
+  },
+  "permissions": {
+    "contents": "read"
+  },
+  "concurrency": {
+    "group": "postgis-${{ github.workflow }}-${{ github.ref }}",
+    "cancel-in-progress": true
+  },
+  "jobs": {
+    "validate": {
+      "runs-on": "ubuntu-24.04",
+      "timeout-minutes": 25,
+      "strategy": {
+        "fail-fast": false,
+        "max-parallel": 2,
+        "matrix": {
+          "variant": [
+            "plain",
+            "public",
+            "extensions"
+          ]
+        }
+      },
+      "env": {
+        "PYTHONDONTWRITEBYTECODE": "1",
+        "PIP_DISABLE_PIP_VERSION_CHECK": "1"
+      },
+      "steps": [
+        {
+          "uses": "actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09",
+          "with": {
+            "persist-credentials": false
+          }
+        },
+        {
+          "uses": "actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1",
+          "with": {
+            "python-version": "3.13.18"
+          }
+        },
+        {
+          "name": "Install existing scientific pins and validation tools",
+          "run": "python -m pip install -r requirements-ci-postgis.txt"
+        },
+        {
+          "name": "Validate isolated database",
+          "env": {
+            "GEONAF_CI_VARIANT": "${{ matrix.variant }}"
+          },
+          "run": "python -B scripts/ci/postgis_validation.py \"$GEONAF_CI_VARIANT\""
+        },
+        {
+          "name": "Publish sanitized reports",
+          "if": "${{ always() }}",
+          "uses": "actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02",
+          "with": {
+            "name": "postgis-${{ matrix.variant }}-${{ github.run_attempt }}",
+            "path": "${{ runner.temp }}/geonaf-postgis-${{ matrix.variant }}/reports/",
+            "retention-days": 14,
+            "if-no-files-found": "error"
+          }
+        }
+      ]
+    }
+  }
+}

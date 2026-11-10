@@ -1,4 +1,4 @@
-# Radiométrie des mosaïques Sentinel-1 CDSE — décision du 22/10/2026
+# Radiométrie des mosaïques Sentinel-1 CDSE - décision du 22/10/2026
 
 Produit : `sentinel-1-global-mosaics`, type `S1SAR_L3_IW_MCM` (mosaïque mensuelle IW,
 VV/VH, 20 m). Constante de code : `src/data/sentinel1.py::RADIOMETRY`

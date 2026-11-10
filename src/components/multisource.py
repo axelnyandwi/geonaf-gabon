@@ -1,5 +1,6 @@
 """Streamlit presentation of the multisource demonstrator; engine logic stays in services."""
 
+from dataclasses import replace
 from datetime import date
 from pathlib import Path
 
@@ -7,13 +8,18 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
-from src.components.formatting import format_ndvi, format_percent, format_pixels
-from src.components.analysis_settings import TERRITORY_LABELS, choose_analysis, choose_territory
+from src.components.errors import show_error, show_internal_error
+from src.components.formatting import format_decimal, format_ndvi, format_percent, format_pixels
+from src.components.analysis_settings import (
+    TERRITORY_LABELS, choose_analysis, choose_shared_territory, choose_territory,
+)
 from src.geo.aoi_identity import load_aoi_identity
+from src.services.bounded_cache import shared_cache
+from src.services.compute_slots import heavy_computation
 from src.services.external_layers import latest_osm, layers_for_aoi, open_store, stored_layers
 from src.services.local_preview import (
     LocalPreviewError, analyze_local_group, analyze_local_observation, group_local_observations,
-    list_local_observations, local_group_key, local_observation_key,
+    list_local_observations, local_group_key, local_group_ndvi_key, local_observation_key,
 )
 
 NATURE_HELP = {
@@ -24,50 +30,86 @@ NATURE_HELP = {
 }
 
 
-@st.cache_resource(max_entries=4, show_spinner=False)
+# Large results are kept in the process-wide cache bounded in bytes (src/services/bounded_cache.py),
+# shared by all sessions, with read-only arrays; the cache keys below hold every input that
+# Streamlit used to hash. Cache misses of heavy computations take a shared slot
+# (src/services/compute_slots.py).
+
+def _shared(namespace, key, compute, *, heavy=True):
+    def run():
+        if not heavy:
+            return compute()
+        with heavy_computation():
+            return compute()
+    return shared_cache().get_or_compute(namespace, key, run)
+
+
+def _clearer(namespace):
+    return lambda: shared_cache().clear(namespace)
+
+
 def cached_observation(key, _observation, data_dir, _profile):
     # One entry per (date revision, AOI digest, profile): see local_observation_key.
-    return analyze_local_observation(_observation, Path(data_dir), scientific_profile=_profile)
+    return _shared("multisource.observation", (key, data_dir), lambda: analyze_local_observation(
+        _observation, Path(data_dir), scientific_profile=_profile))
 
 
-@st.cache_resource(max_entries=6, show_spinner=False)
 def cached_group(key, _group, data_dir, _profile):
-    # One entry per (acquisition group revisions, AOI digest, effective profile): see local_group_key.
-    return analyze_local_group(_group, Path(data_dir), scientific_profile=_profile)
+    """NDVI of one acquisition group, shared across thresholds and coverages of the same profile.
+
+    ``key`` is ``local_group_ndvi_key``: it leaves out the change threshold and the minimum
+    coverage, which the NDVI does not read (proved without tolerance by
+    tests/test_ndvi_cache_independence.py). The shared arrays are rebound to the effective profile.
+    """
+    observation = _shared("multisource.ndvi", (key, data_dir), lambda: analyze_local_group(
+        _group, Path(data_dir), scientific_profile=_profile))
+    return replace(observation, scientific_profile=_profile)
 
 
-@st.cache_resource(max_entries=3, show_spinner=False)
 def cached_osm(storage_key, fingerprint, data_dir, bounds):
     from src.data.openstreetmap import load_osm_snapshot
 
-    store, _ = open_store(Path(data_dir))
-    return load_osm_snapshot(store, storage_key, bounds)
+    def load():
+        store, _ = open_store(Path(data_dir))
+        return load_osm_snapshot(store, storage_key, bounds)
+    return _shared("multisource.osm", (storage_key, fingerprint, data_dir, tuple(bounds)), load)
 
 
-@st.cache_resource(max_entries=6, show_spinner=False)
 def cached_radar(fingerprints, _layers, aoi_path, aoi_geometry_sha256, landcover_fingerprints, _landcover, scale):
     # The AOI geometry fingerprint is part of the key: a modified zone file never reuses old statistics.
     from src.services.sentinel1_layer import load_radar_mosaic
 
-    classes = dict(_landcover[0].descriptor.classes) if _landcover else None
-    return load_radar_mosaic([(layer.path, layer.descriptor) for layer in _layers], aoi_path=aoi_path, scale=scale,
-                             landcover_path=[layer.path for layer in _landcover] or None, landcover_classes=classes)
+    def load():
+        classes = dict(_landcover[0].descriptor.classes) if _landcover else None
+        return load_radar_mosaic([(layer.path, layer.descriptor) for layer in _layers], aoi_path=aoi_path,
+                                 scale=scale, landcover_path=[layer.path for layer in _landcover] or None,
+                                 landcover_classes=classes)
+    return _shared("multisource.radar",
+                   (fingerprints, aoi_path, aoi_geometry_sha256, landcover_fingerprints, scale), load)
 
 
-@st.cache_resource(max_entries=4, show_spinner=False)
 def cached_multisource(key, _observation, aoi_path, _worldcover, _osm, _radar):
+    # ``key`` holds the full group key (effective profile included), layer fingerprints and AOI.
     from src.services.multisource_demo import analyze_multisource
 
-    return analyze_multisource(_observation, aoi_path=aoi_path, worldcover=_worldcover, osm=_osm, radar=_radar)
+    return _shared("multisource.result", (key, aoi_path), lambda: analyze_multisource(
+        _observation, aoi_path=aoi_path, worldcover=_worldcover, osm=_osm, radar=_radar))
 
 
-@st.cache_resource(max_entries=8, show_spinner=False)
 def cached_map_payload(key, filters, _result, aoi_path):
     from src.services.multisource_map import prepare_multisource_map
 
-    classes, groups, polarization = filters
-    return prepare_multisource_map(_result, aoi_path=aoi_path, worldcover_classes=set(classes),
-                                   osm_groups=set(groups), radar_polarization=polarization)
+    def prepare():
+        classes, groups, polarization = filters
+        return prepare_multisource_map(_result, aoi_path=aoi_path, worldcover_classes=set(classes),
+                                       osm_groups=set(groups), radar_polarization=polarization)
+    return _shared("multisource.map", (key, filters, aoi_path), prepare, heavy=False)
+
+
+for _function, _namespace in ((cached_observation, "multisource.observation"), (cached_group, "multisource.ndvi"),
+                              (cached_osm, "multisource.osm"), (cached_radar, "multisource.radar"),
+                              (cached_multisource, "multisource.result"), (cached_map_payload, "multisource.map")):
+    _function.clear = _clearer(_namespace)
 
 
 @st.cache_resource(show_spinner=False)
@@ -101,12 +143,16 @@ def show_map(payload, key):
 
 
 def _nature(label):
-    st.caption(f"**Nature : {label}** — {NATURE_HELP[label]}")
+    st.caption(f"**Nature : {label}** - {NATURE_HELP[label]}")
 
 
 def _retrieval_panel(data_dir, identity, month):
+    from src.demo_mode import read_only, unavailable_text
     from src.services import external_retrieval as retrieval
 
+    if read_only():
+        st.info(unavailable_text("Récupération des couches externes (WorldCover, OpenStreetMap, Sentinel-1)"))
+        return
     with st.expander("Récupération des couches externes (réseau, sur action explicite)"):
         st.caption("Requêtes bornées à l'AOI, mises en cache et tracées. Aucune donnée existante n'est écrasée ; "
                    f"plafonds : WorldCover {retrieval.WORLDCOVER_MAX_BYTES // 2**20} Mo, OSM "
@@ -129,9 +175,9 @@ def _retrieval_panel(data_dir, identity, month):
                 action, report = "Sentinel-1", retrieval.retrieve_sentinel1(data_dir, aoi_id=aoi_id,
                                                                             wgs84_bounds=bounds, month=month,
                                                                             aoi_geometry_sha256=digest)
-        except Exception:
-            st.error("Récupération impossible (réseau, autorisation, plafond ou réponse invalide). "
-                     "Aucune donnée partielle n'a été enregistrée.")
+        except Exception as error:
+            show_error(error, context="multisource.recuperation", prefix="Récupération impossible. ",
+                       suffix=" Aucune donnée partielle n'a été enregistrée.")
             return
         if action:
             public = {k: v for k, v in report.items() if k != "storage_key"}
@@ -147,8 +193,8 @@ def _group_label(group):
     return f"{first.acquired_at:%d/%m/%Y · %H:%M UTC} · {len(group)} tuile(s) {tiles}"
 
 
-def show_multisource(data_dir):
-    st.title("Démonstrateur multisource")
+def show_multisource(data_dir, *, shared_zone: bool = False):
+    st.title("Analyses multisources")
     st.caption("Sentinel-2 × ESA WorldCover × OpenStreetMap, et Sentinel-1 présenté séparément. "
                "Croisements descriptifs et exploratoires sur une AOI commune.")
     st.warning("Aucun changement environnemental n'est validé ici : les sources ont des dates, résolutions et "
@@ -156,7 +202,8 @@ def show_multisource(data_dir):
                "nécessaire.")
     columns = st.columns([1, 3])
     with columns[0]:
-        aoi_id = choose_territory(data_dir, "ms_territory")
+        # The page uses the study zone shared with the dashboard and the temporal analyses.
+        aoi_id = choose_shared_territory(data_dir) if shared_zone else choose_territory(data_dir, "ms_territory")
     if aoi_id is None:
         return
     with columns[1]:
@@ -167,7 +214,7 @@ def show_multisource(data_dir):
     try:
         groups = group_local_observations(list_local_observations(data_dir))
     except LocalPreviewError as error:
-        st.error(str(error))
+        show_error(error, context="multisource.acquisitions")
         return
     if not groups:
         st.error("Aucune acquisition Sentinel-2 locale vérifiée : utiliser le catalogue des acquisitions.")
@@ -179,7 +226,8 @@ def show_multisource(data_dir):
     try:
         identity = load_aoi_identity(aoi_path, aoi_id)
     except ValueError as error:
-        st.error(f"Zone d'étude refusée : {error}")
+        show_internal_error(error, context="multisource.zone",
+                            message="Zone d'étude refusée : géométrie illisible, vide ou non surfacique.")
         return
     bounds = identity.wgs84_bounds
     month = date(group[0].acquired_at.year, group[0].acquired_at.month, 1)
@@ -197,7 +245,7 @@ def show_multisource(data_dir):
     try:
         key = local_group_key(group, data_dir, profile)
         with st.spinner("Vérification des empreintes et calcul du NDVI de la prise de vue…"):
-            observation = cached_group(key, group, str(data_dir), profile)
+            observation = cached_group(local_group_ndvi_key(group, data_dir, profile), group, str(data_dir), profile)
         store, repository = open_store(Path(data_dir))
         worldcover = list(layers_for_aoi(stored_layers(repository, "esa-worldcover", bounds,
                                                        observation.acquired_at_utc), identity))
@@ -210,9 +258,12 @@ def show_multisource(data_dir):
                    if layer.descriptor.temporal.start_utc.strftime("%Y-%m") == f"{month:%Y-%m}"]
         radar_layers = [layer for polarization in ("VV", "VH") for layer in layers_for_aoi(
             [l for l in monthly if l.descriptor.provenance.get("polarization") == polarization], identity)]
-    except (LocalPreviewError, ValueError) as error:
-        st.error(str(error) if isinstance(error, LocalPreviewError)
-                 else "Couche externe locale invalide (empreinte modifiée) : affichage interrompu.")
+    except LocalPreviewError as error:
+        show_error(error, context="multisource.prise_de_vue")
+        return
+    except ValueError as error:
+        show_internal_error(error, context="multisource.couches",
+                            message="Couche externe locale invalide (empreinte modifiée) : affichage interrompu.")
         return
     with st.spinner("Croisement des sources…"):
         osm = cached_osm(osm_layer.storage_key, osm_layer.descriptor.fingerprint, str(data_dir), bounds) \
@@ -256,8 +307,9 @@ def show_multisource(data_dir):
         payload = cached_map_payload(result_key, filter_key, result, str(aoi_path))
         if not show_map(payload, abs(hash((result_key, filter_key))) % 10**8):
             st.warning("Carte interactive indisponible dans ce navigateur ; les tableaux restent valides.")
-    except Exception:
-        st.warning("Carte interactive indisponible ; les tableaux restent valides.")
+    except Exception as error:
+        show_internal_error(error, context="multisource.carte", level="warning",
+                            message="Carte interactive indisponible ; les tableaux restent valides.")
     st.caption("Filtres d'affichage uniquement : les statistiques ci-dessous portent sur toutes les classes. "
                "Activer les couches dans la barre au-dessus de la carte.")
 
@@ -282,13 +334,19 @@ def _indicators(result):
     observation = result.observation
     metrics = st.columns(5)
     metrics[0].metric("NDVI médian (pixels valides)", format_ndvi(observation.summary.median))
-    metrics[1].metric("Couverture NDVI valide / AOI", f"{format_percent(observation.valid_coverage_percent)} %")
+    metrics[1].metric("Part de la zone d'étude observée", f"{format_percent(observation.valid_coverage_percent)} %",
+                      help="Pixels Sentinel-2 valides (ni nuage, ni ombre, ni pixel exclu) à cette date.")
     buildings = next((i for i in result.infrastructure if i.group == "Bâtiments"), None)
     roads = next((i for i in result.infrastructure if i.group == "Routes et voies"), None)
-    metrics[2].metric("Bâtiments OSM (AOI)", format_pixels(buildings.features) if buildings else "—")
-    metrics[3].metric("Voies OSM (km, AOI)", f"{roads.length_km:,.0f}".replace(",", " ") if roads else "—")
+    metrics[2].metric("Bâtiments OSM touchant la zone", format_pixels(buildings.features) if buildings else "-",
+                      help="Objets OpenStreetMap qui recoupent la zone d'étude. Les chiffres clés de l'accueil "
+                           "rattachent chaque bâtiment par son point représentatif : les deux totaux peuvent "
+                           "différer de quelques bâtiments situés en bordure.")
+    metrics[3].metric("Voies OSM (km)", format_decimal(roads.length_km, 0) if roads else "-",
+                      help="Longueur des tronçons cartographiés découpés à la zone d'étude.")
     vv = next((layer for layer in result.radar if layer.polarization == "VV"), None)
-    metrics[4].metric("VV médian (dB)", f"{vv.median_db:.1f}" if vv else "—")
+    metrics[4].metric("Radar VV médian (dB)", format_decimal(vv.median_db, 1) if vv else "-",
+                      help="Rétrodiffusion Sentinel-1 : rugosité et humidité de surface, pas la végétation.")
 
 
 def _landcover_tab(result, chosen):
@@ -355,7 +413,7 @@ def _radar_tab(result, chosen):
     from src.data.sentinel1 import RADIOMETRY
 
     st.caption(f"Radiométrie ({RADIOMETRY['version']}) : γ⁰ aplani du relief en puissance linéaire, "
-               f"{RADIOMETRY['db_formula']} — {RADIOMETRY['status']}. {RADIOMETRY['inconsistency']} "
+               f"{RADIOMETRY['db_formula']} - {RADIOMETRY['status']}. {RADIOMETRY['inconsistency']} "
                "Valeurs descriptives : aucune qualification quantitative validée.")
     with st.expander("Sources de la convention radar"):
         for source in RADIOMETRY["evidence"]:

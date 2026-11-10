@@ -1,0 +1,104 @@
+{
+ "areas_m2": {
+  "decrease": "11758249.451432202",
+  "increase": "3691333.847761153",
+  "stable": "69016079.56082544"
+ },
+ "arrays": {
+  "change_class_map": {
+   "dtype": "uint8",
+   "sha256": "7caed7b98811b8f9cc27517aa5f5c69e8af55e57fd2451eae1ad0b0a2f873b5e",
+   "shape": [
+    1201,
+    1201
+   ]
+  },
+  "comparable_mask": {
+   "dtype": "bool",
+   "sha256": "e0de86a8847e0d312c2985dddac00d862a91eff2f25e7726328bb157dcf0e342",
+   "shape": [
+    1201,
+    1201
+   ]
+  },
+  "comparison_mask": {
+   "dtype": "bool",
+   "sha256": "e0de86a8847e0d312c2985dddac00d862a91eff2f25e7726328bb157dcf0e342",
+   "shape": [
+    1201,
+    1201
+   ]
+  },
+  "delta_ndvi": {
+   "dtype": "float32",
+   "sha256": "acb388595de68808cc76b0794435f7542286aa50fff92f9752671cf0f84086d7",
+   "shape": [
+    1201,
+    1201
+   ]
+  },
+  "ndvi_date_1": {
+   "dtype": "float32",
+   "sha256": "02a7bdb15e052286e2ba5742c82620cc9f3ef5bfba4bc9853678d1eaebd186e9",
+   "shape": [
+    1201,
+    1201
+   ]
+  },
+  "ndvi_date_2": {
+   "dtype": "float32",
+   "sha256": "7276d2d9b66fb29d1682cdde82b7be23d67061bfb9a7f28d29214130d1bc6887",
+   "shape": [
+    1201,
+    1201
+   ]
+  },
+  "valid_date_1": {
+   "dtype": "bool",
+   "sha256": "ac6493fda99e2f108745680d3dbb8337191d12d5698c5fda6318c4da4317de1d",
+   "shape": [
+    1201,
+    1201
+   ]
+  },
+  "valid_date_2": {
+   "dtype": "bool",
+   "sha256": "ee66e99859bda0cfc327a863e30a2e5ff6208d75d24acd8ce9a4446cea5b14dd",
+   "shape": [
+    1201,
+    1201
+   ]
+  }
+ },
+ "class_pixel_counts": {
+  "decrease": 117622,
+  "increase": 36912,
+  "stable": 690849
+ },
+ "comparable_area_m2": "84465662.8600188",
+ "comparable_coverage_percent": "58.6125205466738",
+ "denominator_area_m2": "144108566.0064011",
+ "grid": [
+  1201,
+  1201,
+  [
+   10.0,
+   0.0,
+   537190.0,
+   0.0,
+   -10.0,
+   63090.0
+  ]
+ ],
+ "platform": "Windows Python 3.10.11",
+ "statistics": {
+  "count": "845383",
+  "max": "0.6301770806312561",
+  "mean": "-0.03287226942591627",
+  "median": "-0.02643829584121704",
+  "min": "-0.6957127451896667",
+  "p25": "-0.06777998805046082",
+  "p75": "0.011134535074234009",
+  "std": "0.0918309337934315"
+ }
+}

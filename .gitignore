@@ -7,6 +7,11 @@
 secrets/
 *.pem
 *.key
+*.crt
+# Supabase CLI: project link (reference, pooler URL), local branches and function secrets (D5).
+supabase/.temp/
+supabase/.branches/
+supabase/**/.env*
 
 # Environnements virtuels Python
 .venv/
@@ -100,6 +105,11 @@ htmlcov/
 *.tar
 *.tar.gz
 *.7z
+
+# Artefacts locaux de diagnostic : captures/journaux du navigateur Playwright MCP
+# et profils cProfile écrits à la racine (ex. profile_geonaf.txt)
+.playwright-mcp/
+/profile_*.txt
 
 # Journaux et fichiers système
 *.log

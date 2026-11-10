@@ -18,14 +18,17 @@ def _page(series_data, monkeypatch):
     app = AppTest.from_file(str(Path(__file__).resolve().parents[1] / "app.py"))
     app.run(timeout=30)
     assert any(link.label == "Série temporelle NDVI" for link in app.get("page_link"))
-    app.switch_page("pages/2_Series_NDVI.py").run(timeout=30)
+    from src.navigation import SECTIONS
+
+    app.session_state["section"] = SECTIONS["serie"]   # Section of the temporal analyses page.
+    app.switch_page("views/analyses_temporelles.py").run(timeout=30)
     return app, analyze
 
 
 def test_series_page_computes_only_on_click_and_exports(series_data, monkeypatch):
     app, analyze = _page(series_data, monkeypatch)
     assert not app.exception and not app.error
-    assert app.title[0].value == "Série temporelle NDVI"
+    assert app.title[0].value == "Analyses temporelles" and app.header[0].value == "Série temporelle NDVI"
     assert len(app.multiselect[0].value) == 4
     app.run()
     assert analyze.call_count == 0 and not app.metric

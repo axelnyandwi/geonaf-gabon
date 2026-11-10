@@ -156,7 +156,7 @@ export function mountTemporalMap(container, payload, maplibre, { onError = () =>
     details.replaceChildren();
     const summary = root.querySelector('.temporal-mode-summary');
     summary.textContent = changeMode === 'classes'
-      ? `Changements par catégories : baisse, sous le seuil ou hausse, avec un seuil de ±${threshold} en ΔNDVI.`
+      ? `Changements par catégories : baisse, sous le seuil ou hausse, avec un seuil de ±${Number(threshold).toLocaleString('fr-FR', {minimumFractionDigits: 2})} en ΔNDVI.`
       : 'Intensité des changements (ΔNDVI) : valeur finale moins valeur initiale, sur une échelle fixe de −2 à +2.';
     const paragraph = text => { const p = document.createElement('p'); p.textContent = text; details.append(p); };
     if (changeMode === 'classes') {
@@ -235,6 +235,8 @@ export function mountTemporalMap(container, payload, maplibre, { onError = () =>
         const map = new maplibre.Map({ container: canvas, ...camera,
           style: { version: 8, sources: {}, layers: [{ id: "background", type: "background",
             paint: { "background-color": "#0e1117" } }] }, attributionControl: false,
+          // Touch screens: one finger scrolls the page, two fingers move the map.
+          cooperativeGestures: typeof matchMedia === "function" && matchMedia("(pointer: coarse)").matches,
           // Defensive allowlist: no HTTP(S), relative URL, remote style, font or tile.
           transformRequest: url => {
             if (!url.startsWith("data:image/png;base64,")) throw new Error("External map resource forbidden");

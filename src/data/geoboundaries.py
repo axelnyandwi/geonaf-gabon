@@ -40,6 +40,7 @@ from src.data.external_http import HostPolicy
 from src.data.territory_registry import (
     ADMIN_UNIT, COMMUNITY, HUMANITARIAN, AdminInfo, TerritoryRegistry, TerritorySource,
 )
+from src.demo_mode import ensure_writable
 
 API_URL = "https://www.geoboundaries.org/api/current/{release}/{iso3}/{level}/"
 RELEASES = {"gbOpen": COMMUNITY, "gbHumanitarian": HUMANITARIAN}
@@ -186,6 +187,7 @@ def _prefix(release, iso3, level):
 def fetch_boundaries(client, store, *, release: str, iso3: str, level: str,
                      now: datetime | None = None) -> BoundarySnapshot:
     """Stored snapshot for the current build, downloading the GeoJSON only when none exists."""
+    ensure_writable("Chargement geoBoundaries")
     metadata = fetch_metadata(client, release=release, iso3=iso3, level=level)
     build = build_date(metadata)
     prefix = _prefix(release, iso3, level)
@@ -302,6 +304,7 @@ def register_snapshot(registry: TerritoryRegistry, snapshot: BoundarySnapshot, *
 def import_geoboundaries(data_dir, *, release: str, iso3: str, level: str, client=None,
                          now: datetime | None = None) -> ImportReport:
     """Retrieve (or reuse) one release/country/level and register its units; explicit user action only."""
+    ensure_writable("Chargement geoBoundaries")
     from src.data.external_http import EXTERNAL_HOSTS, ExternalHttpClient
     from src.services.external_layers import open_store
 

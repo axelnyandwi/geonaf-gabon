@@ -7,8 +7,10 @@ import altair as alt
 import pandas as pd
 import streamlit as st
 
+from src.components.errors import show_error
 from src.components.formatting import format_ndvi, format_percent, format_pixels
 from src.components.analysis_settings import choose_analysis, choose_territory
+from src.services.compute_slots import heavy_computation
 from src.services.local_preview import (
     LocalPreviewError, analyze_local_ndvi_series, list_local_observations, local_series_key,
 )
@@ -22,8 +24,9 @@ STATUS_LABELS = {"exploration": "Exploration", "not_assessed": "Comparabilité n
 @st.cache_resource(max_entries=8, show_spinner=False)
 def cached_series(key, _observations, data_dir, _profile, period, gap_warning_days):
     # Immutable result keyed by file revisions, AOI, profile, period and gap threshold.
-    return analyze_local_ndvi_series(_observations, Path(data_dir), scientific_profile=_profile,
-                                     period=period, gap_warning_days=gap_warning_days)
+    with heavy_computation():  # Cache miss only: shared limit of simultaneous heavy computations.
+        return analyze_local_ndvi_series(_observations, Path(data_dir), scientific_profile=_profile,
+                                         period=period, gap_warning_days=gap_warning_days)
 
 
 def _frames(result):
@@ -57,12 +60,12 @@ def _charts(result):
     tooltip = [alt.Tooltip("Date (UTC):N"),
                alt.Tooltip("Statistique:N"), alt.Tooltip("NDVI:Q", format=".4f")]
     y = alt.Y("NDVI:Q", scale=alt.Scale(domain=[-1, 1]), title="NDVI")
-    st.markdown("**NDVI sur pixels communs** — seule courbe dont les dates portent sur les mêmes pixels.")
+    st.markdown("**NDVI sur pixels communs** - seule courbe dont les dates portent sur les mêmes pixels.")
     st.altair_chart(alt.Chart(common).mark_line(point=True).encode(
         x=x, y=y, color=alt.Color("Statistique:N", legend=legend),
         strokeDash=alt.StrokeDash("Statistique:N", legend=legend), tooltip=tooltip).interactive(),
         width="stretch")
-    st.markdown("**NDVI propre à chaque date** — points non reliés : pixels différents, non comparables entre dates.")
+    st.markdown("**NDVI propre à chaque date** - points non reliés : pixels différents, non comparables entre dates.")
     st.altair_chart(alt.Chart(own).mark_point(filled=True, size=70).encode(
         x=x, y=y, color=alt.Color("Statistique:N", legend=legend), shape=alt.Shape("Retenue:N"),
         tooltip=tooltip + [alt.Tooltip("Retenue:N")]).interactive(), width="stretch")
@@ -72,7 +75,7 @@ def _charts(result):
         color=alt.Color("Retenue:N"),
         tooltip=[alt.Tooltip("Date (UTC):N"), alt.Tooltip("coverage:Q", title="Couverture (%)", format=".2f")])
     rule = alt.Chart(pd.DataFrame({"minimum": [minimum]})).mark_rule(strokeDash=[4, 4]).encode(y="minimum:Q")
-    st.markdown(f"**Couverture valide par date** — ligne : minimum du profil ({minimum:g} %).")
+    st.markdown(f"**Couverture valide par date** - ligne : minimum du profil ({minimum:g} %).")
     st.altair_chart((bars + rule).interactive(), width="stretch")
 
 
@@ -92,17 +95,18 @@ def _missing(result, in_period, chosen):
     return lines
 
 
-def show_ndvi_series(data_dir):
-    st.title("Série temporelle NDVI")
+def show_ndvi_series(data_dir, aoi_id: str | None = None, *, embedded: bool = False):
+    (st.header if embedded else st.title)("Série temporelle NDVI")
     st.caption("Acquisitions locales vérifiées uniquement ; aucun téléchargement. Même AOI, même grille, "
                "calibration BOA de chaque produit et masque SCL du profil.")
     try:
         observations = list_local_observations(data_dir)
         first, last = catalogue_bounds(observations)
     except LocalPreviewError as error:
-        st.error(str(error))
+        show_error(error, context="series.acquisitions")
         return
-    aoi_id = choose_territory(data_dir, "series_territory")
+    if aoi_id is None:  # Inside the temporal analyses page, the shared study zone is given.
+        aoi_id = choose_territory(data_dir, "series_territory")
     if aoi_id is None:
         return
     configuration = choose_analysis(aoi_id, "series_analysis")
@@ -131,7 +135,7 @@ def show_ndvi_series(data_dir):
     try:
         key = local_series_key(chosen, data_dir, profile, period, gap)
     except LocalPreviewError as error:
-        st.error(str(error))
+        show_error(error, context="series.cle")
         return
     from src.components.resource_panel import assess_aoi_file, show_assessment
 
@@ -147,7 +151,7 @@ def show_ndvi_series(data_dir):
         with st.spinner("Vérification des empreintes et calcul du NDVI de chaque date…"):
             result = cached_series(key, tuple(chosen), str(data_dir), profile, period, float(gap))
     except LocalPreviewError as error:
-        st.error(str(error))
+        show_error(error, context="series.calcul")
         return
 
     status = result.interpretation.status.value
@@ -160,7 +164,7 @@ def show_ndvi_series(data_dir):
     metrics[0].metric("Dates retenues", f"{len(retained)} / {len(result.dates)}")
     metrics[1].metric("Couverture pixels communs / AOI", f"{format_percent(result.common_coverage_percent)} %")
     metrics[2].metric("Pixels communs", format_pixels(result.common_pixel_count))
-    metrics[3].metric("Intervalle max. entre dates retenues", f"{format_percent(max(between))} j" if between else "—")
+    metrics[3].metric("Intervalle max. entre dates retenues", f"{format_percent(max(between))} j" if between else "-")
     _charts(result)
     st.dataframe([{
         "Acquisition (UTC)": f"{item.acquired_at_utc:%d/%m/%Y %H:%M:%S}", "Produit": item.product_id,

@@ -71,10 +71,11 @@ def test_existing_coverage_policy_is_notice_only(coverage, count, expected):
 
 
 def test_calendars_are_bounded_and_missing_day_does_not_reuse_previous_result(local_data, monkeypatch):
+    from tests.streamlit_pages import open_section
     from tests.test_temporal_streamlit import configured_app
     app, prepare, analyze = configured_app(local_data, monkeypatch)
-    app.run(timeout=30)
-    assert len(app.date_input) == 2 and [box.key for box in app.selectbox] == ["territory"]
+    app = open_section(app.run(timeout=30), 'variation', timeout=30)   # Former home pair analysis.
+    assert len(app.date_input) == 2 and [box.key for box in app.selectbox] == ["geonaf_zone"]
     for widget in app.date_input:
         assert widget.min == date(2025, 1, 15) and widget.max == date(2025, 1, 25)
     app.date_input[0].set_value(date(2025, 1, 20)).run()
@@ -88,9 +89,10 @@ def test_calendars_are_bounded_and_missing_day_does_not_reuse_previous_result(lo
 
 
 def test_dates_reversed_do_not_swap_or_calculate(local_data, monkeypatch):
+    from tests.streamlit_pages import open_section
     from tests.test_temporal_streamlit import configured_app
     app, prepare, analyze = configured_app(local_data, monkeypatch)
-    app.run(timeout=30)
+    app = open_section(app.run(timeout=30), 'variation', timeout=30)   # Former home pair analysis.
     app.date_input[0].set_value(date(2025, 1, 25))
     app.date_input[1].set_value(date(2025, 1, 15)).run()
     assert app.error and 'Dates inversées' in app.error[0].value

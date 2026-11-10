@@ -14,6 +14,7 @@ from src.data import ingestion
 from src.data.download_control import DownloadBudget, TransferControl, TransferAborted, TransferCancelled
 from src.data.download_store import LocalDownloadStore, atomic_json, safe_id
 from src.data.network import NetworkError
+from src.demo_mode import ensure_writable
 from src.services.download_plan import fetch_selected_item, make_plan
 from src.services.local_preview import _manifest, _load_observation, LocalObservation
 
@@ -29,6 +30,7 @@ def _validate_observation(path, manifest):
 class DownloadQueue:
     def __init__(self, data_dir, *, store=None, resolver=fetch_selected_item,
                  client_factory=ingestion.create_cdse_s3_client):
+        ensure_writable("Téléchargements Sentinel-2")
         self.store = store if store is not None else LocalDownloadStore(
             data_dir, manifest_reader=_manifest, observation_validator=_validate_observation)
         self.resolver, self.client_factory = resolver, client_factory
@@ -75,6 +77,7 @@ class DownloadQueue:
             self.store.write_history(snapshot)
 
     def prepare(self, selection, budget):
+        ensure_writable("Téléchargements Sentinel-2")
         with self._lock:
             if self.busy:
                 raise TransferAborted("Une opération est déjà en cours.")
@@ -131,11 +134,12 @@ class DownloadQueue:
         if isinstance(error, TransferAborted):
             return str(error)
         if isinstance(error, NetworkError):
-            return (f"Réseau {error.category}, HTTP {error.status_code or '—'}. "
+            return (f"Réseau {error.category}, HTTP {error.status_code or '-'}. "
                     "Vérifier TLS, accès CDSE ou réessayer après temporisation.")
         return "Validation ou accès local impossible ; fichiers conservés. Vérifier actifs, intégrité et accès CDSE."
 
     def start(self):
+        ensure_writable("Téléchargements Sentinel-2")
         with self._lock:
             if self.busy or self.phase != "ready":
                 raise TransferAborted("Estimation complète requise avant téléchargement.")
@@ -143,6 +147,7 @@ class DownloadQueue:
             self._future = self._executor.submit(self._run)
 
     def cancel(self):
+        ensure_writable("Téléchargements Sentinel-2")
         self._cancel.set()
 
     def _run(self):
@@ -212,5 +217,5 @@ class DownloadQueue:
                 self._persist()
 
     def close(self):
-        self.cancel()
+        self._cancel.set()   # Process shutdown, not a visitor command: allowed in read-only mode.
         self._executor.shutdown(wait=True)

@@ -4,7 +4,9 @@ from datetime import datetime, timedelta, timezone
 
 import streamlit as st
 
+from src.components.errors import show_error
 from src.data.catalogue import CatalogueError, CatalogueQuery
+from src.demo_mode import read_only
 from src.geo.scientific_profile import LOCAL_SCIENTIFIC_PROFILES
 from src.services.acquisition_catalogue import (
     available_catalogue_aois, load_catalogue_aoi, search_catalogue,
@@ -12,12 +14,13 @@ from src.services.acquisition_catalogue import (
 )
 
 
-def show_acquisition_catalogue(data_dir):
-    st.title("Catalogue des acquisitions Sentinel-2")
+def show_acquisition_catalogue(data_dir, *, embedded: bool = False):
+    (st.header if embedded else st.title)("Catalogue des acquisitions Sentinel-2")
     st.caption("Recherche de métadonnées Copernicus L2A · Téléchargement uniquement sur commande explicite. "
                "La couverture nuageuse globale ne mesure pas la qualité locale de l’AOI.")
     from src.components.acquisition_downloads import download_queue, show_download_status, show_download_commands
-    show_download_status(download_queue(str(data_dir.resolve())))
+    if not read_only():  # Read-only demo: no queue, so no shared download folder is created.
+        show_download_status(download_queue(str(data_dir.resolve())))
     aois = available_catalogue_aois(data_dir)
     if not aois:
         st.info("Aucune AOI GeoJSON disponible dans le répertoire de données configuré.")
@@ -56,7 +59,7 @@ def show_acquisition_catalogue(data_dir):
                 result = search_catalogue(query, data_dir)
             st.session_state["catalogue_result"] = result
         except CatalogueError as error:
-            st.error(str(error))
+            show_error(error, context="catalogue.recherche")
             return
     if result is None or result.query.fingerprint != query.fingerprint:
         st.session_state.pop("catalogue_selection", None)
@@ -67,7 +70,7 @@ def show_acquisition_catalogue(data_dir):
             result = refresh_local_states(result, data_dir)
         except CatalogueError as error:
             st.session_state.pop("catalogue_selection", None)
-            st.error(str(error))
+            show_error(error, context="catalogue.etat_local")
             return
         st.session_state["catalogue_result"] = result
     st.caption(f"{len(result.records)} acquisitions uniques · recherche UTC : "

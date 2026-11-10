@@ -20,6 +20,7 @@ from rasterio.warp import transform_bounds
 from src.data.external_sources import (
     ExternalLayerDescriptor, LayerLicense, LayerQuality, RetrievalPlan, SpatialExtent, TemporalValidity,
 )
+from src.demo_mode import ensure_writable
 
 BUCKET_URL = "https://esa-worldcover.s3.eu-central-1.amazonaws.com"
 VERSIONS = {"v100": 2020, "v200": 2021}
@@ -125,6 +126,7 @@ def fetch_worldcover_windows(client, store, repository, *, aoi_id: str, wgs84_bo
     ``aoi_geometry_sha256`` (see ``src.geo.aoi_identity``) binds new windows to
     the zone geometry; a window recorded for another geometry is never reused.
     """
+    ensure_writable("Récupération WorldCover")
     adapter = WorldCoverAdapter(version)
     left, bottom, right, top = wgs84_bounds
     output = []
@@ -199,7 +201,8 @@ def _fetch_tile_window(client, store, repository, adapter, tile, *, aoi_id: str,
         repository.save(descriptor, key)
         return path, descriptor, report
     budget = ByteBudget(max_bytes)
-    remote = RangeFile(HttpRangeSource(client, url), budget, label=url)
+    # Public ESA bucket, read without credentials.
+    remote = RangeFile(HttpRangeSource(client, url, anonymous=True), budget, label=url)
     data, profile, estimate = read_remote_window(remote, wgs84_bounds, "EPSG:4326")
     temporary = store.temporary(key)
     try:

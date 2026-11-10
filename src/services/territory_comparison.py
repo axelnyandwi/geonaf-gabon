@@ -84,12 +84,10 @@ def compare_geometries(geometry_a, geometry_b, *, label_a: str = "A", label_b: s
 def compare_territories(registry, territory_a: str, territory_b: str, *, version_a: int | None = None,
                         version_b: int | None = None) -> GeometryComparison:
     """Compare two registered territories; the records are only read, never merged or modified."""
-    import geopandas as gpd
-
     a, b = registry.get(territory_a, version_a), registry.get(territory_b, version_b)
     if (a.territory_id, a.version) == (b.territory_id, b.version):
         raise ValueError("Comparaison d'une version avec elle-même.")
-    geometries = [gpd.read_file(registry.geometry_path(r)).to_crs("EPSG:4326").geometry.union_all() for r in (a, b)]
+    geometries = [registry.geometry(r) for r in (a, b)]     # File or PostGIS; fingerprint checked.
     notes = [f"{r.label} : {r.source.product} {r.source.version}, statut « {r.legal_status} »"
              + (f", limites de {r.source.reference_year}" if r.source.reference_year else "") for r in (a, b)]
     if a.source.reference_year != b.source.reference_year:

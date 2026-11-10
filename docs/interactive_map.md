@@ -1,5 +1,7 @@
 # Carte NDVI interactive V0.2
 
+> **Note du 26/10/2026** : les valeurs Sentinel-2 de ce document (empreinte `b0356911…`, couvertures, pixels comparables) ont été obtenues avant la correction du découpage AOI avec perte. Valeurs corrigées : [lossless_aoi_clip.md](lossless_aoi_clip.md).
+
 ## Lancement local
 
 Streamlit 1.65 ou supérieur est requis pour Components v2. Depuis la racine du dépôt, avec les acquisitions locales vérifiées déjà disponibles :
@@ -15,7 +17,7 @@ La première itération affiche le NDVI de la deuxième acquisition (25 janvier 
 - `src/services/map_layer.py` transforme le résultat scientifique existant en charge utile publique `geonaf.ndvi-map/v1`, sans dépendre de Streamlit ni écrire de raster.
 - `src/components/maplibre/map.js` exporte `mountNdviMap(container, payload, maplibre, onError)`. Il reçoit le moteur MapLibre et retourne `{map, dispose}` ; un futur composant React peut utiliser cette même fonction et appeler `dispose` au démontage.
 - `src/components/interactive_map.py` adapte ce module à Components v2. Il charge les ressources locales et met en cache la préparation des couches.
-- `app.py` orchestre l'affichage et conserve le repli Matplotlib.
+- `src/components/pair_analysis.py` (section « Variation NDVI » des analyses temporelles, ancien corps de `app.py`) orchestre l'affichage et conserve le repli Matplotlib.
 
 La charge utile contient un PNG encodé, ses quatre coins longitude/latitude (nord-ouest, nord-est, sud-est, sud-ouest), les géométries publiques AOI/emprise sans attributs sources, la date, les CRS et la légende. Aucun chemin, manifeste d'acquisition ou secret n'est transmis. Les coordonnées affichées au survol sont des coordonnées géographiques ; aucune valeur NDVI ponctuelle n'est interpolée dans le navigateur.
 

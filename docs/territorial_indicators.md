@@ -1,12 +1,38 @@
-# Chiffres clés du territoire — lot 6, module 1
+# Chiffres clés du territoire - lot 6, module 1
 
-Première section de la page d'accueil (`app.py`), avant les analyses scientifiques. Le moteur
+Section du tableau de bord (`views/tableau_de_bord.py`, navigation V1), après la carte du périmètre
+analysé ; les analyses scientifiques détaillées sont dans la page Analyses temporelles. Le moteur
 `src/services/territorial_indicators.py` ne dépend pas de Streamlit ; l'affichage est dans
 `src/components/territorial_indicators.py`. Aucun accès réseau : seules les couches déjà
 stockées (`data/external/`, catalogue vérifié par empreinte SHA-256) sont lues.
 
 La zone d'étude est le carré d'acquisition de 12 × 12 km (« Zone d'étude Akanda »), **pas une
 limite administrative**. Les AOI voisines se recouvrent.
+
+## Organisation du code (`src/indicators/`, depuis le 28/10/2026)
+
+`src/services/territorial_indicators.py` reste le point d'import historique et réexporte les noms
+publics. L'implémentation est répartie par responsabilité, sans changement de résultat (sorties
+complètes identiques octet pour octet avant et après l'extraction, sur les trois zones locales et le
+paquet v3) :
+
+| Module | Rôle |
+|---|---|
+| `model` | enregistrements (`TerritorialIndicator`…), statuts et niveaux de fiabilité |
+| `profiles` | profils versionnés (`AFRICA_DEFAULT_V1`, empreinte figée par test) |
+| `zone` | zone d'étude = fichier de géométrie polygonale : empreinte, projection UTM locale, aire équivalente |
+| `landcover`, `osm` | mesures (surfaces, longueurs, comptages) sur couches chargées |
+| `provenance` | dates, sources et limites tirées des descripteurs |
+| `quality` | règles de fiabilité et comparabilité temporelle (`assess_change`) |
+| `inventory` | inventaire hors ligne des couches d'une zone (`indicator_inputs`, `inputs_for_zone`) |
+| `assembly` | construction de l'ensemble d'indicateurs |
+
+`inputs_for_zone(data_dir, zone_id, chemin)` accepte un fichier de zone quelconque (par exemple une
+géométrie du registre des territoires) : seules les couches enregistrées pour cet identifiant et
+cette géométrie sont utilisées ; sinon les indicateurs sont « indisponibles ». L'interface ne
+propose encore que les zones d'acquisition ; la limite « carré d'acquisition, pas une limite
+administrative » de la surface de zone reste propre à ces zones (intégration des autres natures de
+zones : V1.1).
 
 ## Contrat de données (`TerritorialIndicator`)
 
@@ -22,6 +48,53 @@ limite administrative**. Les AOI voisines se recouvrent.
 | `shares`, `breakdown` | parts par dénominateur ; ventilation (catégories, regroupements) |
 | `profile_fingerprint` | empreinte du profil d'indicateurs |
 
+## Nature des résultats (`result_kind`)
+
+Chaque indicateur porte explicitement la nature de sa valeur, fixée par l'assemblage
+(`src/indicators/assembly.py`) et jamais déduite par l'interface :
+
+| Nature | Sens | Indicateurs |
+|---|---|---|
+| Mesure géométrique | calcul exact sur la géométrie de la zone d'étude | surface de la zone |
+| Observation d'une base cartographique | contenu d'OpenStreetMap à la date de l'instantané ; ni relevé de terrain ni total réel | voies, nombre et emprise des bâtiments, densité sur toute la zone |
+| Estimation | sortie d'un modèle ou d'une classification, exactitude non vérifiée localement | surfaces WorldCover (terres, végétation, bâti), densité sur la surface terrestre (dénominateur classifié) |
+| Prédiction | projection d'un état futur | aucune dans cette version |
+
+Un indicateur indisponible garde la nature qu'aurait sa valeur.
+
+## Présentation (`src/indicators/presentation.py`, `src/components/territorial_indicators.py`)
+
+- **Cartes** : valeur principale (km² pour les surfaces), valeur secondaire en hectares (affichage
+  seulement, 1 km² = 100 ha), puis pourcentages avec dénominateur nommé : « de la zone d'étude (eaux
+  comprises) » ou « de la surface terrestre (hors eaux permanentes) ». Badges : nature du résultat et
+  fiabilité ; date visible (période observée, sinon état du référentiel). Valeur absente : « Non
+  disponible » et son motif.
+- **Densité de bâtiments sur la surface terrestre** : la carte nomme ses deux sources avec leurs
+  propres dates, lues dans les métadonnées : numérateur OpenStreetMap (date de l'instantané de la
+  base), dénominateur WorldCover (année de la carte), et précise que ce rapport ne décrit pas une
+  même année d'observation. Formule et valeurs inchangées.
+- **Décimales** : virgule décimale et espace fine insécable pour les milliers dans les cartes, les
+  tableaux et les motifs de fiabilité. Les tableaux gardent leurs nombres en pleine précision (tri
+  numérique) ; seul l'affichage est formaté (`french_table`, `src/components/formatting.py`).
+  « - » dans un tableau : sans objet ou non disponible. Les autres pages ne sont pas modifiées.
+- **Section repliable « Provenance et fiabilité »** par carte : nature, source et version, attribution
+  et licence, trois dates, couverture de la source, motifs du niveau de fiabilité, méthode, limites.
+- **Attributions** vérifiées le 28/10/2026 sur les pages des producteurs et affichées sous les cartes :
+  - ESA WorldCover : « © ESA WorldCover project [année] / Contains modified Copernicus Sentinel data
+    ([année]) processed by ESA WorldCover consortium », CC BY 4.0, DOI 10.5281/zenodo.7254221 (v200)
+    ou 10.5281/zenodo.5571936 (v100) - https://esa-worldcover.org/en/data-access. L'année vient de
+    la carte ; l'attribution enregistrée dans les descripteurs (sans année) n'est pas modifiée.
+  - OpenStreetMap : « © OpenStreetMap contributors », ODbL 1.0, lien
+    https://www.openstreetmap.org/copyright.
+  - Toute autre source : texte du descripteur, signalé « non revérifié ».
+- **Glossaire des voies** (affichage seulement ; les catégories et l'empreinte du profil sont
+  inchangées) : « Voies de desserte » s'affiche « Rues de desserte locale » (rues résidentielles,
+  zones de rencontre, voies mineures `unclassified`, type non précisé `road`) ; « Voies de service »
+  s'affiche « Voies d'accès et de service » (accès à un site, un bâtiment, un parking, une
+  installation). Le statut d'accès des voies `service` et le revêtement des pistes `track` ne sont
+  **pas** déduits : ils dépendent d'attributs OSM (`access`, `surface`, `tracktype`) non retenus par
+  l'ingestion actuelle. Les valeurs `highway` sont traduites, valeur brute entre parenthèses.
+
 ## Profil d'indicateurs versionné
 
 `AFRICA_DEFAULT_V1` (`geonaf-indicateurs-afrique` 1.0.0) contient tous les regroupements. Un
@@ -29,7 +102,7 @@ autre pays ou écosystème reçoit un **nouveau** profil (nouvelle empreinte), j
 modification de celui-ci. La projection métrique des vecteurs est la zone UTM de l'AOI
 (`estimate_utm_crs`), valable partout en Afrique.
 
-**Végétation (ESA WorldCover)** — classes 10, 20, 30, 40, 90, 95 :
+**Végétation (ESA WorldCover)** - classes 10, 20, 30, 40, 90, 95 :
 
 | Regroupement | Classes |
 |---|---|
@@ -90,7 +163,7 @@ refusés : algorithmes différents.
 État local au 23/10/2026 : une seule version WorldCover (v200) et un seul instantané OSM par
 zone ⇒ **aucune évolution affichée**, et l'interface le dit.
 
-## Résultats réels — Zone d'étude Akanda (23/10/2026)
+## Résultats réels - Zone d'étude Akanda (23/10/2026)
 
 Entrées : WorldCover v200 (carte 2021, ingérée le 22/10/2026), base OSM du 22/10/2026 16:57 UTC.
 
@@ -98,9 +171,9 @@ Entrées : WorldCover v200 (carte 2021, ingérée le 22/10/2026), base OSM du 22
 |---|---|
 | Surface de la zone d'étude | 144,11 km² |
 | Surface terrestre | 107,44 km² (74,55 %) ; eaux permanentes 36,56 km² |
-| Surface végétalisée | 82,58 km² — 57,30 % de la zone, 76,86 % des terres |
+| Surface végétalisée | 82,58 km² - 57,30 % de la zone, 76,86 % des terres |
 | · Végétation naturelle / Cultures / Mangroves | 63,95 / 0,012 / 18,62 km² |
-| Surface bâtie (classe Bâti) | 23,92 km² — 16,60 % de la zone, 22,26 % des terres |
+| Surface bâtie (classe Bâti) | 23,92 km² - 16,60 % de la zone, 22,26 % des terres |
 | Voies cartographiées | 635 km de tronçons (desserte 381, service 150, tertiaires 39, principaux 25, secondaires 21, pistes 14, chemins 4,5) |
 | Bâtiments cartographiés | 36 006 (point représentatif ; 36 012 intersectent la zone) |
 | Densité de bâtiments cartographiés | 335 /km² de terres ; 250 /km² de zone |
