@@ -34,7 +34,7 @@ def show_pair_analysis(data_dir, aoi_id: str, *, context: str = "accueil.analyse
         if configuration is None:
             return
         profile = configuration.effective
-        observations = local_preview.list_local_observations(data_dir)
+        observations = local_preview.list_local_observations(data_dir, aoi_id)
         if len(observations) < 2:
             st.error("Deux acquisitions locales vérifiées au minimum sont nécessaires.")
             return

@@ -431,7 +431,7 @@ def test_pack_v3_pairs_with_20_january_stay_unpublished(pack_selection):
         assert all(i.value is None for i in build_s2_transition_indicators(pair, result))
     # Even computed through the chain, the 15 → 20 pair is refused on its real common coverage.
     earliest = next(p for p in with_20 if p.earlier.acquired_at_utc.day == 15)
-    computed = _evaluate(earliest, _observation_groups(PACK), PACK, AKANDA, S2_NDVI_TRANSITION_V0,
+    computed = _evaluate(earliest, _observation_groups(PACK, "akanda"), PACK, AKANDA, S2_NDVI_TRANSITION_V0,
                          load_equal_area_aoi(PACK / "aoi" / "akanda.geojson"))
     assert computed.status == NOT_PUBLISHABLE and "< 30 %" in computed.reasons[0]
     assert computed.measure.common_coverage_percent <= earliest.coverage_upper_bound_percent

@@ -212,7 +212,7 @@ def show_multisource(data_dir, *, shared_zone: bool = False):
         return
     profile = configuration.effective
     try:
-        groups = group_local_observations(list_local_observations(data_dir))
+        groups = group_local_observations(list_local_observations(data_dir, aoi_id))
     except LocalPreviewError as error:
         show_error(error, context="multisource.acquisitions")
         return

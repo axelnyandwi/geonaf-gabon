@@ -83,7 +83,8 @@ def s2_inventory_key(data_dir, aoi_id: str, *, year: int = 2025, scientific_prof
     data_dir = Path(data_dir)
     scientific_profile = scientific_profile or REFERENCE_PROFILES[aoi_id]
     aoi_path = data_dir / "aoi" / f"{aoi_id}.geojson"
-    groups = group_local_observations([o for o in list_local_observations(data_dir) if o.acquired_at.year == year])
+    groups = group_local_observations([o for o in list_local_observations(data_dir, aoi_id)
+                                       if o.acquired_at.year == year])
     return ("s2-vegetation-v1", aoi_id, hashlib.sha256(aoi_path.read_bytes()).hexdigest(), year, max_acquisitions,
             scientific_profile.fingerprint, profile.fingerprint,
             tuple(local_group_key(group, data_dir, scientific_profile) for group in groups))
@@ -131,7 +132,7 @@ def s2_vegetation_inventory(data_dir, aoi_id: str, *, year: int = 2025, scientif
         return S2VegetationInventory(**common, estimates=(), notes=tuple(
             "Calcul Sentinel-2 refusé avant traitement : " + check.reason for check in guard.refusals))
     try:
-        observations = [o for o in list_local_observations(data_dir) if o.acquired_at.year == year]
+        observations = [o for o in list_local_observations(data_dir, aoi_id) if o.acquired_at.year == year]
     except LocalPreviewError as error:
         return S2VegetationInventory(**common, estimates=(), notes=(str(error),))
     groups = group_local_observations(observations)

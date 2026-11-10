@@ -128,11 +128,11 @@ def s2_pairs_key(data_dir, aoi_id: str, *, year: int = 2025, scientific_profile=
             profile.fingerprint, max_pairs, only)
 
 
-def _observation_groups(data_dir):
+def _observation_groups(data_dir, aoi_id: str):
     from src.services.local_preview import group_local_observations, list_local_observations
 
     return {tuple(o.product_id for o in group): group for group in group_local_observations(
-        list_local_observations(data_dir))}
+        list_local_observations(data_dir, aoi_id))}
 
 
 def _evaluate(pair, groups, data_dir, scientific_profile, profile, zone) -> PairCandidate:
@@ -234,7 +234,7 @@ def s2_pair_selection(data_dir, aoi_id: str, *, inventory: S2VegetationInventory
         return S2PairSelection(**common, pairs=tuple(_with(p, NOT_EVALUATED, reasons) for p in candidates) + rejected,
                                notes=tuple(notes) + reasons)
     try:
-        groups = _observation_groups(data_dir)
+        groups = _observation_groups(data_dir, aoi_id)
     except LocalPreviewError as error:
         return S2PairSelection(**common, pairs=tuple(_with(p, NOT_EVALUATED, (str(error),)) for p in candidates)
                                + rejected, notes=tuple(notes) + (str(error),))
