@@ -7,7 +7,8 @@
     "tests/test_postgis_storage_integration.py::test_migration_0002_privileges_and_row_level_security",
     "tests/test_postgis_storage_integration.py::test_migration_0002_downgrade_removes_only_its_objects",
     "tests/test_supabase_mark_postgis_integration.py::test_s0_cannot_become_test_even_with_operator_confirmations",
-    "tests/test_supabase_mark_postgis_integration.py::test_independent_local_database_identity_is_required"
+    "tests/test_supabase_mark_postgis_integration.py::test_independent_local_database_identity_is_required",
+    "tests/test_generate_observations_sql.py::test_generated_sql_compiles_and_stops_at_the_first_failing_guard"
   ],
   "public": [
     "tests/test_postgis_territory_integration.py::test_alembic_upgrade_downgrade_upgrade",

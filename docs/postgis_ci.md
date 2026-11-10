@@ -50,9 +50,26 @@ La liste exacte des identifiants pytest est versionnée dans `scripts/ci/postgis
 
 | Variante | Tests requis | Portée |
 | --- | ---: | --- |
-| `plain` | 6 | Refus sans marque, absence de PostGIS explicite, confidentialité des erreurs ; contraintes, triggers, RLS et downgrade SQL 0002 avec types de substitution explicitement limités |
-| `public` | 21 | PostGIS réel dans public ; Alembic réel 0001/0002, upgrade/downgrade/base/réapplication, rollback DDL, imports, droits/RLS, R5 bis, GiST et parité synthétique |
-| `extensions` | 21 | Mêmes validations, avec PostGIS réellement installé dans extensions |
+| `plain` | 9 | Refus sans marque, absence de PostGIS explicite, confidentialité des erreurs ; contraintes, triggers, RLS et downgrade SQL 0002 avec types de substitution explicitement limités ; compilation PL/pgSQL de l'import SQL Editor généré (D3) et arrêt sur le premier garde-fou |
+| `public` | 23 | PostGIS réel dans public ; Alembic réel 0001/0002, upgrade/downgrade/base/réapplication, rollback DDL, imports, droits/RLS, R5 bis, GiST et parité synthétique |
+| `extensions` | 39 | Mêmes validations, avec PostGIS réellement installé dans extensions, et scénarios de marquage SQL Editor |
+
+## Workflow hors ligne `offline-tests.yml` (D3, D5, Node)
+
+Job Ubuntu 24.04 distinct, mêmes déclencheurs, `contents: read`, aucune base, aucun secret, aucun
+appel Supabase. Python 3.13.18 et `requirements-ci-postgis.txt` (épingles existantes) ; Node 22.14.0
+via `actions/setup-node` v6 épinglé (`249970729cb0ef3589644e2896645e5dc5ba9c38`, vérifié le
+10 novembre 2026 via l'API GitHub). `scripts/ci/offline_validation.py` exécute la liste explicite de
+`scripts/ci/offline-tests.json` :
+
+- pytest `-m "not postgis"` sur les tests D5 (client HTTPS, SCRAM, cohérence SQL/fonction, `.gitignore`),
+  l'intégration Streamlit D5, le générateur SQL D3 et les contrats CI ;
+- `node --test` sur tous les `tests/frontend/test_*.mjs`, dont la sécurité de la fonction Edge.
+
+Échec fermé : code non nul, échec, erreur, skip, todo ou fichier listé sans cas invalide l'exécution.
+Le type TypeScript de `index.ts` (runtime Deno) n'est ni compilé ni exécuté. Les 8 cas `postgis` de
+`test_edge_acquisitions_d5.py` (scripts 13, connexion SCRAM réelle) restent hors CI : ils exigent
+`CREATEROLE`, que le rôle `geonaf_migrator` de la CI n'a volontairement pas.
 
 Le job sans extension ne prétend pas valider la géométrie ou les migrations spatiales.
 Les deux autres jobs exécutent notamment :

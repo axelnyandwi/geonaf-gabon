@@ -1,0 +1,15 @@
+{
+  "pytest": [
+    "tests/test_edge_acquisitions_d5.py",
+    "tests/test_supabase_acquisitions_streamlit.py",
+    "tests/test_generate_observations_sql.py",
+    "tests/test_postgis_ci_workflow.py",
+    "tests/test_offline_ci_workflow.py"
+  ],
+  "node": [
+    "tests/frontend/test_edge_acquisitions_security.mjs",
+    "tests/frontend/test_multisource_map.mjs",
+    "tests/frontend/test_ndvi_map.mjs",
+    "tests/frontend/test_temporal_map.mjs"
+  ]
+}
