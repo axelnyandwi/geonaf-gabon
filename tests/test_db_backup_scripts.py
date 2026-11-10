@@ -136,15 +136,39 @@ def test_safe_paths_reject_the_repository_and_onedrive_in_the_code():
         assert rule in common, rule
 
 
+def test_scripts_resolve_paths_and_tools_on_windows_and_linux():
+    """Linux CI (demo-pack-linux): no USERPROFILE, executables without .exe, / as separator."""
+    for path in (BACKUP, RESTORE, PREREQ):
+        content = text(path)
+        assert "$env:USERPROFILE" not in content, path.name
+        assert "[Environment]::GetFolderPath('UserProfile')" in content, path.name
+    common = text(COMMON)
+    finder = common[common.index("function Find-GeonafPgTool"):common.index("function Get-GeonafPgToolMajor")]
+    assert 'if ($script:GeonafOnWindows) { "$Name.exe" } else { $Name }' in finder
+    under = common[common.index("function Test-GeonafPathUnder"):common.index("function Assert-GeonafSafeOutputPath")]
+    assert "DirectorySeparatorChar" in under and "TrimEnd('\\') + '\\'" not in under
+    assert "'[\\\\/]OneDrive( - [^\\\\/]+)?([\\\\/]|$)'" in common       # Folder name refused with \ and with /.
+
+
+def test_private_directory_is_refused_outside_windows_before_creation():
+    """icacls is the only way rights are restricted: elsewhere nothing is created (refusal by default)."""
+    common = text(COMMON)
+    body = common[common.index("function New-GeonafPrivateDirectory"):common.index("function Find-GeonafPgTool")]
+    refusal = body.index("if (-not $script:GeonafOnWindows) { Stop-Geonaf")
+    assert body.index("existe deja") < refusal < body.index("New-Item -ItemType Directory") < body.index("icacls.exe")
+
+
 # --- Behaviour of the refusals (pwsh, no connection) ---------------------------------------------------
 
 needs_pwsh = pytest.mark.skipif(PWSH is None, reason="pwsh absent : comportement des scripts non teste.")
 
 
-def run_pwsh(script: Path, *args: str, env: dict | None = None) -> subprocess.CompletedProcess:
+def run_pwsh(script: Path, *args: str, env: dict | None = None, drop: tuple = ()) -> subprocess.CompletedProcess:
     # Windows variable names ignore case (os.environ upper-cases them): replace, never duplicate, a variable.
     overrides = {k.upper(): (k, v) for k, v in (env or {}).items()}
-    environment = {k: v for k, v in os.environ.items() if not k.upper().startswith("PG") and k.upper() not in overrides}
+    dropped = {name.upper() for name in drop}
+    environment = {k: v for k, v in os.environ.items() if not k.upper().startswith("PG")
+                   and k.upper() not in overrides and k.upper() not in dropped}
     environment.update(dict(overrides.values()))
     return subprocess.run([PWSH, "-NoProfile", "-NonInteractive", "-File", str(script), *args], capture_output=True,
                           text=True, encoding="utf-8", errors="replace", env=environment, timeout=120)
@@ -208,6 +232,19 @@ def test_backup_refuses_an_output_directory_in_the_repository_or_onedrive(tmp_pa
 def test_restore_refuses_any_target_other_than_a_new_local_database(tmp_path, args, message):
     result = run_pwsh(RESTORE, "-BackupDir", str(tmp_path), *args, "-Execute")
     assert result.returncode == 2 and message in result.stdout, result.stdout + result.stderr
+
+
+@needs_pwsh
+@pytest.mark.parametrize("script, args, message", [
+    (RESTORE, ("-TargetHost", POOLER, "-TargetDatabase", "geonaf_restore_x"), "hote local seulement"),
+    (BACKUP, ("-ProjectLabel", "geonaf-test", "-PgHost", "db.example.com", "-PgUser", "postgres"), "hote non reconnu"),
+])
+def test_refusals_do_not_depend_on_userprofile(tmp_path, script, args, message):
+    """Linux has no USERPROFILE: the default output directory must not fail before the refusal is decided."""
+    extra = ("-BackupDir", str(tmp_path)) if script == RESTORE else ()
+    result = run_pwsh(script, *extra, *args, "-Execute", drop=("USERPROFILE",))
+    assert result.returncode == 2 and message in result.stdout, result.stdout + result.stderr
+    assert "GEONAF REFUS" in result.stdout
 
 
 @needs_pwsh

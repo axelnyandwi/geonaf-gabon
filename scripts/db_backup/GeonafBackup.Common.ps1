@@ -12,6 +12,8 @@ Set-StrictMode -Version 3.0
 $ErrorActionPreference = 'Stop'
 
 $script:GeonafRepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '..\..')).Path
+# Windows or not, read without $IsWindows (absent from Windows PowerShell 5.1 and refused by StrictMode there).
+$script:GeonafOnWindows = [Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT
 $script:GeonafExpectedTables = @('acquisitions', 'analysis_acquisitions', 'analysis_runs', 'indicator_definitions',
                                  'indicator_results', 'sources', 'territories', 'territory_versions')
 $script:GeonafConnectionVariables = @('PGHOST', 'PGHOSTADDR', 'PGPORT', 'PGUSER', 'PGDATABASE', 'PGPASSWORD', 'PGPASSFILE',
@@ -49,9 +51,13 @@ function Get-GeonafMaskedUser([string] $UserName) {
 }
 
 function Test-GeonafPathUnder([string] $Path, [string] $Root) {
+    # Separator of the platform (\ on Windows, / elsewhere): a hard-coded \ never matched a Linux path, so the
+    # repository and OneDrive refusals were inoperative there. Case ignored everywhere: refuses more, never less.
     if ([string]::IsNullOrWhiteSpace($Root)) { return $false }
-    $full = [System.IO.Path]::GetFullPath($Path).TrimEnd('\') + '\'
-    $base = [System.IO.Path]::GetFullPath($Root).TrimEnd('\') + '\'
+    $separators = [char[]]@('\', '/')
+    $sep = [System.IO.Path]::DirectorySeparatorChar
+    $full = [System.IO.Path]::GetFullPath($Path).TrimEnd($separators) + $sep
+    $base = [System.IO.Path]::GetFullPath($Root).TrimEnd($separators) + $sep
     return $full.StartsWith($base, [System.StringComparison]::OrdinalIgnoreCase)
 }
 
@@ -65,7 +71,7 @@ function Assert-GeonafSafeOutputPath([string] $Path) {
             Stop-Geonaf 'le dossier de sortie est synchronise par OneDrive.'
         }
     }
-    if ($full -match '\\OneDrive( - [^\\]+)?(\\|$)') { Stop-Geonaf 'le dossier de sortie est synchronise par OneDrive.' }
+    if ($full -match '[\\/]OneDrive( - [^\\/]+)?([\\/]|$)') { Stop-Geonaf 'le dossier de sortie est synchronise par OneDrive.' }
     if ($full.StartsWith('\\')) { Stop-Geonaf 'dossier reseau refuse : la sauvegarde reste sur le poste.' }
     return $full
 }
@@ -73,6 +79,9 @@ function Assert-GeonafSafeOutputPath([string] $Path) {
 function New-GeonafPrivateDirectory([string] $Path) {
     # A new directory only (never reuse one), then inheritance removed and full control for the current user.
     if (Test-Path -LiteralPath $Path) { Stop-Geonaf "le dossier existe deja, il n'est jamais reutilise : $Path" }
+    # Private rights are set with icacls only: elsewhere, refuse before creating anything rather than write a
+    # backup or a report into a directory readable by others.
+    if (-not $script:GeonafOnWindows) { Stop-Geonaf 'execution reservee a Windows : droits prives du dossier non garantis sur ce systeme.' }
     New-Item -ItemType Directory -Path $Path | Out-Null
     $sid = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
     & icacls.exe $Path /inheritance:r /grant:r "*${sid}:(OI)(CI)F" | Out-Null
@@ -80,12 +89,16 @@ function New-GeonafPrivateDirectory([string] $Path) {
 }
 
 function Find-GeonafPgTool([string] $Name, [string] $PgBin) {
+    # pg_dump.exe on Windows, pg_dump elsewhere (Linux and macOS executables carry no extension).
+    $file = if ($script:GeonafOnWindows) { "$Name.exe" } else { $Name }
     $candidates = @()
-    if ($PgBin) { $candidates += Join-Path $PgBin "$Name.exe" }
-    $onPath = Get-Command "$Name.exe" -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
+    if ($PgBin) { $candidates += Join-Path $PgBin $file }
+    $onPath = Get-Command $file -CommandType Application -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($onPath) { $candidates += $onPath.Source }
-    $candidates += Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin' -Filter "$Name.exe" -ErrorAction SilentlyContinue |
-                   Sort-Object FullName -Descending | ForEach-Object FullName
+    if ($script:GeonafOnWindows) {
+        $candidates += Get-ChildItem 'C:\Program Files\PostgreSQL\*\bin' -Filter $file -ErrorAction SilentlyContinue |
+                       Sort-Object FullName -Descending | ForEach-Object FullName
+    }
     foreach ($candidate in $candidates) { if ($candidate -and (Test-Path -LiteralPath $candidate)) { return $candidate } }
     return $null
 }

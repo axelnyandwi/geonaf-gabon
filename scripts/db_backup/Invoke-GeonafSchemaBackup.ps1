@@ -26,7 +26,8 @@ param(
     [int] $PgPort = 5432,
     [string] $PgDatabase = 'postgres',
     [string] $PgBin,
-    [string] $OutputRoot = (Join-Path $env:USERPROFILE '.geonaf\backups'),
+    # Profile from the OS (USERPROFILE on Windows, HOME elsewhere): the USERPROFILE variable does not exist on Linux.
+    [string] $OutputRoot = (Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.geonaf') 'backups'),
     [string] $SslRootCert,
     [switch] $NoPasswordPrompt,
     [switch] $Execute

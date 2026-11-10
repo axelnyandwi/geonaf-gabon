@@ -16,7 +16,8 @@ pwsh -File scripts/db_backup/Test-GeonafBackupPrerequisites.ps1 -PgBin 'C:\Progr
 param(
     [string] $PgBin,
     [int] $ServerMajor = 17,
-    [string] $OutputRoot = (Join-Path $env:USERPROFILE '.geonaf\backups'),
+    # Profile from the OS (USERPROFILE on Windows, HOME elsewhere): the USERPROFILE variable does not exist on Linux.
+    [string] $OutputRoot = (Join-Path (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.geonaf') 'backups'),
     [switch] $TestNetwork,
     [string] $PgHost,
     [int] $PgPort = 5432
