@@ -29,7 +29,10 @@ PACK_MANIFEST = "PACK_MANIFEST.json"
 INSTALL_MARKER = ".geonaf-install.json"
 MAX_ARCHIVE_BYTES = 64 * 1024**2
 MAX_EXTRACTED_BYTES = 160 * 1024**2
-MAX_MEMBERS = 256
+# Members: Estuaire v4 (three territories) measured at 296 ZIP members (Akanda v3: 228); 320 keeps an
+# 8 % margin. Archive (v4: 56.7 MiB), extracted size (106.9 MiB) and ratio (max 8.9) fit the other
+# limits unchanged. Every check of safe_extract still applies to every member.
+MAX_MEMBERS = 320
 MAX_COMPRESSION_RATIO = 50
 CHUNK = 1024 * 1024
 # Release assets of github.com redirect to these hosts; any other host is refused.
@@ -311,18 +314,21 @@ def pack_summary(manifest: dict) -> list[str]:
     lines = [f"Paquet de démonstration {manifest.get('pack_id')} v{manifest.get('pack_version')} - "
              f"{manifest.get('aoi', {}).get('statement', '')}"]
     sentinel2 = manifest.get("sentinel2", {})
+    labels = {item.get("id"): item.get("label") for item in manifest.get("aoi", {}).get("territories", [])}
     for item in sentinel2.get("acquisitions", []):
         quality = item.get("quality", {})
         status = ("exclue des tendances (couverture exploitable très faible)"
                   if quality.get("trend_use") == "excluded_low_coverage" else "utilisable, non validée")
         coverage = f"{quality.get('valid_coverage_percent', float('nan')):.2f}".replace(".", ",")  # French display.
-        lines.append(f"Sentinel-2 acquis le {_french_day(item['acquired_at_utc'])} (ingéré le "
+        zone = f"{labels.get(item['aoi_id'], item['aoi_id'])} - " if item.get("aoi_id") else ""  # v4: per territory.
+        lines.append(f"{zone}Sentinel-2 acquis le {_french_day(item['acquired_at_utc'])} (ingéré le "
                      f"{_french_day(item['ingested_at_utc'])}) : couverture valide {coverage} % - {status}.")
     lines.append(f"Extraits sans rééchantillonnage de tuiles {sentinel2.get('tile', '')} vérifiées. "
                  f"{sentinel2.get('attribution', '')}.")
     for layer in manifest.get("external_layers", []):
         license_ = layer.get("license", {})
-        lines.append(f"{layer.get('product') or layer.get('source_id')} - {license_.get('attribution', '')} "
+        zone = f"{labels.get(layer['aoi_id'], layer['aoi_id'])} - " if layer.get("aoi_id") else ""
+        lines.append(f"{zone}{layer.get('product') or layer.get('source_id')} - {license_.get('attribution', '')} "
                      f"({license_.get('spdx_id', '')}).")
     boundaries = manifest.get("boundaries", {})
     if boundaries:
