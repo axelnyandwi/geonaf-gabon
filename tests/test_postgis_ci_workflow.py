@@ -81,21 +81,47 @@ def test_workflow_and_manifest_contract():
     job = workflow["jobs"]["validate"]
     assert job["runs-on"] == "ubuntu-24.04"
     assert job["timeout-minutes"] <= 30
-    assert job["strategy"]["matrix"]["variant"] == ["plain", "public", "extensions"]
+    variants = ["plain", "public", "extensions", "pg17", "supabase17"]
+    assert job["strategy"]["matrix"]["variant"] == variants
+    assert set(ci.IMAGES) == set(ci.EXPECTED) == set(variants)
     for step in job["steps"]:
         if "uses" in step:
             assert len(step["uses"].split("@")[1]) == 40
     assert job["steps"][0]["with"]["persist-credentials"] is False
     assert "secrets." not in json.dumps(workflow)
-    for variant in ("plain", "public", "extensions"):
+    for variant in variants:
         assert len(ci.IMAGES[variant].split("@sha256:")[1]) == 64
         nodes = ci.required(variant)
         assert nodes and len(nodes) == len(set(nodes))
         for node in nodes:
             filename, name = node.split("::")
             tree = ast.parse((ROOT / filename).read_text(encoding="utf-8"))
-            assert name in {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
-    assert "test_real_registry_import_and_parity" not in str(ci.required("public"))
+            # A parametrized case is listed with its id, e.g. test_x[db/supabase/00_preflight.sql].
+            assert name.split("[")[0] in {n.name for n in tree.body if isinstance(n, ast.FunctionDef)}
+    for variant in ("public", "supabase17"):
+        assert "test_real_registry_import_and_parity" not in str(ci.required(variant))
+    # Never a real Supabase project, nor a case that needs a superuser login.
+    assert "test_database_integration.py" not in str(ci.required("pg17"))
+    assert "test_event_trigger_effects" not in str(ci.required("pg17"))
+
+
+def test_d26_variants_pin_postgresql_17_and_the_supabase_postgis_build():
+    assert ci.EXPECTED["pg17"] == (17, None)
+    assert ci.EXPECTED["supabase17"] == (17, ("extensions", "3.3.7"))
+    assert ci.IMAGES["supabase17"].startswith("supabase/postgres:17.11.0.018@sha256:")
+    assert ci.required("supabase17") == ci.required("extensions")
+    # Only the pg17 runner gets CREATEROLE; every variant keeps non-superuser, non-BYPASSRLS logins.
+    source = (ROOT / "scripts/ci/postgis_validation.py").read_text(encoding="utf-8")
+    assert "LOGIN NOSUPERUSER NOCREATEDB {} NOBYPASSRLS" in source
+    assert '"CREATEROLE" if variant == "pg17" else "NOCREATEROLE"' in source
+
+
+def test_parameter_ids_with_slashes_match_their_junit_case(tmp_path):
+    path = tmp_path / "raw.xml"
+    path.write_text('<testsuites><testsuite><testcase classname="tests.test_example" '
+                    'name="test_one[db/supabase/00_preflight.sql]"/></testsuite></testsuites>')
+    nodes = ["tests/test_example.py::test_one[db/supabase/00_preflight.sql]"]
+    assert ci.report(path, nodes, tmp_path / "reports", 0)
 
 
 

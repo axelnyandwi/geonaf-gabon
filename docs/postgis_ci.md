@@ -7,12 +7,10 @@ résultat réel ne sera connu qu'après publication et exécution explicitement 
 
 ## Exécution et isolation
 
-Trois jobs Ubuntu 24.04 x64, Python 3.13.18, au plus deux simultanés, 25 minutes
-maximum chacun. Un nouveau push sur la même branche annule l'exécution précédente.
-Déclencheurs : push sur `db/d2a-territory-registry` et `workflow_dispatch`.
-Attention : publier cette branche déclenchera donc la CI. Le déclenchement manuel
-exige normalement l'enregistrement du workflow sur la branche par défaut ; aucune
-modification de cette branche n'est proposée ici.
+Cinq jobs Ubuntu 24.04 x64 (trois avant D2.6), Python 3.13.18, au plus deux simultanés,
+25 minutes maximum chacun. Un nouveau push sur la même branche annule l'exécution précédente.
+Déclencheurs : push sur `db/d2a-territory-registry`, `main` et `ci/d26-pg17-postgis33`,
+pull request vers `main`, et `workflow_dispatch`. Publier l'une de ces branches déclenche la CI.
 
 Les conteneurs sont démarrés par `scripts/ci/postgis_validation.py`, après génération
 et masquage de mots de passe aléatoires. Ce choix évite un mot de passe statique dans
@@ -53,6 +51,21 @@ La liste exacte des identifiants pytest est versionnée dans `scripts/ci/postgis
 | `plain` | 9 | Refus sans marque, absence de PostGIS explicite, confidentialité des erreurs ; contraintes, triggers, RLS et downgrade SQL 0002 avec types de substitution explicitement limités ; compilation PL/pgSQL de l'import SQL Editor généré (D3) et arrêt sur le premier garde-fou |
 | `public` | 23 | PostGIS réel dans public ; Alembic réel 0001/0002, upgrade/downgrade/base/réapplication, rollback DDL, imports, droits/RLS, R5 bis, GiST et parité synthétique |
 | `extensions` | 39 | Mêmes validations, avec PostGIS réellement installé dans extensions, et scénarios de marquage SQL Editor |
+| `pg17` (D2.6) | 124 | PostgreSQL 17.11 sans PostGIS : scripts SQL Editor Supabase (00, 01, 03, 08, 09, 10, 11, 12, 13), préconditions de 0002, contrôle de marque des imports, privilèges, Edge D5 (SCRAM réel), résolution de types |
+| `supabase17` (D2.6) | 39 | Liste `extensions` rejouée sur la construction Supabase de PostgreSQL 17 avec PostGIS 3.3.7 dans `extensions` |
+
+Variante `pg17` : un seul login `geonaf_ci_runner`, propriétaire de la base, `NOSUPERUSER NOBYPASSRLS`
+mais `CREATEROLE`, car les scripts testés créent eux-mêmes les rôles GEONAF et Edge. Depuis PostgreSQL 16,
+`CREATEROLE` ne donne prise que sur les rôles créés par ce login ; `createrole_self_grant = 'set, inherit'`
+lui permet de nettoyer ce qu'il a créé. Aucun rôle `geonaf_*` n'est provisionné à l'avance dans cette variante.
+
+Variante `supabase17` : image `supabase/postgres`, administrateur `supabase_admin` (utilisé seulement pour
+le provisionnement), même base neuve depuis `template0` et mêmes trois logins que `extensions`. Le `pg_hba`
+de l'image fait confiance à 127.0.0.1 *dans* le conteneur ; les connexions du runner arrivent par le pont
+Docker et sont authentifiées par SCRAM.
+
+Les cas paramétrés figurent dans le manifeste avec leur identifiant (`test_x[param]`) ; seule la partie
+fichier de l'identifiant est convertie pour la comparaison avec le JUnit.
 
 ## Workflow hors ligne `offline-tests.yml` (D3, D5, Node)
 
@@ -135,29 +148,28 @@ L'environnement Supabase documenté dans ce dépôt utilise d'autres versions :
 | PostgreSQL | 16.15 | 17.11 | `tests/test_supabase_scripts_execution.py`, `docs/supabase_backup_d2_9c.md` (client 17 requis) |
 | PostGIS | 3.6.4 | 3.3.7, schéma `extensions` | `docs/supabase_legacy_schema_plan.md` |
 
-La variante `extensions` reproduit le schéma d'installation, pas les versions. Une fonction
-PostGIS postérieure à 3.3, ou un comportement propre à PostgreSQL 17, peut donc réussir en CI et
-échouer sur Supabase. Un succès de cette CI ne vaut pas validation sur Supabase ; aucune version
-de dépendance ni d'image n'est modifiée pour réduire cet écart dans ce lot.
+Depuis D2.6, les variantes `pg17` et `supabase17` réduisent cet écart de version. Elles n'éliminent
+pas l'écart de plateforme :
+- `supabase17` est la construction Supabase de PostgreSQL 17 / PostGIS 3.3.7 (`supabase/postgres:17.11.0.018`,
+  dont le fichier source `nix/ext/versions.json` associe PostGIS 3.3.7 à PostgreSQL 17), pas un projet Supabase ;
+- la base de test est neuve (`template0`) : les privilèges par défaut, déclencheurs d'événement et schémas
+  installés par Supabase dans la base `postgres` d'un projet ne s'y trouvent pas ;
+- pooler, TLS, SQL Editor, Data API et rôles gérés par la plateforme ne sont pas testés.
 
-## Tests PostGIS hors de la première CI
+Un succès de cette CI ne vaut donc pas validation de compatibilité Supabase complète.
 
-`pytest -m postgis` collecte 139 cas. La CI en exige 25 distincts (48 exécutions sur trois
-variantes). Les **114 autres restent non validés** : ils ne sont ni exécutés ni présentés comme réussis.
+## Tests PostGIS hors CI
 
-| Fichier | Cas hors CI | Motif principal |
+`pytest -m postgis` collecte 179 cas (commit `382873b`). Avant D2.6, la CI en exigeait 44 distincts
+(71 exécutions). Avec `pg17`, 168 cas distincts sont exigés. Les **11 restants ne sont pas validés** :
+
+| Fichier | Cas | Motif |
 | --- | ---: | --- |
-| `test_supabase_corrections_integration.py` | 37 | Scripts Supabase correctifs, hors matrice |
-| `test_supabase_legacy_rename_integration.py` | 25 | Renommage du schéma historique, hors matrice |
-| `test_supabase_legacy_verify_integration.py` | 22 | Vérification post-renommage, hors matrice |
-| `test_supabase_scripts_execution.py` | 9 | Scripts SQL Editor ; l'un exige PostgreSQL 17 |
-| `test_sql_char_concatenation.py` | 9 | Résolution de types des scripts en lecture seule |
-| `test_supabase_state_diagnostic_integration.py` | 7 | Diagnostic d'état Supabase |
-| `test_database_integration.py` | 3 | Base réelle (`GEONAF_DB_INTEGRATION=1`) |
-| `test_db_backup_scripts.py` | 1 | pwsh et binaires PostgreSQL requis |
-| `test_postgis_territory_integration.py` | 1 | `test_real_registry_import_and_parity` : données réelles |
-
-Les étendre exigera une revue du manifeste et, pour les scripts Supabase, un serveur PostgreSQL 17.
+| `test_database_integration.py` | 3 | Projet Supabase réel (`GEONAF_DB_INTEGRATION=1`) : exclu par principe |
+| `test_supabase_legacy_rename_integration.py` | 3 | Déclencheurs d'événement : exigent un superutilisateur |
+| `test_supabase_scripts_execution.py` | 3 | Scripts 02/04/90 après 0001 : déclarés « non automatisés » par le test lui-même |
+| `test_db_backup_scripts.py` | 1 | pwsh et binaires PostgreSQL 17 sur le runner |
+| `test_postgis_territory_integration.py` | 1 | Données réelles du registre, hors Git |
 
 ## Confidentialité, coût et limites
 
