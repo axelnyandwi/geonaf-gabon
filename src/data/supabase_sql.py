@@ -62,7 +62,8 @@ RELEASE_TYPES = {"source_id": "text", "product": "text", "source_version": "text
 EXPORT_COLUMNS = ("territory_id", "version", "kind", "label", "legal_status", "geometry_sha256", "file_sha256",
                   "storage_key", "supersedes", "record_fingerprint", "record_document", "retrieved_at_utc",
                   "source_id", "product", "source_version", "licence_id", "attribution", "url", "share_alike",
-                  "reference_year", "source_geometry_type", "wkb_sha256")
+                  "reference_year", "source_geometry_type", "wkb_sha256", "srid", "total_rows")
+STORAGE_SRID = 4326                       # WGS84: storage CRS of geonaf.geometries (metric work: EPSG:32632).
 
 
 # --- Literals ------------------------------------------------------------------------------------
@@ -498,15 +499,29 @@ def verify_import_sql(plan: ImportPlan) -> str:
 
 
 def check_export_rows(rows: Iterable[Mapping[str, str]], plan: ImportPlan) -> list[str]:
-    """Problems found in the CSV export of 07_export_parity.sql (empty list: database = file registry)."""
+    """Problems found in the CSV export of 07_export_parity.sql (empty list: database = file registry).
+
+    Besides the record and geometry checks: a key exported twice, a geometry not stored in EPSG:4326 and
+    a download that holds fewer (or more) rows than the query counted (total_rows) are problems too.
+    """
+    rows = list(rows)
     problems, seen = [], set()
     expected = {(r.territory_id, r.version): r for r in plan.records}
     nullable = {"supersedes", "retrieved_at_utc", "url", "reference_year"}
+    totals = {raw.get("total_rows") for raw in rows}
+    if rows and totals != {str(len(rows))}:
+        problems.append(f"export incomplet ou incohérent : {len(rows)} lignes lues, total annoncé "
+                        f"{', '.join(sorted(str(t) for t in totals))}")
     for raw in rows:
         row = {k: (None if k in nullable and v in ("", None) else v) for k, v in raw.items()}
         try:
             key = (row["territory_id"], int(row["version"]))
+            if key in seen:
+                problems.append(f"{key[0]} v{key[1]} : exporté plusieurs fois")
+                continue
             seen.add(key)
+            if row["srid"] != str(STORAGE_SRID):
+                problems.append(f"{key[0]} v{key[1]} : SRID {row['srid']} au lieu de {STORAGE_SRID}")
             row["version"] = key[1]
             row["share_alike"] = str(row["share_alike"]).lower() in ("true", "t")
             row["reference_year"] = None if row["reference_year"] is None else int(row["reference_year"])

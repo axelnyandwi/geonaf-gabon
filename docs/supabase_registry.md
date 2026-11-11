@@ -42,7 +42,8 @@ local et pour Supabase ; les fichiers `02_migration_0001_*.sql` l'incluent sans 
 | `db/supabase/04_verify_schema.sql` | Lecture seule | dev et test |
 | `05_import_lot_NN_simulation.sql` / `_application.sql` | Générés hors du dépôt ; la simulation n'écrit rien | dev (et test) |
 | `06_verify_import.sql` | Généré ; lecture seule, valeurs attendues incluses | dev (et test) |
-| `db/supabase/07_export_parity.sql` | Lecture seule ; export CSV | dev |
+| `db/supabase/07_export_parity.sql` | Lecture seule imposée ; export CSV (SRID et total de lignes contrôlés) | dev et test |
+| `db/supabase/14_export_acquisitions_parity.sql` | Lecture seule imposée ; export CSV des acquisitions et ingestions, 5000 lignes au plus ; `scripts/verify_acquisition_export.py` | dev et test |
 | `db/supabase/08_inspect_legacy_schema.sql` | Lecture seule ; inventaire et dépendances du schéma `geonaf` hérité | dev et test, **avant 00** |
 | `db/supabase/09_rename_legacy_schema_simulation.sql` / `_application.sql` | Renomme le schéma hérité en `geonaf_legacy_draft`, sans rien supprimer ; refuse s'il ne correspond pas exactement à l'inventaire | dev et test, **avant 00**, une fois |
 | `db/supabase/10_security_precheck.sql` | Lecture seule imposée ; contrôles de sécurité obligatoires avant 02 (`docs/supabase_security_d2_2.md`) | dev et test, après 01 |

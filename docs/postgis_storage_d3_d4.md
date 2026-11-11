@@ -131,6 +131,20 @@ sont les mêmes que pour les lots de territoires :
 Ses tests locaux couvrent la syntaxe et l'ordre des garde-fous, sans PostGIS. Les résultats
 d'indicateurs exigent encore un générateur tenant compte des géométries.
 
+**Parité sans connexion (D2.10).** `db/supabase/14_export_acquisitions_parity.sql` exporte, en lecture
+seule imposée, une ligne par ingestion (et une par acquisition sans manifeste), au plus 5000 lignes avec
+leur total compté avant la limite. Le CSV téléchargé se compare hors ligne aux manifestes locaux :
+
+```powershell
+python scripts/verify_acquisition_export.py --csv "<export.csv>" --data-dir "<données>"
+```
+
+Chaque manifeste est reconstruit depuis `manifest_document` (même validation que le catalogue fichier) ;
+empreinte, colonnes, dates d'acquisition et d'ingestion (UTC, jamais fusionnées), emprise de grille
+(SRID 4326, SHA-256 du WKB) et nombre d'ingestions par produit doivent être identiques. Code 0 : parité
+confirmée ; 1 : écart (de copie, jamais un changement territorial) ; 2 : export ou données locales
+inutilisables.
+
 ## 5. Tests et limites
 
 | Vérifié | Où |
