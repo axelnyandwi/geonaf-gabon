@@ -239,7 +239,11 @@ def test_pair_and_series_refuse_an_extract_of_another_territory(multi_pack):
 
 
 def test_every_application_caller_names_the_territory():
-    """The six callers of the application pass the territory: no unfiltered discovery remains."""
+    """The seven callers of the application pass the territory: no unfiltered discovery remains.
+
+    Seventh caller (Discovery V4 phase A): the data notice (src/components/public_notice.py), which lists the
+    acquisition dates of the selected zone only.
+    """
     root = Path(__file__).resolve().parents[1]
     calls = []
     for path in [*sorted((root / "src").rglob("*.py")), *sorted((root / "views").glob("*.py"))]:
@@ -247,7 +251,8 @@ def test_every_application_caller_names_the_territory():
             if "list_local_observations(" in line and "def list_local_observations" not in line \
                     and "import" not in line:
                 calls.append((path.relative_to(root).as_posix(), number, line.strip()))
-    assert len(calls) == 6, calls
+    assert len(calls) == 7, calls
+    assert any(path == "src/components/public_notice.py" for path, _, _ in calls), calls
     assert all("list_local_observations(data_dir)" not in line for _, _, line in calls), calls
     assert all("aoi_id" in line for _, _, line in calls), calls
 

@@ -33,8 +33,10 @@ with page_guard("analyses_temporelles"):
     else:
         aoi_id = choose_shared_territory(data_dir)
         if aoi_id is not None:
-            st.info(f"Zone d'étude {TERRITORY_LABELS[aoi_id]} : carré d’acquisition de 12 × 12 km autour de "
-                    f"{TERRITORY_LABELS[aoi_id]}. Ce carré n’est pas une limite administrative.")
+            from src.components.public_notice import show_data_notice
+
+            # Zone status, Sentinel-2 dates, attribution and limits (same wording as the CSV export).
+            show_data_notice(data_dir, aoi_id, TERRITORY_LABELS[aoi_id])
             # Each section has its own guard: an error stays inside the section.
             with page_guard(f"analyses_temporelles.{section}"):
                 if section == "comparer":
