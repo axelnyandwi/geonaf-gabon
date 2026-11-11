@@ -15,6 +15,7 @@ from io import BytesIO
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import stat
 import zipfile
@@ -124,11 +125,116 @@ def test_external_layer_of_another_square_or_without_digest_is_refused(tmp_path,
 
 
 def test_raster_window_one_pixel_inside_the_aoi_edge_is_accepted(tmp_path, monkeypatch):
-    monkeypatch.setattr(builder, "EXPECTED_LAYERS", ("openstreetmap",))
+    # A raster layer (WorldCover): OSM snapshots are no longer byte copies but minimised (tests below).
+    monkeypatch.setattr(builder, "EXPECTED_LAYERS", ("esa-worldcover",))
     aoi = _square(tmp_path)
-    fingerprint = _layer(tmp_path, bounds=(9.35006, 0.45, 9.45, 0.55), resolution_m=10.0)  # 6.7 m inside.
+    fingerprint = _layer(tmp_path, source_id="esa-worldcover", bounds=(9.35006, 0.45, 9.45, 0.55),
+                         resolution_m=10.0)  # 6.7 m inside.
     layers = builder.build_external(tmp_path, tmp_path / "out", "akanda", (fingerprint,), aoi)
     assert layers[0]["aoi_id"] == "akanda" and (tmp_path / "out" / "external" / layers[0]["storage_key"]).is_file()
+
+
+# --- OpenStreetMap minimisation of the public pack -----------------------------------------------------------
+
+OSM_BOUNDS = (9.35, 0.45, 9.45, 0.55)
+
+
+def _ring(west, south, east, north):
+    return [{"lat": south, "lon": west}, {"lat": south, "lon": east}, {"lat": north, "lon": east},
+            {"lat": north, "lon": west}, {"lat": south, "lon": west}]
+
+
+def _osm_source(data_dir: Path) -> tuple[str, str, bytes]:
+    """A stored snapshot as fetch_osm_snapshot writes it, with contact tags; returns (fingerprint, key, raw)."""
+    from src.data.layer_store import FileLayerRepository, LayerFileStore
+    from src.data.openstreetmap import load_osm_snapshot
+
+    elements = [
+        {"type": "way", "id": 1, "geometry": _ring(9.36, 0.46, 9.37, 0.47), "nodes": [1, 2, 3, 4, 1],
+         "tags": {"building": "yes", "name": "Boutique Exemple", "email": "personne@gmail.com",
+                  "contact:phone": "+241 00 00 00", "addr:street": "Rue A", "addr:housenumber": "12",
+                  "website": "https://example.org", "opening_hours": "Mo-Fr 08:00-18:00"}},
+        {"type": "way", "id": 2, "geometry": _ring(9.38, 0.48, 9.39, 0.49), "nodes": [5, 6, 7, 8, 5],
+         "tags": {"highway": "pedestrian", "area": "yes", "name": "Place B", "contact:email": "x@yahoo.fr"}},
+        {"type": "way", "id": 3, "geometry": [{"lat": 0.50, "lon": 9.40}, {"lat": 0.51, "lon": 9.41}],
+         "nodes": [9, 10], "tags": {"highway": "residential", "name": "Rue C", "maxspeed": "50"}},
+        {"type": "relation", "id": 4, "members": [{"type": "way", "ref": 11, "role": "outer",
+                                                   "geometry": _ring(9.42, 0.50, 9.44, 0.52)}],
+         "tags": {"type": "multipolygon", "natural": "water", "name": "Lac D", "phone": "+241 11"}},
+        {"type": "node", "id": 5, "lat": 0.47, "lon": 9.37, "tags": {"amenity": "cafe", "email": "y@hotmail.com"}},
+    ]
+    wrapper = {"geonaf": {"query": "q", "query_sha256": "a" * 64, "endpoint": "https://overpass-api.de/api/interpreter",
+                          "retrieved_at_utc": "2026-10-22T16:58:23+00:00", "response_bytes": 1, "response_sha256": "b" * 64},
+               "response": {"version": 0.6, "generator": "test", "osm3s": {"timestamp_osm_base": "2026-10-22T16:57:05Z",
+                                                                            "copyright": "OpenStreetMap contributors (ODbL)"},
+                            "elements": elements}}
+    raw = json.dumps(wrapper, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
+    store = LayerFileStore(data_dir / "external")
+    key = "openstreetmap/" + "a" * 24 + "/20261022T165823Z.json"
+    store.write_bytes(key, raw)
+    _, descriptor = load_osm_snapshot(store, key, OSM_BOUNDS)
+    FileLayerRepository(store).save(descriptor, key)
+    return descriptor.fingerprint, key, raw
+
+
+def test_public_osm_snapshot_keeps_only_the_tags_geonaf_reads(tmp_path, monkeypatch):
+    from src.data.layer_store import LayerFileStore
+    from src.data.openstreetmap import load_osm_snapshot
+
+    monkeypatch.setattr(builder, "EXPECTED_LAYERS", ("openstreetmap",))
+    aoi = _square(tmp_path, OSM_BOUNDS)
+    fingerprint, key, raw = _osm_source(tmp_path)
+    layers = builder.build_external(tmp_path, tmp_path / "out", "akanda", (fingerprint,), aoi)
+
+    assert (tmp_path / "external" / key).read_bytes() == raw                 # Source never modified.
+    public = (tmp_path / "out" / "external" / key).read_bytes()
+    text = public.decode("utf-8")
+    for removed in ("gmail", "yahoo", "hotmail", "+241", "Boutique", "Rue A", "example.org", "Mo-Fr", "maxspeed",
+                    "addr:", "contact:", '"name"', '"email"', '"phone"', "opening_hours", "amenity"):
+        assert removed not in text, removed
+    elements = json.loads(text)["response"]["elements"]
+    assert [e["tags"] for e in elements] == [{"building": "yes"}, {"highway": "pedestrian", "area": "yes"},
+                                             {"highway": "residential"}, {"type": "multipolygon", "natural": "water"},
+                                             {}]
+    assert [(e["type"], e["id"]) for e in elements] == [("way", 1), ("way", 2), ("way", 3), ("relation", 4), ("node", 5)]
+    assert all(e.get("geometry") == s.get("geometry") and e.get("members") == s.get("members")
+               for e, s in zip(elements, json.loads(raw)["response"]["elements"]))
+    meta = json.loads(text)["geonaf"]
+    assert meta["public_minimisation"]["policy"] == builder.OSM_TAG_POLICY
+    assert meta["public_minimisation"]["source_file_sha256"] == hashlib.sha256(raw).hexdigest()
+    assert meta["public_minimisation"]["removed_tag_values"] == 15        # 7 + 2 + 2 + 2 + 2 tags dropped.
+    assert meta["response_sha256"] == "b" * 64 and "OpenStreetMap" in json.loads(text)["response"]["osm3s"]["copyright"]
+
+    # The recorded descriptor is the one the application rebuilds from the distributed file.
+    source_frame, source_descriptor = load_osm_snapshot(LayerFileStore(tmp_path / "external"), key, OSM_BOUNDS)
+    public_frame, public_descriptor = load_osm_snapshot(LayerFileStore(tmp_path / "out" / "external"), key, OSM_BOUNDS)
+    assert layers[0]["descriptor_fingerprint"] == public_descriptor.fingerprint != fingerprint
+    assert layers[0]["file_sha256"] == hashlib.sha256(public).hexdigest() == public_descriptor.quality.checksum_sha256
+    assert (tmp_path / "out" / "external" / "catalogue" / f"{public_descriptor.fingerprint}.json").is_file()
+    assert public_descriptor.provenance["public_tag_policy"] == builder.OSM_TAG_POLICY
+    assert public_descriptor.license == source_descriptor.license                # ODbL kept.
+    assert source_frame.drop(columns="geometry").equals(public_frame.drop(columns="geometry"))
+    assert list(source_frame.geometry.to_wkb()) == list(public_frame.geometry.to_wkb())
+    assert layers[0]["public_minimisation"]["source_descriptor_fingerprint"] == fingerprint
+
+
+def test_a_policy_that_loses_a_feature_refuses_the_build(tmp_path, monkeypatch):
+    monkeypatch.setattr(builder, "EXPECTED_LAYERS", ("openstreetmap",))
+    monkeypatch.setattr(builder, "OSM_PUBLIC_TAGS", frozenset({"highway", "area", "type", "natural"}))  # No building.
+    aoi = _square(tmp_path, OSM_BOUNDS)
+    fingerprint, _, _ = _osm_source(tmp_path)
+    with pytest.raises(ValueError, match="Minimisation OSM refusée"):
+        builder.build_external(tmp_path, tmp_path / "out", "akanda", (fingerprint,), aoi)
+
+
+def test_the_public_tag_policy_covers_every_tag_the_parser_reads():
+    import inspect
+
+    from src.data import openstreetmap
+
+    source = inspect.getsource(openstreetmap.OpenStreetMapAdapter)
+    read = set(re.findall(r'tags\.get\("([a-z:]+)"\)', source)) | set(re.findall(r'"([a-z]+)" in tags', source))
+    assert read | set(openstreetmap.DEFAULT_TAGS) <= builder.OSM_PUBLIC_TAGS, read
 
 
 # --- Loader limits -----------------------------------------------------------------------------------------

@@ -10,8 +10,15 @@ One territory = one GEONAF acquisition square of 12 × 12 km, never an administr
 Each territory gets its own native-grid Sentinel-2 subsets in ``raw/sentinel2/<product>__<aoi>/``
 (``src/data/derived_subset.py``), whose ``derivation.aoi`` (id and AOI SHA-256) is what the
 territory filter of ``src/services/local_preview.py`` checks: subsets are never shared or mixed
-between territories. External layers (WorldCover, OpenStreetMap, Sentinel-1) are byte-identical
-copies of the descriptors stored for each square, checked against its bounds.
+between territories. External layers (WorldCover, Sentinel-1) are byte-identical copies of the
+descriptors stored for each square, checked against its bounds.
+
+OpenStreetMap snapshots are distributed **minimised** (``OSM_PUBLIC_TAGS``): every element keeps its
+type, identifier, geometry, nodes, bounds and relation members, but only the tags GEONAF reads
+(``src/data/openstreetmap.py``: categories, ``area``, relation ``type``). Contact and address tags
+(e-mail, telephone, ``contact:*``, ``addr:*``, names, websites...) are not copied. The local source
+snapshot is never modified; the distributed file records the policy and the source file digest, and
+the build is refused unless the minimised file parses into exactly the same features as the source.
 
 Provenance distinguishes the code (Git commit of the builder; building from uncommitted code is
 refused unless ``--allow-dirty``, which is recorded) from the source data, identified by the
@@ -48,6 +55,7 @@ from src.data.derived_subset import (  # noqa: E402
     aligned_subset_bounds, build_subset_manifest, sha256_file, write_json, write_raster_subset,
 )
 from src.data.demo_pack import create_archive  # noqa: E402
+from src.data.openstreetmap import DEFAULT_TAGS  # noqa: E402
 
 PACK_ID = "geonaf-demo-estuaire-2025-01"
 PACK_VERSION = "4"  # v4 = three territories, each with its own subsets (v3: Akanda only).
@@ -68,6 +76,10 @@ class Territory:
 
 
 EXPECTED_LAYERS = ("esa-worldcover", "openstreetmap", "sentinel-1-mosaic", "sentinel-1-mosaic")
+# Tags read by OpenStreetMapAdapter.parse_overpass: DEFAULT_TAGS (category and detail), "area" (closed
+# highway as a surface) and "type" (multipolygon relations). Any other tag is dropped from the public pack.
+OSM_PUBLIC_TAGS = frozenset(DEFAULT_TAGS) | {"area", "type"}
+OSM_TAG_POLICY = "geonaf.osm-public-tags/v1"
 # 20/01/2025 is kept for Akanda only (v3 non-regression); it is almost fully clouded over
 # Libreville (0,14 %) and Owendo (0 %). Owendo keeps 15/01/2025 (0,12 %) so that the absence of a
 # usable 2025 pair is visible and explained, never hidden. The second OpenStreetMap descriptor of
@@ -265,14 +277,78 @@ def build_external(data_dir: Path, output: Path, aoi_id: str, descriptors, aoi_p
         expected = descriptor["quality"].get("checksum_sha256")
         if expected is None:
             raise ValueError(f"Couche sans empreinte : {fingerprint}")
-        _copy_verified(source, output / "external" / "catalogue" / source.name)
-        _copy_verified(data_dir / "external" / key, output / "external" / key, expected)
+        entry = {}
+        if descriptor["source_id"] == "openstreetmap":   # Public pack: minimised copy, new verified descriptor.
+            fingerprint, expected, entry = build_public_osm(data_dir, output, key, fingerprint, expected)
+        else:
+            _copy_verified(source, output / "external" / "catalogue" / source.name)
+            _copy_verified(data_dir / "external" / key, output / "external" / key, expected)
         layers.append({"aoi_id": aoi_id, "source_id": descriptor["source_id"], "product": descriptor.get("product"),
                        "descriptor_fingerprint": fingerprint, "file_sha256": expected,
                        "version": descriptor.get("version"), "temporal": descriptor["temporal"],
                        "license": descriptor["license"], "quality_notes": descriptor["quality"].get("notes", []),
-                       "storage_key": key})
+                       "storage_key": key, **entry})
     return layers
+
+
+def minimise_osm_snapshot(raw: bytes) -> tuple[bytes, dict]:
+    """Snapshot keeping only OSM_PUBLIC_TAGS; elements, identifiers and geometries are left untouched."""
+    wrapper = json.loads(raw.decode("utf-8"))
+    removed = 0
+    for element in wrapper["response"]["elements"]:
+        tags = element.get("tags")
+        if tags:
+            kept = {name: value for name, value in tags.items() if name in OSM_PUBLIC_TAGS}
+            removed += len(tags) - len(kept)
+            element["tags"] = kept
+    record = {"policy": OSM_TAG_POLICY, "kept_tags": sorted(OSM_PUBLIC_TAGS),
+              "source_file_sha256": hashlib.sha256(raw).hexdigest(), "removed_tag_values": removed}
+    wrapper["geonaf"]["public_minimisation"] = record
+    # Same encoding as fetch_osm_snapshot (src/data/openstreetmap.py).
+    return json.dumps(wrapper, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), record
+
+
+def _same_features(a, b) -> bool:
+    columns = ["osm_id", "category", "group", "detail"]
+    return (len(a) == len(b) and a[columns].reset_index(drop=True).equals(b[columns].reset_index(drop=True))
+            and list(a.geometry.to_wkb()) == list(b.geometry.to_wkb()))
+
+
+def build_public_osm(data_dir: Path, output: Path, key: str, fingerprint: str, expected: str) -> tuple[str, str, dict]:
+    """Write the minimised snapshot and its catalogue record; return (descriptor fingerprint, file digest, entry).
+
+    Refused unless the stored descriptor is reproduced from the source file, and the minimised file gives the
+    same features (identifier, category, group, detail, exact WKB) and the same descriptor except its digest.
+    """
+    from dataclasses import replace
+
+    from src.data.layer_store import FileLayerRepository, LayerFileStore
+    from src.data.openstreetmap import load_osm_snapshot
+
+    source_store, public_store = LayerFileStore(data_dir / "external"), LayerFileStore(output / "external")
+    raw = source_store.path(key).read_bytes()
+    if hashlib.sha256(raw).hexdigest() != expected:
+        raise ValueError(f"Empreinte inattendue : {Path(key).name}")
+    record = json.loads((data_dir / "external" / "catalogue" / f"{fingerprint}.json").read_text(encoding="utf-8"))
+    bounds = tuple(record["descriptor"]["extent"]["wgs84_bounds"])
+    source_frame, source_descriptor = load_osm_snapshot(source_store, key, bounds)
+    if source_descriptor.fingerprint != fingerprint:
+        raise ValueError(f"Descripteur OSM non reproductible depuis sa source : {fingerprint[:12]}")
+    payload, minimisation = minimise_osm_snapshot(raw)
+    public_store.write_bytes(key, payload)
+    # The descriptor the application rebuilds from the distributed file (load_osm_snapshot) is the one recorded.
+    public_frame, distributed = load_osm_snapshot(public_store, key, bounds)
+    digest = hashlib.sha256(payload).hexdigest()
+    added = {"public_tag_policy": OSM_TAG_POLICY, "source_file_sha256": expected}
+    reverted = replace(distributed, quality=replace(distributed.quality, checksum_sha256=expected),
+                       provenance={k: v for k, v in distributed.provenance.items() if k not in added})
+    if not (_same_features(source_frame, public_frame) and reverted == source_descriptor
+            and all(distributed.provenance.get(k) == v for k, v in added.items())
+            and distributed.quality.checksum_sha256 == digest):
+        raise ValueError(f"Minimisation OSM refusée : objets ou descripteur modifiés ({Path(key).name}).")
+    FileLayerRepository(public_store).save(distributed, key)
+    return distributed.fingerprint, digest, {"public_minimisation": {**minimisation,
+                                                                     "source_descriptor_fingerprint": fingerprint}}
 
 
 def build_boundaries(data_dir: Path, output: Path) -> list[dict]:
