@@ -142,6 +142,50 @@ def test_truncated_or_limited_exports_are_never_confirmed(acquisitions, monkeypa
     assert any("limite de 2 lignes" in p for p in ae.check_acquisition_export(export_rows(local), local))
 
 
+def test_sql_editor_null_is_read_as_null_only_in_nullable_columns():
+    manifest_row = {c: "null" for c in ae.EXPORT_COLUMNS} | {"manifest_sha256": "a" * 64}
+    normalized = ae._sql_nulls_as_empty(manifest_row)
+    assert {c for c, v in normalized.items() if v == ""} == set(ae.MANIFEST_NULLABLE)
+    orphan_row = {c: "null" for c in ae.EXPORT_COLUMNS}
+    normalized = ae._sql_nulls_as_empty(orphan_row)
+    assert {c for c, v in normalized.items() if v == ""} == set(ae.ORPHAN_NULLABLE)
+    for column in ("collection", "product_id", "product_acquired_at_utc", "import_closed", "ingestions_of_product",
+                   "total_rows"):                          # Never NULL, even for an acquisition without manifest.
+        assert normalized[column] == "null", column
+    assert ae._sql_nulls_as_empty({"integrity_mode": "NULL", "manifest_sha256": "a" * 64})["integrity_mode"] == "NULL"
+
+
+def test_an_acquisition_without_manifest_exported_by_the_sql_editor_is_reported_as_such(acquisitions):
+    local = records(acquisitions)
+    orphan = {c: "null" for c in ae.EXPORT_COLUMNS} | {
+        "collection": "sentinel-2-l2a", "product_id": "S2X_ORPHAN", "product_acquired_at_utc": "2025-01-01T00:00:00.000000Z",
+        "import_closed": "false", "ingestions_of_product": "0"}
+    problems = ae.check_acquisition_export(with_total(export_rows(local) + [orphan]), local)
+    assert any("S2X_ORPHAN : acquisition sans aucun manifeste" in p for p in problems)
+    assert not any("manifeste refusé" in p for p in problems)
+
+
+@pytest.mark.parametrize("column, expected", [
+    ("acquired_at_utc", "colonne acquired_at_utc"),
+    ("ingested_at_utc", "colonne ingested_at_utc"),
+    ("product_acquired_at_utc", "colonne product_acquired_at_utc"),
+    ("stac_source", "colonne stac_source"),
+    ("grid_crs", "colonne grid_crs"),
+    ("grid_resolution_m", "grid_resolution_m"),
+    ("manifest_document", "manifeste refusé"),
+    ("import_closed", "import d'origine non clôturé"),
+    ("ingestions_of_product", "nombre d'ingestions incohérent"),
+    ("footprint_srid", "emprise en SRID absent"),           # Nullable column, but the local grid has a footprint.
+    ("footprint_wkb_sha256", "emprise (WKB) différente"),
+])
+def test_the_text_null_never_hides_a_missing_value_of_a_manifest(acquisitions, column, expected):
+    local = records(acquisitions)
+    rows = export_rows(local)
+    next(r for r in rows if r["product_id"] == "S2A_EARLIER")[column] = "null"
+    problems = ae.check_acquisition_export(rows, local)
+    assert any(expected in p for p in problems), problems
+
+
 def _write(path, rows, columns=ae.EXPORT_COLUMNS):
     with path.open("w", encoding="utf-8", newline="") as target:
         writer = csv.DictWriter(target, fieldnames=columns, extrasaction="ignore")

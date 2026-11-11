@@ -213,6 +213,45 @@ def test_export_parity_detects_duplicates_wrong_crs_and_truncated_downloads(regi
     assert any("export incomplet" in p for p in problems) and any("absent de la base" in p for p in problems)
 
 
+NULLABLE_EXPORT_COLUMNS = ("supersedes", "retrieved_at_utc", "url", "reference_year")
+
+
+def sql_editor_rows(plan):
+    """The export as the Supabase SQL Editor downloads it: SQL NULL written as the text "null"."""
+    rows = export_rows(plan)
+    for row in rows:
+        for column in NULLABLE_EXPORT_COLUMNS:
+            if row[column] == "":
+                row[column] = "null"
+    return rows
+
+
+def test_export_parity_accepts_the_sql_editor_null_in_nullable_columns_only(registry):
+    plan = plan_import(registry)
+    rows = sql_editor_rows(plan)
+    assert any(row["supersedes"] == "null" for row in rows)            # The case met on geonaf-test (D2.10).
+    assert s.check_export_rows(rows, plan) == []
+
+
+@pytest.mark.parametrize("column", ["territory_id", "label", "legal_status", "geometry_sha256", "file_sha256",
+                                    "record_fingerprint", "source_id", "licence_id", "source_geometry_type",
+                                    "wkb_sha256", "srid"])
+def test_export_parity_refuses_the_text_null_in_a_mandatory_column(registry, column):
+    plan = plan_import(registry)
+    rows = sql_editor_rows(plan)
+    rows[0][column] = "null"
+    assert s.check_export_rows(rows, plan), column
+
+
+def test_export_parity_accepts_only_the_exact_sql_editor_spelling_of_null(registry):
+    plan = plan_import(registry)
+    rows = sql_editor_rows(plan)
+    target = next(row for row in rows if row["supersedes"] == "null")
+    for spelling in ("NULL", "Null", " null", "None"):
+        target["supersedes"] = spelling
+        assert s.check_export_rows(rows, plan), spelling
+
+
 def test_verify_script_reads_the_csv_export(registry, tmp_path, capsys):
     plan = plan_import(registry)
     path = tmp_path / "export.csv"

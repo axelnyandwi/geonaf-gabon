@@ -64,6 +64,7 @@ EXPORT_COLUMNS = ("territory_id", "version", "kind", "label", "legal_status", "g
                   "source_id", "product", "source_version", "licence_id", "attribution", "url", "share_alike",
                   "reference_year", "source_geometry_type", "wkb_sha256", "srid", "total_rows")
 STORAGE_SRID = 4326                       # WGS84: storage CRS of geonaf.geometries (metric work: EPSG:32632).
+SQL_EDITOR_NULL = "null"                  # How the Supabase SQL Editor writes SQL NULL in a downloaded CSV.
 
 
 # --- Literals ------------------------------------------------------------------------------------
@@ -513,7 +514,9 @@ def check_export_rows(rows: Iterable[Mapping[str, str]], plan: ImportPlan) -> li
         problems.append(f"export incomplet ou incohérent : {len(rows)} lignes lues, total annoncé "
                         f"{', '.join(sorted(str(t) for t in totals))}")
     for raw in rows:
-        row = {k: (None if k in nullable and v in ("", None) else v) for k, v in raw.items()}
+        # SQL NULL: an empty field, or the text "null" the Supabase SQL Editor writes in its CSV. Accepted in
+        # the nullable columns only; anywhere else "null" stays a value and fails its check.
+        row = {k: (None if k in nullable and v in ("", None, SQL_EDITOR_NULL) else v) for k, v in raw.items()}
         try:
             key = (row["territory_id"], int(row["version"]))
             if key in seen:

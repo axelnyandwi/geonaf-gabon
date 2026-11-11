@@ -24,6 +24,21 @@ EXPORT_COLUMNS = ("manifest_sha256", "collection", "product_id", "schema_version
                   "footprint_wkb_sha256", "ingestions_of_product", "total_rows")
 EXPORT_LIMIT = 5000                       # LIMIT of the SQL export; total_rows is counted before it.
 STORAGE_SRID = "4326"
+SQL_EDITOR_NULL = "null"                  # How the Supabase SQL Editor writes SQL NULL in a downloaded CSV.
+# Columns that may be SQL NULL. On a manifest row: integrity_mode and footprint are nullable in
+# acquisition_manifests (ST_SRID and the digest of a NULL footprint are NULL). On an acquisition without
+# any manifest (LEFT JOIN), every column coming from the manifest or its import is NULL.
+MANIFEST_NULLABLE = ("integrity_mode", "footprint_srid", "footprint_wkb_sha256")
+ORPHAN_NULLABLE = ("manifest_sha256", "schema_version", "acquired_at_utc", "ingested_at_utc", "stac_source",
+                   "grid_crs", "grid_resolution_m", "integrity_mode", "import_id", "manifest_document",
+                   "footprint_srid", "footprint_wkb_sha256")
+
+
+def _sql_nulls_as_empty(row: Mapping[str, str]) -> dict[str, str]:
+    """The text "null" becomes an empty field in the nullable columns only; elsewhere it stays a value."""
+    orphan = row.get("manifest_sha256") in ("", None, SQL_EDITOR_NULL)
+    nullable = ORPHAN_NULLABLE if orphan else MANIFEST_NULLABLE
+    return {k: ("" if k in nullable and v == SQL_EDITOR_NULL else v) for k, v in row.items()}
 
 
 def utc_text(value: datetime) -> str:
@@ -46,7 +61,7 @@ def _expected_columns(record: AcquisitionRecord) -> dict[str, str]:
 
 def check_acquisition_export(rows: Iterable[Mapping[str, str]], local: Iterable[AcquisitionRecord]) -> list[str]:
     """Problems found between the export and the local manifests (empty list: parity confirmed)."""
-    rows = [dict(row) for row in rows]
+    rows = [_sql_nulls_as_empty(row) for row in rows]
     local_by_sha = {record.manifest_sha256: record for record in local}
     local_ingestions = Counter(record.identity for record in local_by_sha.values())
     problems: list[str] = []
