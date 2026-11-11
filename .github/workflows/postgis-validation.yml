@@ -4,7 +4,8 @@
     "push": {
       "branches": [
         "db/d2a-territory-registry",
-        "main"
+        "main",
+        "ci/d26-pg17-postgis33"
       ]
     },
     "pull_request": {
@@ -32,7 +33,9 @@
           "variant": [
             "plain",
             "public",
-            "extensions"
+            "extensions",
+            "pg17",
+            "supabase17"
           ]
         }
       },

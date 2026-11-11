@@ -23,7 +23,26 @@ IMAGES = {
     "plain": "postgres:16-bookworm@sha256:5983db9a9c6ad225a48a46cfe2e03e6680b1826662befd0465eb05b34cb1c64e",
     "public": "postgis/postgis:16-3.6@sha256:5f97c32e0f92a0d65b253cea1b14e356718220c23ee78b25425eabe5835540d4",
     "extensions": "postgis/postgis:16-3.6@sha256:5f97c32e0f92a0d65b253cea1b14e356718220c23ee78b25425eabe5835540d4",
+    # D2.6: PostgreSQL 17 without PostGIS (Supabase SQL Editor scripts), and the Supabase build
+    # of PostgreSQL 17 with PostGIS 3.3.7 (no official postgis/postgis 17-3.3 image exists).
+    "pg17": "postgres:17.11-bookworm@sha256:665dc7b37ac52a17e298511414c21d23ffa4e6a6ef6225b3e5d59c7afb35e994",
+    "supabase17": "supabase/postgres:17.11.0.018@sha256:7c31363a3f7434ff14945f1b8a4880e6eca8b362e197e88b87c476c77aa3cf8c",
 }
+# Checked after provisioning, before any test: server major and PostGIS (schema, version) or None.
+EXPECTED = {
+    "plain": (16, None),
+    "public": (16, ("public", "3.6.4")),
+    "extensions": (16, ("extensions", "3.6.4")),
+    "pg17": (17, None),
+    "supabase17": (17, ("extensions", "3.3.7")),
+}
+# Container administrator (POSTGRES_USER of the image); used for provisioning only.
+ADMIN = {"supabase17": "supabase_admin"}
+# Test logins and the variable that carries each URL. The pg17 scripts create the GEONAF roles
+# themselves, so that variant has a single login, still neither superuser nor BYPASSRLS.
+LOGINS = {"pg17": {"geonaf_ci_runner": "GEONAF_TEST_DATABASE_URL"}}
+DEFAULT_LOGINS = {"geonaf_migrator": "GEONAF_TEST_DATABASE_URL", "geonaf_reader": "GEONAF_CI_READER_URL",
+                  "geonaf_importer": "GEONAF_CI_IMPORTER_URL"}
 
 
 def required(variant):
@@ -94,37 +113,49 @@ def provision(variant, directory, name, label):
     if len(bindings) != 1 or bindings[0]["HostIp"] != "127.0.0.1":
         raise RuntimeError("Non-local container binding")
     port = int(bindings[0]["HostPort"])
-    kwargs = dict(host="127.0.0.1", hostaddr="127.0.0.1", port=port, user="postgres",
+    kwargs = dict(host="127.0.0.1", hostaddr="127.0.0.1", port=port, user=ADMIN.get(variant, "postgres"),
                   password=password, dbname="postgres", sslmode="disable", passfile=os.devnull,
                   gssencmode="disable", connect_timeout=5, prepare_threshold=None, autocommit=True)
     database = "geonaf_ci_" + variant + "_test"
     identity = str(uuid.uuid4())
+    major, extension = EXPECTED[variant]
+    logins = LOGINS.get(variant, DEFAULT_LOGINS)
+    owner = next(iter(logins))
     credentials = {}
     with psycopg.connect(**kwargs) as connection:
-        for role in ("geonaf_migrator", "geonaf_reader", "geonaf_importer"):
+        for role in logins:
             credentials[role] = secrets.token_hex(32)
             mask(credentials[role])
-            connection.execute(sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS PASSWORD {}").format(
-                sql.Identifier(role), sql.Literal(credentials[role])))
-        connection.execute("GRANT geonaf_reader, geonaf_importer TO geonaf_migrator")
-        connection.execute(sql.SQL("CREATE DATABASE {} OWNER geonaf_migrator TEMPLATE template0").format(sql.Identifier(database)))
+            # CREATEROLE only for the pg17 runner: PostgreSQL 16+ limits it to the roles it creates.
+            connection.execute(sql.SQL("CREATE ROLE {} LOGIN NOSUPERUSER NOCREATEDB {} NOBYPASSRLS PASSWORD {}").format(
+                sql.Identifier(role), sql.SQL("CREATEROLE" if variant == "pg17" else "NOCREATEROLE"),
+                sql.Literal(credentials[role])))
+        if variant == "pg17":
+            # Membership in the roles it creates, so that test cleanup (DROP OWNED) works.
+            connection.execute(sql.SQL("ALTER ROLE {} SET createrole_self_grant = 'set, inherit'").format(sql.Identifier(owner)))
+        else:
+            connection.execute("GRANT geonaf_reader, geonaf_importer TO geonaf_migrator")
+        connection.execute(sql.SQL("CREATE DATABASE {} OWNER {} TEMPLATE template0").format(
+            sql.Identifier(database), sql.Identifier(owner)))
         connection.execute(sql.SQL("COMMENT ON DATABASE {} IS {}").format(
             sql.Identifier(database), sql.Literal("geonaf-isolated-test:" + identity)))
-        path = "pg_catalog, public" if variant != "extensions" else "pg_catalog, extensions, public"
+        schema = extension[0] if extension else "public"
+        path = "pg_catalog, public" if schema == "public" else "pg_catalog, extensions, public"
         connection.execute(sql.SQL("ALTER DATABASE {} SET search_path TO " + path).format(sql.Identifier(database)))
     kwargs["dbname"] = database
     with psycopg.connect(**kwargs) as connection:
         if connection.execute("SELECT 1 FROM pg_extension WHERE extname='postgis'").fetchone():
             raise RuntimeError("New database unexpectedly contains PostGIS")
         connection.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
-        if variant != "plain":
-            if variant == "extensions":
+        if extension:
+            if schema == "extensions":
                 connection.execute("CREATE SCHEMA extensions")
-            connection.execute(sql.SQL("CREATE EXTENSION postgis WITH SCHEMA {}").format(sql.Identifier(variant)))
-            connection.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO geonaf_migrator, geonaf_reader, geonaf_importer").format(sql.Identifier(variant)))
+            connection.execute(sql.SQL("CREATE EXTENSION postgis WITH SCHEMA {}").format(sql.Identifier(schema)))
+            connection.execute(sql.SQL("GRANT USAGE ON SCHEMA {} TO {}").format(
+                sql.Identifier(schema), sql.SQL(", ").join(map(sql.Identifier, logins))))
         actual = connection.execute("SELECT n.nspname, e.extversion FROM pg_extension e JOIN pg_namespace n ON n.oid=e.extnamespace WHERE e.extname='postgis'").fetchone()
         version = int(connection.execute("SHOW server_version_num").fetchone()[0])
-        if version // 10000 != 16 or (actual is not None if variant == "plain" else actual != (variant, "3.6.4")):
+        if version // 10000 != major or (tuple(actual) if actual else None) != extension:
             raise RuntimeError("Unexpected database or extension version/schema")
     environ = dict(os.environ)
     # Reject inherited libpq configuration, rather than silently overriding policy.
@@ -133,9 +164,7 @@ def provision(variant, directory, name, label):
     for role, secret in credentials.items():
         url = f"postgresql://{role}:{secret}@127.0.0.1:{port}/{database}"
         mask(url)
-        key = {"geonaf_migrator": "GEONAF_TEST_DATABASE_URL", "geonaf_reader": "GEONAF_CI_READER_URL",
-               "geonaf_importer": "GEONAF_CI_IMPORTER_URL"}[role]
-        environ[key] = url
+        environ[logins[role]] = url
     environ.update(GEONAF_ALLOW_DESTRUCTIVE_TESTS="1", GEONAF_TEST_DATABASE_NAME=database,
                    GEONAF_TEST_INSTANCE_ID=identity, GEONAF_DB_ENV="test", GEONAF_DB_BACKEND="file",
                    GEONAF_DATABASE_URL="", GEONAF_DB_INTEGRATION="0", GEONAF_DEMO_PACK="off",
@@ -154,7 +183,8 @@ def provision(variant, directory, name, label):
 def report(raw, nodes, destination, exit_code):
     """Allowlisted JUnit reconstruction; no exception text, properties or logs escape."""
     destination.mkdir(parents=True, exist_ok=True)
-    expected = {node.replace("/", ".").replace(".py::", ".") for node in nodes}
+    # Only the file part is converted: parameter ids may themselves contain "/" (e.g. [db/supabase/x.sql]).
+    expected = {node.split("::", 1)[0][:-3].replace("/", ".") + "." + node.split("::", 1)[1] for node in nodes}
     try:
         cases = ET.parse(raw).getroot().findall(".//testcase")
     except (ET.ParseError, OSError):
