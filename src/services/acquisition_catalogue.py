@@ -119,6 +119,10 @@ def refresh_local_states(result: CatalogueResult, data_dir: Path) -> CatalogueRe
 
 def search_catalogue(query: CatalogueQuery, data_dir: Path, *,
                      repository: CatalogueRepository | None = None) -> CatalogueResult:
+    from src.demo_mode import ensure_not_public
+
+    # Before the try below, which would turn the refusal into a generic catalogue error.
+    ensure_not_public("Recherche dans le catalogue Copernicus")
     try:
         result = (repository if repository is not None else CopernicusCatalogue()).search(query)
         if (result.query != query or len({row.identity for row in result.records}) != len(result.records)

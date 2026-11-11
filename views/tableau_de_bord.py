@@ -13,6 +13,8 @@ from src.components.territorial_indicators import show_key_figures
 from src.components.s2_vegetation import show_s2_vegetation
 from src.components.zone_map import show_zone_map
 from src.components.errors import page_guard, show_error, show_internal_error
+from src.components.public_notice import show_data_notice
+from src.demo_mode import public_mode
 from src.services.local_preview import LocalPreviewError
 
 # (page, label, section, help) of the access links at the bottom of the dashboard.
@@ -28,6 +30,12 @@ ANALYSES = (
      "Croiser Sentinel-2, WorldCover, OpenStreetMap et Sentinel-1 (descriptif)."),
     ("territoires", "Territoires et frontières", None, "Comparer les référentiels de limites ou importer une zone."),
 )
+PUBLIC_HELP = {
+    "Catalogue des acquisitions Sentinel-2": "Données disponibles. Recherche et téléchargement désactivés en "
+                                             "consultation publique.",
+    "Territoires et frontières": "Comparer les référentiels de limites (import de zone désactivé en consultation "
+                                 "publique).",
+}
 
 with page_guard("tableau_de_bord"):  # Unexpected errors: generic message + diagnostic identifier.
     st.title("Tableau de bord")
@@ -39,8 +47,8 @@ with page_guard("tableau_de_bord"):  # Unexpected errors: generic message + diag
         aoi_id = choose_shared_territory(DATA_DIR)
         if aoi_id is None:
             st.stop()
-        st.info(f"Zone d'étude {TERRITORY_LABELS[aoi_id]} : carré d’acquisition de 12 × 12 km autour de "
-                f"{TERRITORY_LABELS[aoi_id]}. Ce carré n’est pas une limite administrative.")
+        # Zone status, Sentinel-2 dates, attribution and limits (same wording as the CSV export).
+        show_data_notice(DATA_DIR, aoi_id, TERRITORY_LABELS[aoi_id])
         show_zone_map(DATA_DIR, aoi_id)
         show_key_figures(DATA_DIR, aoi_id, TERRITORY_LABELS[aoi_id])
         show_s2_vegetation(DATA_DIR, aoi_id)
@@ -55,5 +63,7 @@ with page_guard("tableau_de_bord"):  # Unexpected errors: generic message + diag
     st.header("Analyses détaillées")
     columns = st.columns(2)
     for index, (name, label, section, help_text) in enumerate(ANALYSES):
+        if public_mode():   # Never advertise what a public consultation refuses (search, download, import).
+            help_text = PUBLIC_HELP.get(label, help_text)
         columns[index % 2].page_link(page(name), label=label, help=help_text,
                                      query_params=section_query(section) if section else None)

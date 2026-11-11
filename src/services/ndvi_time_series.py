@@ -323,10 +323,17 @@ def series_csv(result: NDVITimeSeriesResult) -> str:
     output = io.StringIO()
     period = (f"{result.period[0].isoformat()}/{result.period[1].isoformat()}"
               if result.period else "non précisée")
+    from src.services.public_notice import INTERPRETATION, SENTINEL_LICENCE, sentinel2_attribution, zone_statement
+
     header = {
-        "geonaf_export": "ndvi-time-series-v1",
+        # v2 (D2.11 phase A): attribution, licence, zone status and interpretation limits added.
+        "geonaf_export": "ndvi-time-series-v2",
         "computed_at_utc": result.computed_at_utc.isoformat(),
         "source": "Copernicus Sentinel-2 L2A (B04, B08, SCL, MTD_MSIL2A.xml)",
+        "attribution": sentinel2_attribution(item.acquired_at_utc.year for item in result.dates),
+        "licence": SENTINEL_LICENCE,
+        "zone": zone_statement(f"Zone « {profile.aoi_id} »"),
+        "interpretation_limits": INTERPRETATION,
         "profile": f"{profile.profile_id} {profile.version}",
         "profile_sha256": profile.fingerprint,
         "aoi_id": profile.aoi_id,
