@@ -22,6 +22,7 @@ wrong secret. Local data keep the variable's behaviour.
 from __future__ import annotations
 
 import os
+import re
 
 ENV_NAME = "GEONAF_DEMO_READ_ONLY"
 _DISABLED = frozenset({"", "0", "false", "no", "off"})
@@ -64,7 +65,8 @@ def ensure_writable(operation: str, environ=os.environ) -> None:
 # does not write: outbound queries started by a visitor (Copernicus STAC search) and the Supabase
 # consultation, which needs a server token. The refusal sits in the services, not only in the pages.
 # At start-up the configuration itself is checked (public_configuration_problems): a public process
-# holding credentials, a database URL or a disabled read-only flag does not serve any page.
+# holding credentials (GEONAF's own or another service's), a database URL, an unknown GEONAF setting, a
+# disabled read-only flag or resource limits looser than the defaults does not serve any page.
 
 PUBLIC_ENV_NAME = "GEONAF_PUBLIC"
 # Environment variables that must be absent (or empty) in a public process. Prefixes, upper case.
@@ -81,6 +83,36 @@ PUBLIC_SECRET_KEYS = frozenset({PUBLIC_ENV_NAME, ENV_NAME, "GEONAF_DB_BACKEND", 
                                 "GEONAF_DEMO_PACK", "GEONAF_DEMO_PACK_URL", "GEONAF_DEMO_PACK_SHA256",
                                 "GEONAF_DEMO_PACK_ID"})
 PUBLIC_SECRET_PREFIXES = ("GEONAF_LIMIT_",)
+
+# Environment policy of a public process, in three tiers (names compared in upper case):
+# 1. Application settings (GEONAF_*, GABON_*): only this allowlist; any other one is refused.
+PUBLIC_APP_SETTINGS = PUBLIC_SECRET_KEYS | {"GABON_GEOAI_DATA_DIR", "GEONAF_CA_BUNDLE", "GEONAF_TLS_MODE",
+                                            "GEONAF_STAC_ENDPOINT", "GEONAF_S3_ENDPOINT"}
+PUBLIC_APP_PREFIXES = PUBLIC_SECRET_PREFIXES + ("GEONAF_NETWORK_",)
+APP_NAMESPACES = ("GEONAF_", "GABON_")
+# 2. System and technical variables are allowed unless their name is a secret name (tier 3). These known
+#    names are never read as secrets: their secret-like word is not the last one, or they hold no secret.
+LEGITIMATE_NAMES = frozenset({"TOKENIZERS_PARALLELISM", "TOKEN_URL", "PASSWORD_STORE_DIR", "PWD", "OLDPWD", "GPG_KEY"})
+# 3. Secret names of any other service: the last word (words split on "_", "." or "-") or the last two words.
+#    Whole words only, never a substring (TOKENIZERS_PARALLELISM stays allowed).
+SECRET_LAST_WORDS = frozenset({"TOKEN", "SECRET", "PASSWORD", "PASSWD", "PWD", "PASSPHRASE", "CREDENTIAL",
+                               "CREDENTIALS", "DSN"})
+SECRET_LAST_PAIRS = frozenset({("API", "KEY"), ("ACCESS", "KEY"), ("SECRET", "KEY"), ("PRIVATE", "KEY"),
+                               ("SIGNING", "KEY"), ("CONNECTION", "STRING"), ("DATABASE", "URL"), ("DB", "URL")})
+SECRET_NAMES = frozenset({"GITHUB_PAT"})
+THIRD_PARTY_SECRET = "secret d'un service tiers"
+UNKNOWN_SETTING = "réglage applicatif non autorisé"
+
+# Resource ceilings of a public process: the defaults (src/services/resource_guards.py, compute_slots.py,
+# bounded_cache.py). A setting may be stricter, never looser. For these ResourceLimits fields a LOWER value
+# is looser (smaller memory estimate); for every other field a HIGHER value is looser.
+LOOSER_WHEN_LOWER = frozenset({"bytes_per_cell", "baseline_bytes", "osm_expansion"})
+LOOSER_WHEN_HIGHER = frozenset({"resolution_m", "warn_cells", "max_cells", "warn_memory_bytes", "max_memory_bytes",
+                                "available_memory_fraction", "available_memory_refuse_fraction", "warn_s2_tiles",
+                                "max_s2_tiles", "warn_osm_bytes", "max_osm_bytes", "max_osm_bbox_degrees",
+                                "max_import_bytes", "max_import_vertices", "max_import_parts"})
+RESOURCE_ABOVE_CEILING = "limite de ressources au-delà du plafond public"
+RESOURCE_INVALID = "limite de ressources invalide"
 
 
 class PublicModeError(DemoReadOnlyError):
@@ -110,6 +142,65 @@ def ensure_not_public(operation: str, environ=os.environ) -> None:
         raise PublicModeError(operation)
 
 
+def is_secret_name(name: str) -> bool:
+    """Tier 3: name of a credential of any service (``*_TOKEN``, ``*_PASSWORD``, ``*_API_KEY``...)."""
+    upper = str(name).upper()
+    if upper in LEGITIMATE_NAMES:
+        return False
+    words = [word for word in re.split(r"[_.\-]+", upper) if word]
+    if not words:
+        return False
+    if upper in SECRET_NAMES or tuple(words[-2:]) in SECRET_LAST_PAIRS:
+        return True
+    # A single word is a secret name too ("TOKEN", "PASSWORD"), except PWD: the current directory.
+    return words[-1] in SECRET_LAST_WORDS and (words[-1] != "PWD" or len(words) > 1)
+
+
+def _sensitive_category(name: str) -> str | None:
+    upper = str(name).upper()
+    for category, prefixes in SENSITIVE_PREFIXES.items():
+        if upper.startswith(prefixes):
+            return category
+    if is_secret_name(upper):
+        return THIRD_PARTY_SECRET
+    if upper.startswith(APP_NAMESPACES) and not (upper in PUBLIC_APP_SETTINGS or upper.startswith(PUBLIC_APP_PREFIXES)):
+        return UNKNOWN_SETTING
+    return None
+
+
+def public_resource_problems(environ=os.environ) -> list[str]:
+    """Resource settings looser than the public ceilings (the defaults), or invalid. Never names or values."""
+    from dataclasses import fields
+
+    from src.services.bounded_cache import max_bytes_from_environment
+    from src.services.compute_slots import SlotSettings
+    from src.services.resource_guards import ResourceLimits
+
+    known = {f"GEONAF_LIMIT_{item.name.upper()}" for item in fields(ResourceLimits)}
+    if any(str(key).upper().startswith("GEONAF_LIMIT_") and str(key).upper() not in known for key in environ):
+        return [RESOURCE_INVALID]   # A misspelt limit would otherwise be ignored silently.
+    try:
+        limits, slots, cache = (ResourceLimits.from_environment(environ), SlotSettings.from_environment(environ),
+                                max_bytes_from_environment(environ))
+    except (TypeError, ValueError):
+        return [RESOURCE_INVALID]
+    default, default_slots = ResourceLimits(), SlotSettings()
+
+    def looser_field(name: str) -> bool:
+        value, ceiling = getattr(limits, name), getattr(default, name)
+        if name in LOOSER_WHEN_LOWER:
+            return value < ceiling
+        if name in LOOSER_WHEN_HIGHER:
+            return value > ceiling
+        return value != ceiling     # A field without a declared direction may not change (fails closed).
+
+    looser = [item.name for item in fields(ResourceLimits) if looser_field(item.name)]
+    if (looser or slots.slots > default_slots.slots or slots.wait_seconds > default_slots.wait_seconds
+            or cache > max_bytes_from_environment({})):
+        return [RESOURCE_ABOVE_CEILING]
+    return []
+
+
 def public_configuration_problems(environ=os.environ, secret_keys=()) -> list[str]:
     """Categories of forbidden settings of a public process (empty list: allowed). Never values or names.
 
@@ -123,11 +214,13 @@ def public_configuration_problems(environ=os.environ, secret_keys=()) -> list[st
         problems.append("lecture seule explicitement désactivée")
     if environ.get("GEONAF_DB_BACKEND", "").strip().lower() not in ("", "file"):
         problems.append("stockage autre que les fichiers")
-    for category, prefixes in SENSITIVE_PREFIXES.items():
-        if any(key.upper().startswith(prefixes) and str(value).strip() for key, value in environ.items()):
+    for key, value in environ.items():
+        category = _sensitive_category(key) if str(value).strip() else None
+        if category is not None and category not in problems:
             problems.append(category)
     if any(not (str(key) in PUBLIC_SECRET_KEYS or str(key).startswith(PUBLIC_SECRET_PREFIXES)) for key in secret_keys):
         problems.append("secret non autorisé en consultation publique")
+    problems += public_resource_problems(environ)
     return problems
 
 

@@ -3,13 +3,17 @@
 * the mode implies read only and fails closed;
 * visitor-triggered outbound or credentialed access (Copernicus search, Supabase) is refused in the services,
   so a bypass of the pages cannot run it; the network doubles fail the test if touched;
-* a public process holding credentials, a database URL, an unknown secret or a disabled read-only flag serves
-  no page, and the refusal names categories only, never a variable name or a value;
+* a public process holding credentials (GEONAF's or another service's: ``*_TOKEN``, ``*_PASSWORD``,
+  ``*_API_KEY``...), a database URL, an unknown secret or GEONAF setting, a disabled read-only flag or resource
+  limits looser than the defaults serves no page, and the refusal names categories only, never a variable name
+  or a value; known system variables (``TOKENIZERS_PARALLELISM``, ``TOKEN_URL``, ``PWD``...) stay allowed;
 * pages run on a copy of the v3 demo pack: same pages as the private mode, without the refused commands,
   with the zone status, dates, attribution and limits, and without writing the pack.
 """
 
+from dataclasses import fields
 from datetime import date, datetime, timezone
+import os
 from unittest.mock import Mock
 
 import pytest
@@ -22,6 +26,12 @@ from tests.test_demo_read_only import _infos, _run, _tree, pack_copy  # noqa: F4
 def public(monkeypatch):
     monkeypatch.setenv(dm.PUBLIC_ENV_NAME, "1")
     monkeypatch.delenv(dm.ENV_NAME, raising=False)
+    # Page tests run the real entrypoint, which checks os.environ: variables of the host or CI runner that the
+    # public policy refuses (a developer token, a test database URL...) are removed so the tests stay hermetic.
+    for name in list(os.environ):
+        if name != dm.PUBLIC_ENV_NAME and dm.public_configuration_problems({dm.PUBLIC_ENV_NAME: "1",
+                                                                             name: os.environ[name]}):
+            monkeypatch.delenv(name)
 
 
 def _boom():
@@ -101,6 +111,99 @@ def test_allowed_public_settings_pass():
 def test_any_other_streamlit_secret_is_refused_without_reading_it(key):
     problems = dm.public_configuration_problems({dm.PUBLIC_ENV_NAME: "1"}, (key,))
     assert problems == ["secret non autorisé en consultation publique"]
+
+
+# --- Environment policy: application settings, system variables, secrets of other services --------------
+
+SECRET_NAMES = ["GITHUB_TOKEN", "GH_TOKEN", "GITHUB_PAT", "GOOGLE_APPLICATION_CREDENTIALS", "GOOGLE_API_KEY",
+                "OPENAI_API_KEY", "HF_TOKEN", "AZURE_CLIENT_SECRET", "AZURE_STORAGE_CONNECTION_STRING",
+                "MY_SERVICE_PASSWORD", "SMTP_PASSWD", "DB_PWD", "MAPBOX_ACCESS_TOKEN", "STRIPE_SECRET_KEY",
+                "JWT_SECRET", "SERVICE_PRIVATE_KEY", "DB_PASSPHRASE", "SENTRY_DSN", "CLIENT_CREDENTIALS",
+                "POSTGRES_PASSWORD", "MONGO_DATABASE_URL", "REDIS_DB_URL", "TOKEN", "password", "github_token"]
+LEGITIMATE_NAMES = ["TOKENIZERS_PARALLELISM", "TOKEN_URL", "PASSWORD_STORE_DIR", "PWD", "OLDPWD", "GPG_KEY",
+                    "PATH", "HOME", "HOSTNAME", "LANG", "TZ", "PYTHONPATH", "PYTHONHASHSEED", "SSH_AUTH_SOCK",
+                    "KEYRING_BACKEND", "STREAMLIT_SERVER_PORT", "STREAMLIT_SERVER_HEADLESS", "XDG_CACHE_HOME",
+                    "GITHUB_ACTIONS", "GITHUB_WORKSPACE", "RUNNER_OS", "CI", "HTTP_PROXY", "NUMBER_OF_PROCESSORS"]
+
+
+@pytest.mark.parametrize("name", SECRET_NAMES)
+def test_secrets_of_other_services_are_refused_without_naming_them(name):
+    environ = {dm.PUBLIC_ENV_NAME: "1", name: "SECRET-VALUE-123"}
+    problems = dm.public_configuration_problems(environ)
+    assert problems and set(problems) <= {dm.THIRD_PARTY_SECRET, "base de données"}
+    with pytest.raises(dm.PublicConfigurationError) as error:
+        dm.ensure_public_configuration(environ)
+    assert name not in str(error.value) and name.upper() not in str(error.value)
+    assert "SECRET-VALUE-123" not in str(error.value)
+
+
+@pytest.mark.parametrize("name", LEGITIMATE_NAMES)
+def test_system_and_technical_variables_are_not_secrets(name):
+    assert not dm.is_secret_name(name)
+    assert dm.public_configuration_problems({dm.PUBLIC_ENV_NAME: "1", name: "value"}) == []
+
+
+def test_application_settings_follow_an_allowlist():
+    allowed = {dm.PUBLIC_ENV_NAME: "1", dm.ENV_NAME: "1", "GEONAF_DB_BACKEND": "file", "GEONAF_CACHE_DIR": "/tmp/c",
+               "GEONAF_CACHE_MAX_MIB": "128", "GEONAF_MAX_HEAVY_COMPUTATIONS": "1", "GEONAF_HEAVY_WAIT_SECONDS": "30",
+               "GEONAF_DEMO_PACK": "off", "GEONAF_DEMO_PACK_URL": "https://example.org/p.zip",
+               "GEONAF_DEMO_PACK_SHA256": "a" * 64, "GEONAF_DEMO_PACK_ID": "p", "GABON_GEOAI_DATA_DIR": "/data",
+               "GEONAF_TLS_MODE": "system", "GEONAF_NETWORK_READ_TIMEOUT": "30", "GEONAF_LIMIT_MAX_CELLS": "8000000"}
+    assert dm.public_configuration_problems(allowed) == []
+    for name in ("GEONAF_ALLOW_DESTRUCTIVE_TESTS", "GEONAF_SCHEMA", "GABON_SOMETHING"):
+        assert dm.public_configuration_problems({**allowed, name: "1"}) == [dm.UNKNOWN_SETTING]
+
+
+def test_the_entrypoint_refuses_a_github_token_without_naming_it(public, monkeypatch, caplog):
+    from streamlit.testing.v1 import AppTest
+    from tests.test_demo_read_only import ROOT
+
+    monkeypatch.setenv("GITHUB_TOKEN", "ghp_FAKEVALUE1234567890")
+    app = AppTest.from_file(str(ROOT / "app.py"), default_timeout=60).run()
+    errors = [e.value for e in app.error]
+    assert len(errors) == 1 and dm.THIRD_PARTY_SECRET in errors[0] and not app.title
+    for text in (errors[0], caplog.text):
+        assert "GITHUB" not in text and "ghp_FAKE" not in text
+
+
+# --- Resource ceilings (public only) ----------------------------------------------------------------------
+
+def test_every_resource_limit_has_a_declared_direction():
+    from src.services.resource_guards import ResourceLimits
+
+    names = {item.name for item in fields(ResourceLimits)}
+    assert dm.LOOSER_WHEN_LOWER | dm.LOOSER_WHEN_HIGHER == names
+    assert not dm.LOOSER_WHEN_LOWER & dm.LOOSER_WHEN_HIGHER
+
+
+@pytest.mark.parametrize("name, value", [
+    ("GEONAF_LIMIT_MAX_CELLS", "16000001"), ("GEONAF_LIMIT_MAX_MEMORY_BYTES", "1000000000000"),
+    ("GEONAF_LIMIT_AVAILABLE_MEMORY_REFUSE_FRACTION", "1"), ("GEONAF_LIMIT_MAX_S2_TILES", "5"),
+    ("GEONAF_LIMIT_MAX_OSM_BYTES", "1000000000"), ("GEONAF_LIMIT_MAX_IMPORT_BYTES", "100000000"),
+    ("GEONAF_LIMIT_BYTES_PER_CELL", "1"), ("GEONAF_LIMIT_BASELINE_BYTES", "1"), ("GEONAF_LIMIT_OSM_EXPANSION", "2"),
+    ("GEONAF_MAX_HEAVY_COMPUTATIONS", "3"), ("GEONAF_HEAVY_WAIT_SECONDS", "91"), ("GEONAF_CACHE_MAX_MIB", "257"),
+])
+def test_looser_resource_settings_are_refused_in_public(name, value):
+    assert dm.public_configuration_problems({dm.PUBLIC_ENV_NAME: "1", name: value}) == [dm.RESOURCE_ABOVE_CEILING]
+    assert dm.public_configuration_problems({name: value}) == []          # Private mode keeps its behaviour.
+
+
+@pytest.mark.parametrize("name, value", [
+    ("GEONAF_LIMIT_MAX_CELLS", "8000000"), ("GEONAF_LIMIT_MAX_MEMORY_BYTES", "1073741824"),
+    ("GEONAF_LIMIT_BYTES_PER_CELL", "300"), ("GEONAF_LIMIT_OSM_EXPANSION", "40"), ("GEONAF_MAX_HEAVY_COMPUTATIONS", "1"),
+    ("GEONAF_HEAVY_WAIT_SECONDS", "10"), ("GEONAF_CACHE_MAX_MIB", "64"), ("GEONAF_CACHE_MAX_MIB", "256"),
+])
+def test_stricter_or_equal_resource_settings_are_kept(name, value):
+    assert dm.public_configuration_problems({dm.PUBLIC_ENV_NAME: "1", name: value}) == []
+
+
+@pytest.mark.parametrize("name, value", [
+    ("GEONAF_LIMIT_MAX_CELLS", "beaucoup"), ("GEONAF_LIMIT_MAX_CELLS", "0"), ("GEONAF_LIMIT_MAX_CELLS", "-5"),
+    ("GEONAF_LIMIT_BYTES_PER_CELL", "nan"), ("GEONAF_LIMIT_WARN_CELLS", "20000000"), ("GEONAF_LIMIT_MAX_CELL", "1"),
+    ("GEONAF_MAX_HEAVY_COMPUTATIONS", "0"), ("GEONAF_HEAVY_WAIT_SECONDS", "x"), ("GEONAF_CACHE_MAX_MIB", "1.5"),
+])
+def test_invalid_resource_settings_are_refused_in_public(name, value):
+    assert dm.public_configuration_problems({dm.PUBLIC_ENV_NAME: "1", name: value}) == [dm.RESOURCE_INVALID]
 
 
 def test_the_entrypoint_serves_no_page_when_the_public_configuration_is_refused(public, monkeypatch, caplog):
@@ -228,16 +331,33 @@ def test_public_pages_refuse_search_and_supabase_and_never_write(pack_copy, publ
     assert _tree(pack_copy) == before
 
 
+def _pack_acquisitions(pack, aoi_id: str) -> list[datetime]:
+    """Sentinel-2 acquisition instants of one zone, read from the pack manifest (``sentinel2.acquisitions``).
+
+    v4 packs record ``aoi_id`` on each acquisition; v3 packs hold one zone (Akanda) and do not.
+    """
+    import json
+
+    manifest = json.loads((pack / "PACK_MANIFEST.json").read_text(encoding="utf-8"))
+    return [datetime.fromisoformat(item["acquired_at_utc"].replace("Z", "+00:00"))
+            for item in manifest["sentinel2"]["acquisitions"] if item.get("aoi_id", "akanda") == aoi_id]
+
+
 @pytest.mark.parametrize("page", ["app.py", "views/analyses_temporelles.py?section=serie",
                                   "views/analyses_multisources.py"])
 def test_public_pages_state_the_zone_dates_attribution_and_limits(page, pack_copy, public, monkeypatch):
     app = _run(page, pack_copy, monkeypatch)
     assert not app.exception and not [e.value for e in app.error]
-    assert any("carré d'acquisition GEONAF de 12 × 12 km, pas une limite administrative" in text
+    # The pages open on Akanda (first zone of every pack); the expected texts follow its acquisitions.
+    assert any(text.startswith("Akanda : carré d'acquisition GEONAF de 12 × 12 km, pas une limite administrative")
                for text in _infos(app))
+    acquired = _pack_acquisitions(pack_copy, "akanda")
+    assert acquired
+    years = ", ".join(str(year) for year in sorted({moment.year for moment in acquired}))
     captions = " ".join(caption.value for caption in app.caption)
-    assert "Contains modified Copernicus Sentinel data 2025" in captions
-    assert "dernière acquisition le 25/01/2025" in captions and "n'est pas un changement territorial démontré" in captions
+    assert f"Contains modified Copernicus Sentinel data {years}." in captions
+    assert f"dernière acquisition le {max(acquired):%d/%m/%Y}" in captions
+    assert "n'est pas un changement territorial démontré" in captions
 
 
 def test_dashboard_links_never_advertise_refused_commands_in_public(pack_copy, public, monkeypatch):
