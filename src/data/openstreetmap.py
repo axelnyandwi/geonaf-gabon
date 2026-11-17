@@ -308,5 +308,11 @@ def load_osm_snapshot(store, key: str, wgs84_bounds, *, expected_query_sha256: s
 
 def _snapshot_provenance(wrapper, key):
     meta = wrapper["geonaf"]
-    return {"query_sha256": meta["query_sha256"], "response_sha256": meta["response_sha256"],
-            "response_bytes": meta["response_bytes"], "storage_key": key}
+    provenance = {"query_sha256": meta["query_sha256"], "response_sha256": meta["response_sha256"],
+                  "response_bytes": meta["response_bytes"], "storage_key": key}
+    # Public demo pack (scripts/build_demo_pack.py): tags outside the policy were not copied; response_* still
+    # describe the original Overpass response, source_file_sha256 the local snapshot it was derived from.
+    minimisation = meta.get("public_minimisation")
+    if minimisation is not None:
+        provenance.update(public_tag_policy=minimisation["policy"], source_file_sha256=minimisation["source_file_sha256"])
+    return provenance
