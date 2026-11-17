@@ -6,7 +6,7 @@ import streamlit as st
 
 from src.components.errors import show_error
 from src.data.catalogue import CatalogueError, CatalogueQuery
-from src.demo_mode import read_only
+from src.demo_mode import public_mode, public_unavailable_text, read_only
 from src.geo.scientific_profile import LOCAL_SCIENTIFIC_PROFILES
 from src.services.acquisition_catalogue import (
     available_catalogue_aois, load_catalogue_aoi, search_catalogue,
@@ -18,6 +18,9 @@ def show_acquisition_catalogue(data_dir, *, embedded: bool = False):
     (st.header if embedded else st.title)("Catalogue des acquisitions Sentinel-2")
     st.caption("Recherche de métadonnées Copernicus L2A · Téléchargement uniquement sur commande explicite. "
                "La couverture nuageuse globale ne mesure pas la qualité locale de l’AOI.")
+    if public_mode():  # Public consultation: no visitor-triggered Copernicus query (the service refuses it too).
+        st.info(public_unavailable_text("Recherche dans le catalogue Copernicus"))
+        return
     from src.components.acquisition_downloads import download_queue, show_download_status, show_download_commands
     if not read_only():  # Read-only demo: no queue, so no shared download folder is created.
         show_download_status(download_queue(str(data_dir.resolve())))

@@ -142,6 +142,9 @@ _STATUS = {401: ("unauthorized", f"{SERVICE} : accès refusé, jeton du serveur 
 def fetch_acquisitions(config: EdgeConfig, *, session=None, settings: NetworkSettings | None = None,
                        timeout=(10.0, 20.0)) -> tuple[EdgeAcquisition, ...]:
     """One GET, no retry (the function is cheap to call again; a retry loop would multiply connections)."""
+    from src.demo_mode import ensure_not_public
+
+    ensure_not_public("Consultation Supabase")    # Last line of defence: a public process never calls out.
     if session is None:
         from src.data.network import secure_session
         from src.network_config import NetworkConfigurationError

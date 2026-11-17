@@ -48,6 +48,10 @@ def resolve_config(secrets: Mapping[str, object] | None, environ: Mapping[str, s
     The two values must come from the same source, so that a secret URL is never paired with a stray
     environment token (or the reverse).
     """
+    from src.demo_mode import ensure_not_public
+
+    # The process environment decides, never the mapping passed in (a caller could omit the flag).
+    ensure_not_public("Consultation Supabase")              # Public process: no token is even read.
     for source in (secrets or {}, environ):
         values = {key: _value(source, key) for key in KEYS}
         if any(values.values()):
@@ -60,6 +64,9 @@ def resolve_config(secrets: Mapping[str, object] | None, environ: Mapping[str, s
 
 def consult(config: EdgeConfig, *, fetch=None, now=None) -> Consultation:
     """One HTTPS GET through the verified client (TLS, timeouts, strict JSON contract, no redirect)."""
+    from src.demo_mode import ensure_not_public
+
+    ensure_not_public("Consultation Supabase")
     records = (fetch or client.fetch_acquisitions)(config)
     return Consultation(records, (now or (lambda: datetime.now(timezone.utc)))())
 

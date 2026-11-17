@@ -13,6 +13,7 @@ import streamlit as st
 
 from src.components.errors import show_error
 from src.data.edge_acquisitions import MAX_RECORDS, EdgeAcquisitionsError
+from src.demo_mode import public_mode, public_unavailable_text
 from src.services import supabase_acquisitions as service
 
 TITLE = "Acquisitions enregistrées dans Supabase geonaf-test"
@@ -34,6 +35,10 @@ def show_supabase_acquisitions(*, key_prefix: str = "supabase_acquisitions") -> 
     st.subheader(TITLE)
     st.caption(SCOPE)
     state_key = f"{key_prefix}_result"
+    if public_mode():   # Public consultation: secrets are not read, no request is offered (services refuse too).
+        st.session_state.pop(state_key, None)
+        st.info(public_unavailable_text("Consultation Supabase"))
+        return
     try:
         config = service.resolve_config(_secrets(), os.environ)
     except EdgeAcquisitionsError as error:

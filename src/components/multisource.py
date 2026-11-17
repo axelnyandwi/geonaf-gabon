@@ -206,6 +206,11 @@ def show_multisource(data_dir, *, shared_zone: bool = False):
         aoi_id = choose_shared_territory(data_dir) if shared_zone else choose_territory(data_dir, "ms_territory")
     if aoi_id is None:
         return
+    from src.components.analysis_settings import TERRITORY_LABELS
+    from src.components.public_notice import show_data_notice
+
+    # Zone status, Sentinel-2 dates, attribution and limits (same wording as the dashboard and the CSV export).
+    show_data_notice(data_dir, aoi_id, TERRITORY_LABELS.get(aoi_id, aoi_id))
     with columns[1]:
         configuration = choose_analysis(aoi_id, "ms_analysis")
     if configuration is None:

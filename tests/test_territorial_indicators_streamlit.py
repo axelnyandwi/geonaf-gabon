@@ -41,7 +41,9 @@ def test_key_figures_come_first_and_keep_the_scientific_analyses(local_data, hom
     app, compute = home(local_data)
     assert not app.exception and not app.error
     assert [h.value for h in app.header] == ["Périmètre analysé", "Chiffres clés du territoire", "Analyses détaillées"]
-    assert app.info[0].value.startswith("Zone d'étude Akanda") and "limite administrative" in app.info[0].value
+    # Discovery V4 phase A: same statement as the CSV export (src/services/public_notice.zone_statement).
+    assert app.info[0].value.startswith("Akanda : carré d'acquisition GEONAF de 12 × 12 km") \
+        and "pas une limite administrative" in app.info[0].value
     texts = _texts(app)
     assert any("Bâtiments cartographiés (OSM)" == t for t in texts)
     assert any("Fiabilité : non évaluée" in t for t in texts) and any("Fiabilité : moyenne" in t for t in texts)
